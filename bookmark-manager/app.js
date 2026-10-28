@@ -4,11 +4,13 @@ const form = document.getElementById("bookmark-form");
 const formError = document.getElementById("form-error");
 const list = document.getElementById("bookmark-list");
 const emptyMessage = document.getElementById("empty-message");
+const tagFilter = document.getElementById("tag-filter");
 
 const submitButton = form.querySelector('button[type="submit"]');
 
 let bookmarks = loadBookmarks();
 let editingId = null;
+let selectedTag = null;
 
 // Read bookmarks from localStorage, falling back to an empty array.
 function loadBookmarks() {
@@ -241,9 +243,11 @@ function createBookmarkItem(bookmark) {
     const tags = document.createElement("div");
     tags.className = "tags";
     for (const tag of bookmark.tags) {
-      const pill = document.createElement("span");
+      const pill = document.createElement("button");
+      pill.type = "button";
       pill.className = "tag";
       pill.textContent = tag;
+      pill.addEventListener("click", () => toggleTag(tag));
       tags.append(pill);
     }
     item.append(tags);
@@ -274,10 +278,51 @@ function createBookmarkItem(bookmark) {
   return item;
 }
 
+// Selecting the current tag again clears it.
+function toggleTag(tag) {
+  selectedTag = selectedTag === tag ? null : tag;
+  render();
+}
+
+function createChip(label, tag) {
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.className = "tag chip";
+  chip.textContent = label;
+  const active = selectedTag === tag;
+  chip.classList.toggle("selected", active);
+  chip.setAttribute("aria-pressed", active);
+  chip.addEventListener("click", () =>
+    tag === null ? clearTag() : toggleTag(tag),
+  );
+  return chip;
+}
+
+function clearTag() {
+  selectedTag = null;
+  render();
+}
+
+// Rebuild the "All" chip plus one chip per tag in use, sorted A-Z.
+function renderTagFilter() {
+  const tags = [...new Set(bookmarks.flatMap((b) => b.tags))].sort();
+  if (selectedTag !== null && !tags.includes(selectedTag)) selectedTag = null;
+
+  tagFilter.innerHTML = "";
+  tagFilter.append(createChip("All", null));
+  for (const tag of tags) {
+    tagFilter.append(createChip(tag, tag));
+  }
+}
+
 function render() {
   list.innerHTML = "";
+  renderTagFilter();
 
-  const newestFirst = [...bookmarks].sort((a, b) =>
+  const visible = bookmarks.filter(
+    (bookmark) => selectedTag === null || bookmark.tags.includes(selectedTag),
+  );
+  const newestFirst = [...visible].sort((a, b) =>
     b.createdAt.localeCompare(a.createdAt),
   );
 
