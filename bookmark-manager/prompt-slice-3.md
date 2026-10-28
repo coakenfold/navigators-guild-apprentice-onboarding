@@ -10,7 +10,7 @@ Change an existing bookmark using the same form
 
 ## Goal
 
-Add an Edit button to each bookmark. It fills the form with that bookmark's values (tags joined as a, b) and switches the form into edit mode: track the id being edited and show the button as 'Update'. Saving in edit mode replaces that bookmark in place, keeping its id and createdAt, and uses the same validation and tag normalization as adding. Afterwards the form returns to add mode and is cleared. If the bookmark being edited is deleted, the form also resets to add mode.
+Add an Edit icon button to each bookmark. It fills the form with that bookmark's values (tags joined as a, b) and switches the form into edit mode: track the id being edited and show the button as 'Update'. Saving in edit mode replaces that bookmark in place, keeping its id and createdAt, and uses the same validation and tag normalization as adding. Afterwards the form returns to add mode and is cleared. If the bookmark being edited is deleted, the form also resets to add mode.
 
 ## Done when
 

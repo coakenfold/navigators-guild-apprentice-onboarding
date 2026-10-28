@@ -5,7 +5,10 @@ const formError = document.getElementById("form-error");
 const list = document.getElementById("bookmark-list");
 const emptyMessage = document.getElementById("empty-message");
 
+const submitButton = form.querySelector('button[type="submit"]');
+
 let bookmarks = loadBookmarks();
+let editingId = null;
 
 // Read bookmarks from localStorage, falling back to an empty array.
 function loadBookmarks() {
@@ -96,19 +99,46 @@ function handleSubmit(event) {
     return;
   }
 
-  bookmarks.push({
-    id: Date.now().toString(),
+  const fields = {
     url,
     title,
     notes: form.notes.value.trim(),
     tags: parseTags(form.tags.value),
-    createdAt: new Date().toISOString(),
-  });
+  };
+
+  const existing = bookmarks.find((bookmark) => bookmark.id === editingId);
+  if (existing) {
+    Object.assign(existing, fields);
+  } else {
+    bookmarks.push({
+      id: Date.now().toString(),
+      ...fields,
+      createdAt: new Date().toISOString(),
+    });
+  }
 
   saveBookmarks();
+  resetForm();
+  render();
+}
+
+// Return the form to add mode and clear it.
+function resetForm() {
+  editingId = null;
+  submitButton.textContent = "Save";
   clearError();
   form.reset();
-  render();
+}
+
+function startEdit(bookmark) {
+  editingId = bookmark.id;
+  clearError();
+  form.url.value = bookmark.url;
+  form.title.value = bookmark.title;
+  form.notes.value = bookmark.notes;
+  form.tags.value = bookmark.tags.join(", ");
+  submitButton.textContent = "Update";
+  form.url.focus();
 }
 
 function deleteBookmark(id) {
@@ -116,6 +146,7 @@ function deleteBookmark(id) {
 
   bookmarks = bookmarks.filter((bookmark) => bookmark.id !== id);
   saveBookmarks();
+  if (id === editingId) resetForm();
   render();
 }
 
@@ -141,6 +172,30 @@ function createTrashIcon() {
     "M10 11v6",
     "M14 11v6",
   ];
+  for (const d of paths) {
+    const path = document.createElementNS(svgNs, "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+  return svg;
+}
+
+// Pencil icon; decorative, the button's aria-label names the action.
+function createEditIcon() {
+  const svgNs = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNs, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", "18");
+  svg.setAttribute("height", "18");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+
+  const paths = ["M12 20h9", "M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"];
   for (const d of paths) {
     const path = document.createElementNS(svgNs, "path");
     path.setAttribute("d", d);
@@ -197,6 +252,14 @@ function createBookmarkItem(bookmark) {
   const actions = document.createElement("div");
   actions.className = "bookmark-actions";
 
+  const editButton = document.createElement("button");
+  editButton.type = "button";
+  editButton.className = "edit-button";
+  editButton.title = "Edit";
+  editButton.setAttribute("aria-label", `Edit ${bookmark.title}`);
+  editButton.append(createEditIcon());
+  editButton.addEventListener("click", () => startEdit(bookmark));
+
   const deleteButton = document.createElement("button");
   deleteButton.type = "button";
   deleteButton.className = "delete-button";
@@ -205,7 +268,7 @@ function createBookmarkItem(bookmark) {
   deleteButton.append(createTrashIcon());
   deleteButton.addEventListener("click", () => deleteBookmark(bookmark.id));
 
-  actions.append(deleteButton);
+  actions.append(editButton, deleteButton);
   item.append(actions);
 
   return item;

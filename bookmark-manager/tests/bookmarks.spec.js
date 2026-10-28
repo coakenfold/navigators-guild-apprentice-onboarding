@@ -208,3 +208,65 @@ test.describe('Add & list', () => {
     expect(new Set(stored.map((b) => b.id)).size).toBe(2);
   });
 });
+
+test.describe('Edit', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await addBookmark(page, MDN);
+    await addBookmark(page, EXAMPLE);
+  });
+
+  test('updates in place, keeping id, createdAt and position, and survives refresh', async ({ page }) => {
+    const before = await storedBookmarks(page);
+    const original = before.find((b) => b.title === MDN.title);
+
+    await page.getByRole('button', { name: `Edit ${MDN.title}` }).click();
+    await expect(page.getByLabel('Tags')).toHaveValue('javascript, reference');
+    await expect(page.getByRole('button', { name: 'Update' })).toBeVisible();
+
+    await page.getByLabel('Title').fill('MDN Renamed');
+    await page.getByLabel('Tags').fill('Docs, HTML');
+    await page.getByRole('button', { name: 'Update' }).click();
+
+    await page.reload();
+    const after = await storedBookmarks(page);
+    expect(after).toHaveLength(2);
+    const edited = after.find((b) => b.id === original.id);
+    expect(edited).toMatchObject({
+      title: 'MDN Renamed',
+      tags: ['docs', 'html'],
+      createdAt: original.createdAt,
+    });
+    await expect(page.locator('.bookmark')).toHaveCount(2);
+  });
+
+  test('rejects invalid input, and a later submit creates a new bookmark', async ({ page }) => {
+    await page.getByRole('button', { name: `Edit ${MDN.title}` }).click();
+    await page.getByLabel('Title').fill('');
+    await page.getByRole('button', { name: 'Update' }).click();
+    await expect(page.getByRole('alert')).toBeVisible();
+    expect((await storedBookmarks(page))[0].title).toBe(MDN.title);
+
+    await page.getByLabel('Title').fill('Changed');
+    await page.getByRole('button', { name: 'Update' }).click();
+    await expect(page.getByRole('button', { name: 'Save' })).toBeVisible();
+    await expect(page.getByLabel('Title')).toHaveValue('');
+
+    await addBookmark(page, { url: 'https://example.org', title: 'Third', notes: '', tags: '' });
+    expect(await storedBookmarks(page)).toHaveLength(3);
+  });
+
+  test('deleting the bookmark mid-edit resets to add mode', async ({ page }) => {
+    page.on('dialog', (dialog) => dialog.accept());
+    await page.getByRole('button', { name: `Edit ${MDN.title}` }).click();
+    await page.getByRole('button', { name: `Delete ${MDN.title}` }).click();
+    await expect(page.getByRole('button', { name: 'Save' })).toBeVisible();
+    await expect(page.getByLabel('Title')).toHaveValue('');
+
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e));
+    await addBookmark(page, { url: 'https://example.org', title: 'Third', notes: '', tags: '' });
+    expect(errors).toHaveLength(0);
+    expect(await storedBookmarks(page)).toHaveLength(2);
+  });
+});
