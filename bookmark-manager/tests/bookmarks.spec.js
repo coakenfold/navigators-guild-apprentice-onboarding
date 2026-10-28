@@ -14,8 +14,15 @@ const EXAMPLE = {
   tags: 'recipes, dinner',
 };
 
+/** The add form starts collapsed; open it if it is not already. */
+async function openForm(page) {
+  const toggle = page.getByRole('button', { name: 'Add a bookmark' });
+  if (await toggle.isVisible()) await toggle.click();
+}
+
 /** @param {import('@playwright/test').Page} page */
 async function addBookmark(page, { url, title, notes, tags }) {
+  await openForm(page);
   await page.getByLabel('URL').fill(url);
   await page.getByLabel('Title').fill(title);
   await page.getByLabel('Notes').fill(notes);
@@ -249,6 +256,7 @@ test.describe('Edit', () => {
 
     await page.getByLabel('Title').fill('Changed');
     await page.getByRole('button', { name: 'Update' }).click();
+    await openForm(page);
     await expect(page.getByRole('button', { name: 'Save' })).toBeVisible();
     await expect(page.getByLabel('Title')).toHaveValue('');
 
@@ -260,6 +268,7 @@ test.describe('Edit', () => {
     page.on('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: `Edit ${MDN.title}` }).click();
     await page.getByRole('button', { name: `Delete ${MDN.title}` }).click();
+    await openForm(page);
     await expect(page.getByRole('button', { name: 'Save' })).toBeVisible();
     await expect(page.getByLabel('Title')).toHaveValue('');
 

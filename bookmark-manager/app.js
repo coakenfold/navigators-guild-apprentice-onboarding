@@ -10,6 +10,10 @@ const searchInput = document.getElementById("search");
 const NO_BOOKMARKS_TEXT = "No bookmarks yet. Add your first one above.";
 const NO_MATCH_TEXT = "No bookmarks match your search.";
 
+const formToggle = document.getElementById("form-toggle");
+const formToggleLabel = document.getElementById("form-toggle-label");
+const formCancel = document.getElementById("form-cancel");
+
 const submitButton = form.querySelector('button[type="submit"]');
 
 let bookmarks = loadBookmarks();
@@ -125,7 +129,38 @@ function handleSubmit(event) {
 
   saveBookmarks();
   resetForm();
+  setFormOpen(false);
   render();
+}
+
+// Show or hide the add form; the toggle button always reflects the state.
+function setFormOpen(open) {
+  form.hidden = !open;
+  formToggle.setAttribute("aria-expanded", open);
+  formToggleLabel.textContent = open
+    ? editingId === null
+      ? "Close form"
+      : "Editing bookmark"
+    : "Add a bookmark";
+  formToggle.classList.toggle("open", open);
+}
+
+function toggleForm() {
+  const open = form.hidden;
+  if (!open) resetForm();
+  setFormOpen(open);
+  if (open) form.url.focus();
+  else formToggle.focus();
+}
+
+function cancelForm() {
+  resetForm();
+  setFormOpen(false);
+  formToggle.focus();
+}
+
+function handleFormKeydown(event) {
+  if (event.key === "Escape") cancelForm();
 }
 
 // Return the form to add mode and clear it.
@@ -144,6 +179,7 @@ function startEdit(bookmark) {
   form.notes.value = bookmark.notes;
   form.tags.value = bookmark.tags.join(", ");
   submitButton.textContent = "Update";
+  setFormOpen(true);
   form.url.focus();
 }
 
@@ -152,8 +188,20 @@ function deleteBookmark(id) {
 
   bookmarks = bookmarks.filter((bookmark) => bookmark.id !== id);
   saveBookmarks();
-  if (id === editingId) resetForm();
+  if (id === editingId) {
+    resetForm();
+    setFormOpen(false);
+  }
   render();
+}
+
+// "https://www.example.com/a/b" -> "example.com"
+function getDomain(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
 }
 
 // Trash can icon; decorative, the button's aria-label names the action.
@@ -228,7 +276,15 @@ function createBookmarkItem(bookmark) {
   date.className = "bookmark-date";
   date.textContent = formatDate(bookmark.createdAt);
 
-  header.append(link, date);
+  const domain = document.createElement("span");
+  domain.className = "bookmark-domain";
+  domain.textContent = getDomain(bookmark.url);
+
+  const heading = document.createElement("div");
+  heading.className = "bookmark-heading";
+  heading.append(link, domain);
+
+  header.append(heading, date);
 
   const url = document.createElement("div");
   url.className = "bookmark-url";
@@ -351,5 +407,8 @@ function render() {
 }
 
 form.addEventListener("submit", handleSubmit);
+form.addEventListener("keydown", handleFormKeydown);
+formToggle.addEventListener("click", toggleForm);
+formCancel.addEventListener("click", cancelForm);
 searchInput.addEventListener("input", render);
 render();
