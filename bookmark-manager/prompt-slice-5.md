@@ -10,7 +10,7 @@ Narrow the list by typing
 
 ## Goal
 
-Add a search bar next to the tag filters. On every input event, render() shows only bookmarks where the search text appears (ignoring case) in the title, URL, notes. Search should not match against the tags. Search and tag filters should work together. If I have a tag filter active and then search, it should search within the filtered results. If bookmarks exist but none match, show 'No bookmarks match your search.' instead of the no-bookmarks message. An empty search shows everything.
+Add a search bar _next_ to the tag filters. On every input event, render() shows only bookmarks where the search text appears (ignoring case) in the title, URL, notes. Search should not match against the tags. Search and tag filters should work together. If I have a tag filter active and then search, it should search within the filtered results. If bookmarks exist but none match, show 'No bookmarks match your search.' instead of the no-bookmarks message. An empty search shows everything.
 
 ## Done when
 
