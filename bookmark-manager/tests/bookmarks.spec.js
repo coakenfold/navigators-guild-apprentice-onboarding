@@ -27,6 +27,51 @@ async function addBookmark(page, { url, title, notes, tags }) {
 const storedBookmarks = (page) =>
   page.evaluate(() => JSON.parse(localStorage.getItem('bookmarks') ?? 'null'));
 
+test.describe('Delete', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await addBookmark(page, MDN);
+    await addBookmark(page, EXAMPLE);
+  });
+
+  test('cancelling the dialog leaves the bookmark in place', async ({ page }) => {
+    /** @type {string[]} */
+    const messages = [];
+    page.once('dialog', (dialog) => {
+      messages.push(dialog.message());
+      dialog.dismiss();
+    });
+    await page.getByRole('button', { name: `Delete ${EXAMPLE.title}` }).click();
+
+    expect(messages).toEqual(['Are you sure?']);
+    await expect(page.locator('.bookmark')).toHaveCount(2);
+    expect(await storedBookmarks(page)).toHaveLength(2);
+  });
+
+  test('confirming removes it, and it stays gone after a refresh', async ({ page }) => {
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByRole('button', { name: `Delete ${EXAMPLE.title}` }).click();
+
+    await expect(page.locator('.bookmark .bookmark-title')).toHaveText([MDN.title]);
+
+    await page.reload();
+    await expect(page.locator('.bookmark .bookmark-title')).toHaveText([MDN.title]);
+    expect(await storedBookmarks(page)).toHaveLength(1);
+  });
+
+  test('deleting every bookmark brings back the empty-state message', async ({ page }) => {
+    page.on('dialog', (dialog) => dialog.accept());
+    await page.getByRole('button', { name: `Delete ${EXAMPLE.title}` }).click();
+    await page.getByRole('button', { name: `Delete ${MDN.title}` }).click();
+
+    await expect(page.locator('.bookmark')).toHaveCount(0);
+    await expect(
+      page.getByText('No bookmarks yet. Add your first one above.')
+    ).toBeVisible();
+    expect(await storedBookmarks(page)).toEqual([]);
+  });
+});
+
 test.describe('Add & list', () => {
   /** @type {string[]} */
   let consoleErrors;

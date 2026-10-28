@@ -161,6 +161,26 @@ button {
   border-radius: 999px;
 }
 
+.bookmark-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.delete-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  background: var(--error);
+}
+
+.delete-button:focus-visible {
+  outline: 2px solid var(--error);
+  outline-offset: 2px;
+}
+
 .empty-message {
   margin: 0;
   color: var(--muted);

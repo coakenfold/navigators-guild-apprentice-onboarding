@@ -111,6 +111,44 @@ function handleSubmit(event) {
   render();
 }
 
+function deleteBookmark(id) {
+  if (!confirm("Are you sure?")) return;
+
+  bookmarks = bookmarks.filter((bookmark) => bookmark.id !== id);
+  saveBookmarks();
+  render();
+}
+
+// Trash can icon; decorative, the button's aria-label names the action.
+function createTrashIcon() {
+  const svgNs = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNs, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", "18");
+  svg.setAttribute("height", "18");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+
+  const paths = [
+    "M3 6h18",
+    "M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2",
+    "M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6",
+    "M10 11v6",
+    "M14 11v6",
+  ];
+  for (const d of paths) {
+    const path = document.createElementNS(svgNs, "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+  return svg;
+}
+
 function createBookmarkItem(bookmark) {
   const item = document.createElement("li");
   item.className = "bookmark";
@@ -155,6 +193,20 @@ function createBookmarkItem(bookmark) {
     }
     item.append(tags);
   }
+
+  const actions = document.createElement("div");
+  actions.className = "bookmark-actions";
+
+  const deleteButton = document.createElement("button");
+  deleteButton.type = "button";
+  deleteButton.className = "delete-button";
+  deleteButton.title = "Delete";
+  deleteButton.setAttribute("aria-label", `Delete ${bookmark.title}`);
+  deleteButton.append(createTrashIcon());
+  deleteButton.addEventListener("click", () => deleteBookmark(bookmark.id));
+
+  actions.append(deleteButton);
+  item.append(actions);
 
   return item;
 }
