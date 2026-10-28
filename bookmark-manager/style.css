@@ -105,7 +105,7 @@ main {
   color: var(--on-accent);
   background: var(--accent);
   border-radius: 50%;
-  transition: transform 0.2s ease;
+  transition: transform 0.35s ease-in-out;
 }
 
 .form-toggle-icon::before,
@@ -131,6 +131,19 @@ main {
 
 .form-toggle.open .form-toggle-icon {
   transform: rotate(45deg);
+}
+
+/* Clips the rolling label text like a window over a drum */
+#form-toggle-label {
+  display: inline-grid;
+  overflow: hidden;
+  line-height: 1.5;
+}
+
+/* Old and new text share one cell so the window fits the wider of the two */
+.roll-text {
+  grid-area: 1 / 1;
+  white-space: nowrap;
 }
 
 .form-toggle:hover {

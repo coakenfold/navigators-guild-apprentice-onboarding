@@ -217,16 +217,53 @@ function animateForm(open) {
   formAnimation = { frame: requestAnimationFrame(step), height: startPoint };
 }
 
+// Roll the toggle label like an alarm-clock drum: opening rolls the old text
+// down and out with the new text coming in from the top; closing reverses it.
+function rollToggleLabel(text, down) {
+  const current = formToggleLabel.lastElementChild;
+  if (current.textContent === text) return;
+
+  const next = document.createElement("span");
+  next.className = "roll-text";
+  next.textContent = text;
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduceMotion) {
+    current.replaceWith(next);
+    return;
+  }
+
+  // Drop any text still rolling out from an interrupted roll.
+  for (const stale of formToggleLabel.querySelectorAll(".roll-out")) stale.remove();
+  current.classList.add("roll-out");
+  current.setAttribute("aria-hidden", "true");
+  formToggleLabel.append(next);
+
+  const options = { duration: 350, easing: "ease-in-out", fill: "both" };
+  const exit = down ? "100%" : "-100%";
+  const enter = down ? "-100%" : "100%";
+  current.animate(
+    [{ transform: "translateY(0)", opacity: 1 }, { transform: `translateY(${exit})`, opacity: 0 }],
+    options,
+  ).onfinish = () => current.remove();
+  next.animate(
+    [{ transform: `translateY(${enter})`, opacity: 0 }, { transform: "translateY(0)", opacity: 1 }],
+    options,
+  );
+}
+
 // Show or hide the add form; the toggle button always reflects the state.
 function setFormOpen(open) {
   if (open !== formOpen) animateForm(open);
   formOpen = open;
   formToggle.setAttribute("aria-expanded", open);
-  formToggleLabel.textContent = open
-    ? editingId === null
-      ? "Close form"
-      : "Editing bookmark"
-    : "Add a bookmark";
+  rollToggleLabel(
+    open
+      ? editingId === null
+        ? "Close form"
+        : "Editing bookmark"
+      : "Add a bookmark",
+    open,
+  );
   formToggle.classList.toggle("open", open);
 }
 
