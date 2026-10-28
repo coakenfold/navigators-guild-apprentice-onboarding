@@ -146,7 +146,6 @@ main {
   gap: 12px;
   align-items: start;
   margin-top: 12px;
-  animation: fade-in 0.2s ease;
 }
 
 #bookmark-form[hidden] {

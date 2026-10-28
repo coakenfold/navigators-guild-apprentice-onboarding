@@ -133,9 +133,94 @@ function handleSubmit(event) {
   render();
 }
 
+const FORM_DURATION = 450;
+const FORM_FADE_RANGE = 28;
+let formOpen = false;
+let formAnimation = null;
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+// Group the visible form children into rows and record where each row ends.
+function measureFormRows() {
+  const rows = [];
+  for (const child of form.children) {
+    if (child.hidden) continue;
+    const top = child.offsetTop - form.offsetTop;
+    const bottom = top + child.offsetHeight;
+    const row = rows.find((r) => r.top === top);
+    if (row) {
+      row.bottom = Math.max(row.bottom, bottom);
+      row.elements.push(child);
+    } else {
+      rows.push({ top, bottom, elements: [child] });
+    }
+  }
+  return rows;
+}
+
+// Slide the drawer to `open`. A row fades in once the drawer bottom passes the
+// row's bottom edge, and has fully faded out before the drawer bottom crosses it.
+function animateForm(open) {
+  // Resume from the current height if interrupted mid-animation.
+  const interruptedHeight = formAnimation ? formAnimation.height : null;
+  if (formAnimation) cancelAnimationFrame(formAnimation.frame);
+  formAnimation = null;
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  form.hidden = false;
+  form.style.height = "";
+  form.style.overflow = "";
+  const rows = measureFormRows();
+  const fullHeight = form.offsetHeight;
+  const fadeRange = Math.min(FORM_FADE_RANGE, fullHeight);
+  const scale = (fullHeight - fadeRange) / fullHeight;
+
+  const finish = () => {
+    formAnimation = null;
+    form.style.height = "";
+    form.style.overflow = "";
+    form.style.marginTop = "";
+    for (const row of rows) {
+      for (const el of row.elements) el.style.opacity = "";
+    }
+    form.hidden = !open;
+  };
+
+  if (reduceMotion) {
+    finish();
+    return;
+  }
+
+  const startPoint = interruptedHeight ?? (open ? 0 : fullHeight);
+  const endPoint = open ? fullHeight : 0;
+  const startTime = performance.now();
+  form.style.overflow = "hidden";
+
+  const step = (now) => {
+    const progress = Math.min((now - startTime) / FORM_DURATION, 1);
+    const height = startPoint + (endPoint - startPoint) * easeInOutCubic(progress);
+    form.style.height = `${height}px`;
+    form.style.marginTop = `${12 * (height / fullHeight)}px`;
+    for (const row of rows) {
+      const threshold = row.bottom * scale;
+      const opacity = Math.max(0, Math.min(1, (height - threshold) / fadeRange));
+      for (const el of row.elements) el.style.opacity = opacity;
+    }
+    if (progress < 1) {
+      formAnimation = { frame: requestAnimationFrame(step), height };
+    } else {
+      finish();
+    }
+  };
+  formAnimation = { frame: requestAnimationFrame(step), height: startPoint };
+}
+
 // Show or hide the add form; the toggle button always reflects the state.
 function setFormOpen(open) {
-  form.hidden = !open;
+  if (open !== formOpen) animateForm(open);
+  formOpen = open;
   formToggle.setAttribute("aria-expanded", open);
   formToggleLabel.textContent = open
     ? editingId === null
@@ -146,10 +231,10 @@ function setFormOpen(open) {
 }
 
 function toggleForm() {
-  const open = form.hidden;
+  const open = !formOpen;
   if (!open) resetForm();
   setFormOpen(open);
-  if (open) form.url.focus();
+  if (open) form.url.focus({ preventScroll: true });
   else formToggle.focus();
 }
 
