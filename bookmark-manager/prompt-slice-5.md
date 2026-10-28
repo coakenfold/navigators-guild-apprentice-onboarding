@@ -14,7 +14,7 @@ Add a search bar _next_ to the tag filters. On every input event, render() shows
 
 ## Done when
 
-- Typing "mdn", "MOZILLA", "reference" (a tag) or a word from the notes each finds the MDN bookmark while you type.
+- Typing "mdn", "MOZILLA", or a word from the notes each finds the MDN bookmark while you type.
 - Typing "zzzz" shows the no-match message.
 - Clearing the box shows everything again.
 - With zero bookmarks, you still see the no-bookmarks message.

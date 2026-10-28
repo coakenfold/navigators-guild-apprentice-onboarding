@@ -270,3 +270,85 @@ test.describe('Edit', () => {
     expect(await storedBookmarks(page)).toHaveLength(2);
   });
 });
+
+test.describe('Live search', () => {
+  const titles = (/** @type {import('@playwright/test').Page} */ page) =>
+    page.locator('.bookmark .bookmark-title');
+  const search = (/** @type {import('@playwright/test').Page} */ page) =>
+    page.getByLabel('Search bookmarks');
+  const NO_MATCH = 'No bookmarks match your search.';
+  const NO_BOOKMARKS = 'No bookmarks yet. Add your first one above.';
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await addBookmark(page, MDN);
+    await addBookmark(page, EXAMPLE);
+  });
+
+  test('finds the MDN bookmark by title, URL or notes, ignoring case', async ({ page }) => {
+    for (const query of ['mdn', 'MOZILLA', 'reference for html']) {
+      await search(page).fill(query);
+      await expect(titles(page)).toHaveText([MDN.title]);
+    }
+  });
+
+  test('updates on every keystroke', async ({ page }) => {
+    await search(page).pressSequentially('pas');
+    await expect(titles(page)).toHaveText([EXAMPLE.title]);
+    await search(page).pressSequentially('ta');
+    await expect(titles(page)).toHaveText([EXAMPLE.title]);
+    await search(page).pressSequentially('zzz');
+    await expect(page.getByText(NO_MATCH)).toBeVisible();
+  });
+
+  test('does not match against tags', async ({ page }) => {
+    await search(page).fill('dinner');
+    await expect(titles(page)).toHaveCount(0);
+    await expect(page.getByText(NO_MATCH)).toBeVisible();
+  });
+
+  test('a search with no results shows the no-match message', async ({ page }) => {
+    await search(page).fill('zzzz');
+    await expect(titles(page)).toHaveCount(0);
+    await expect(page.getByText(NO_MATCH)).toBeVisible();
+    await expect(page.getByText(NO_BOOKMARKS)).toBeHidden();
+  });
+
+  test('clearing the box shows everything again', async ({ page }) => {
+    await search(page).fill('zzzz');
+    await search(page).fill('');
+    await expect(titles(page)).toHaveCount(2);
+    await expect(page.getByText(NO_MATCH)).toBeHidden();
+  });
+
+  test('searches within the active tag filter', async ({ page }) => {
+    await addBookmark(page, {
+      url: 'https://example.com/soup',
+      title: 'Soup Basics',
+      notes: '',
+      tags: 'recipes',
+    });
+    await page.locator('#tag-filter').getByRole('button', { name: 'recipes' }).click();
+    await expect(titles(page)).toHaveCount(2);
+
+    await search(page).fill('example.com');
+    await expect(titles(page)).toHaveCount(2);
+
+    await search(page).fill('soup');
+    await expect(titles(page)).toHaveText(['Soup Basics']);
+
+    // MDN matches the text but is outside the recipes filter.
+    await search(page).fill('mdn');
+    await expect(page.getByText(NO_MATCH)).toBeVisible();
+  });
+
+  test('with zero bookmarks the no-bookmarks message still shows', async ({ page }) => {
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+    await expect(page.getByText(NO_BOOKMARKS)).toBeVisible();
+
+    await search(page).fill('anything');
+    await expect(page.getByText(NO_BOOKMARKS)).toBeVisible();
+    await expect(page.getByText(NO_MATCH)).toBeHidden();
+  });
+});

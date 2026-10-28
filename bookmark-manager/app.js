@@ -5,6 +5,10 @@ const formError = document.getElementById("form-error");
 const list = document.getElementById("bookmark-list");
 const emptyMessage = document.getElementById("empty-message");
 const tagFilter = document.getElementById("tag-filter");
+const searchInput = document.getElementById("search");
+
+const NO_BOOKMARKS_TEXT = "No bookmarks yet. Add your first one above.";
+const NO_MATCH_TEXT = "No bookmarks match your search.";
 
 const submitButton = form.querySelector('button[type="submit"]');
 
@@ -315,12 +319,23 @@ function renderTagFilter() {
   }
 }
 
+// Case-insensitive match on title, URL and notes (not tags). query is lowercase.
+function matchesSearch(bookmark, query) {
+  if (query === "") return true;
+  return [bookmark.title, bookmark.url, bookmark.notes].some((text) =>
+    text.toLowerCase().includes(query),
+  );
+}
+
 function render() {
   list.innerHTML = "";
   renderTagFilter();
 
+  const query = searchInput.value.trim().toLowerCase();
   const visible = bookmarks.filter(
-    (bookmark) => selectedTag === null || bookmark.tags.includes(selectedTag),
+    (bookmark) =>
+      (selectedTag === null || bookmark.tags.includes(selectedTag)) &&
+      matchesSearch(bookmark, query),
   );
   const newestFirst = [...visible].sort((a, b) =>
     b.createdAt.localeCompare(a.createdAt),
@@ -330,8 +345,11 @@ function render() {
     list.append(createBookmarkItem(bookmark));
   }
 
-  emptyMessage.hidden = bookmarks.length > 0;
+  emptyMessage.textContent =
+    bookmarks.length === 0 ? NO_BOOKMARKS_TEXT : NO_MATCH_TEXT;
+  emptyMessage.hidden = newestFirst.length > 0;
 }
 
 form.addEventListener("submit", handleSubmit);
+searchInput.addEventListener("input", render);
 render();
