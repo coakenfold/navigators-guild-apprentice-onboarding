@@ -171,3 +171,53 @@ Each step should work before moving on to the next.
 - Sort options (A–Z, oldest first)
 - Dark mode
 - Auto-fetching the page title from the URL
+
+## Addendum: features added after this document (2026-11-05)
+
+These features were added on purpose during the build (slice 6 and the follow-up polish in `PROCESS.md`), after this document was written. They are part of version 1. Where they differ from the sections above, this addendum wins.
+
+### A.1 Collapsible add form (changes §3)
+
+- The add form starts **collapsed**. A full-width toggle button with a round "+" icon sits where the form was, labelled "Add a bookmark".
+- Activating the toggle opens the form and moves focus to the URL field. While the form is open, the "+" turns into an "×" and the label reads "Close form". It reads "Editing bookmark" while an edit is in progress.
+- The form closes after a successful Save or Update, and also when you press the toggle again, press the new **Cancel** button, or press **Escape** inside the form. Closing the form clears it and returns it to add mode.
+- **Edit** on a bookmark opens the form if it is closed.
+- The toggle uses `aria-expanded` and `aria-controls`, so its state is announced.
+
+### A.2 Motion
+
+- **Drawer animation:** the form slides open and closed over 450ms with an ease-in-out curve. Each row of fields fades in as the drawer edge passes it. If you interrupt it, the animation reverses from where it is.
+- **Rolling label:** the toggle text rolls between its states over 350ms, like an alarm-clock drum. The outgoing text is hidden from screen readers.
+- **List items** fade in briefly when the list is drawn.
+- **Reduced motion:** with `prefers-reduced-motion: reduce`, all of these animations are skipped, in both the CSS and the JavaScript.
+
+### A.3 Dark mode (moved from §7 into version 1)
+
+- The colours follow the operating system's `prefers-color-scheme` setting. All colours are CSS custom properties on `:root`, with a dark set: a dark navy background, light text and a lighter blue accent.
+- There is no manual toggle. The page follows the system setting.
+
+### A.4 Bookmark display (adds to §2.2)
+
+- Each bookmark shows its **domain** (for example `developer.mozilla.org`, with `www.` removed) as a small muted label next to the title, as well as the full URL line.
+- **Edit** and **Delete** are icon buttons: a pencil and a trash can. Their accessible names are "Edit <title>" and "Delete <title>", and they show tooltips.
+- In edit mode the submit button reads **Update** instead of Save.
+
+### A.5 Validation and errors (adds to §2.1)
+
+- URLs are checked with the browser's `URL` parser and must use `http:` or `https:`.
+- Errors appear in a message area under the fields (`role="alert"`). The field with the problem is marked `aria-invalid` and linked to the message, and it receives focus.
+
+### A.6 Accessibility and phone layout (adds to §3)
+
+- Every element you can focus shows a visible focus ring in the accent colour.
+- Below 500px wide, buttons, tag chips and fields are at least 44px tall, so they're easy to tap. The search box and the tag chips stack.
+- The search box has a visually hidden label, "Search bookmarks".
+
+### A.7 Developer tooling (adds to §4)
+
+- The app still needs nothing installed to run. You can open `index.html` directly.
+- For development only, `package.json` provides `npm run start`, which serves the app at http://localhost:3000. It also provides a Playwright test suite in `tests/`. Neither is needed to use the app.
+
+### Known gaps
+
+`REVIEW.md` lists open issues with these features, such as keyboard focus after actions and long tags on phones.
