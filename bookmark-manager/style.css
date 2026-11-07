@@ -7,7 +7,7 @@
   --border: #e5e7eb;
   --bg: #f5f6f8;
   --surface: #fff;
-  --field-border: #94a3b8;
+  --field-border: #64748b;
   --pill: #eef2ff;
   --error: #b91c1c;
   --on-error: #fff;
@@ -321,6 +321,8 @@ button.secondary {
 }
 
 .tag {
+  max-width: 100%;
+  overflow-wrap: anywhere;
   padding: 2px 12px;
   font-size: 0.8rem;
   background: var(--pill);

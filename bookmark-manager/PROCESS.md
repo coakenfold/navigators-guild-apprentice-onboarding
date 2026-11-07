@@ -85,6 +85,14 @@ I made these changes after the slice, one request at a time:
 
 Verification here was mostly scripted sampling rather than looking at the result, and the agent noted each time that it hadn't watched it in a browser.
 
+### 8. Review fixes: D1, D2, D3 and R5 (2026-11-07)
+
+- **Asked:** [`prompt-review-fixes-3.md`](./prompt-review-fixes-3.md): red/green tests first, then fixes for keyboard focus (D1), long tags on phones (D2), URL validation (D3) and light-mode input border contrast (R5).
+- **Red:** 19 new tests per browser. In the three browsers, 40 failed and 17 passed. Each failure matched its finding: focus landed on `BODY` (D1); `scrollWidth` was 406 against 320 (D2); the light border measured 2.37:1 (R5); and the error message never appeared for `https:example.com` and `http:/example.com` (D3). Chromium also failed on the space-in-host URL; Firefox and WebKit already reject it, as the prompt expected. The tests that passed before the fix were the dismissed-delete case (nothing re-renders), `ftp://`, the two valid URLs and dark-mode contrast.
+- **Green:** `render()` now remembers the focused chip or bookmark tag (via `data-tag` and `data-id`) and refocuses it. Delete and save move focus explicitly. `validateUrl` checks the typed text first. `.tag` got `max-width: 100%` and `overflow-wrap: anywhere`. Light `--field-border` is now `#64748b`.
+- **Adjusted:** one test needed a browser-specific key. Playwright's macOS WebKit does not Tab onto buttons (checked with a plain page of three buttons), so the chip Tab test uses Option+Tab there. No existing test changed.
+- **Result:** the new tests pass in all three browsers, and the full suite passed: 162 tests across Chromium, Firefox and WebKit. Not done: a manual keyboard run-through or a check for console errors; the tests don't assert on the console.
+
 ## Learnings
 
 Generating a design document worked quite well. Applying the `/decomposition` skill against that document provided me with vertical slices that I could work on in phases. Scope can creep very easily in the slices with a single sentence.

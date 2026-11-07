@@ -18,7 +18,7 @@ I found **3 confirmed defects**, all low to medium severity. Two break a stated 
 
 | #   | Type   | Finding                                                                | Severity                         |
 | --- | ------ | ---------------------------------------------------------------------- | -------------------------------- |
-| D1  | Defect | Keyboard focus is lost after tag, Delete and Update actions            | Medium                           |
+| D1  | Defect | Keyboard focus is lost after tag, Delete and Update actions (fixed)    | Medium                           |
 | D2  | Defect | A long tag causes sideways scrolling on phones                         | Low–Medium                       |
 | D3  | Defect | URL validation accepts URLs that don't start with `http://`/`https://` | Low                              |
 | R1  | Risk   | Two open tabs overwrite each other's bookmarks (reproduced)            | Medium                           |
@@ -34,7 +34,7 @@ I found **3 confirmed defects**, all low to medium severity. Two break a stated 
 
 ### D1. Keyboard focus is lost after tag, Delete and Update actions
 
-- **Status:** fix planned in [prompt-review-fixes-3.md](prompt-review-fixes-3.md), with red/green Playwright tests. Not built yet.
+- **Status:** fixed (2026-11-07) via [prompt-review-fixes-3.md](prompt-review-fixes-3.md), with red/green Playwright tests in the `Review fixes` block.
 - **Requirement:** PROCESS.md says the app "Supports keyboard navigation". `prompt-slice-6.md` sets "Can navigate by keyboard-only" as a Done-when item. DESIGN.md has no keyboard requirement of its own, so this is measured against the slice criterion.
 - **Location:**
   - [app.js:508-510](app.js#L508-L510) and [app.js:493](app.js#L493): `render()` clears the list and the chip row with `innerHTML = ""` and builds them again.
@@ -46,7 +46,7 @@ I found **3 confirmed defects**, all low to medium severity. Two break a stated 
 
 ### D2. A long tag causes sideways scrolling on phones
 
-- **Status:** fix planned in [prompt-review-fixes-3.md](prompt-review-fixes-3.md), with red/green Playwright tests. Not built yet.
+- **Status:** fixed (2026-11-07) via [prompt-review-fixes-3.md](prompt-review-fixes-3.md), with red/green Playwright tests in the `Review fixes` block.
 - **Requirement:** DESIGN §3, Phones: "No sideways scrolling."
 - **Location:** [style.css:313-326](style.css#L313-L326) (`.tag` / `button.tag`) and [style.css:346-349](style.css#L346-L349) (`.tag-filter`). Long URLs and titles wrap correctly thanks to `overflow-wrap: anywhere`, but tag buttons have no wrapping or width limit.
 - **Impact:** one unbroken tag of about 50+ characters makes the whole page scroll sideways. Typical tags are fine, so this is an edge case, but the requirement has no exceptions.
@@ -54,7 +54,7 @@ I found **3 confirmed defects**, all low to medium severity. Two break a stated 
 
 ### D3. URL validation accepts URLs that don't start with `http://`/`https://`
 
-- **Status:** fix planned in [prompt-review-fixes-3.md](prompt-review-fixes-3.md), with red/green Playwright tests. Not built yet.
+- **Status:** fixed (2026-11-07) via [prompt-review-fixes-3.md](prompt-review-fixes-3.md), with red/green Playwright tests in the `Review fixes` block.
 - **Requirement:** DESIGN §2.1: URL "must be a valid link starting with `http://` or `https://`."
 - **Location:** [app.js:55-69](app.js#L55-L69) (`validateUrl`), which checks `parsed.protocol` rather than the text the user typed.
 - **Impact:** the `URL` parser forgives some typos, so these are accepted and **stored exactly as typed**:
@@ -103,7 +103,7 @@ I found **3 confirmed defects**, all low to medium severity. Two break a stated 
 
 ### R5. Light-mode input borders are below 3:1 contrast
 
-- **Status:** fix planned in [prompt-review-fixes-3.md](prompt-review-fixes-3.md), with red/green Playwright tests. Not built yet.
+- **Status:** fixed (2026-11-07) via [prompt-review-fixes-3.md](prompt-review-fixes-3.md), with red/green Playwright tests in the `Review fixes` block.
 - **Requirement:** `prompt-slice-6.md`, "Text has adequate contrast". Text passes. Control boundaries are a related WCAG 1.4.11 concern that PROCESS.md notes were never checked.
 - **Location:** [style.css:10](style.css#L10) (`--field-border: #94a3b8`) and [style.css:179-180](style.css#L179-L180).
 - **Measured:** the field border against the white panel is **2.56:1** (WCAG 1.4.11 asks for 3:1). Dark mode is 3.33:1. All text pairs pass at 5.17:1 or better, for example muted text 5.98:1, link 5.17:1 and Delete 6.47:1.
@@ -234,3 +234,7 @@ The author has acknowledged optional improvements **O3, O4, O5 and O6**. **No ch
 - **The unnumbered "Stricter URL check":** covered by fixes-3, as part of D3.
 
 Every finding in this review now has a status: planned, decided, resolved or acknowledged.
+
+## Update (2026-11-07): D1, D2, D3 and R5 fixed
+
+D1, D2, D3 and R5 are fixed and marked as such above. The new tests are in the `Review fixes` block of `tests/bookmarks.spec.js`: `D1 keyboard focus` (9 tests), `D2 long tags on phones` (320px and 375px), `D3 URL validation` (4 rejected inputs, 2 accepted) and `R5 input border contrast` (light and dark). All pass in Chromium, Firefox and WebKit.

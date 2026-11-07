@@ -542,3 +542,214 @@ test.describe('Live search', () => {
     await expect(page.getByText(NO_MATCH)).toBeHidden();
   });
 });
+
+test.describe('Review fixes', () => {
+  const SUBMIT = '#bookmark-form button[type="submit"]';
+  const LONG_TAG = 'averyveryverylongtagnamewithoutanyspacesatallforthetest';
+
+  /** Add a bookmark without relying on the submit button's label. */
+  async function add(page, { url, title, notes = '', tags = '' }) {
+    await openForm(page);
+    await page.getByLabel('URL').fill(url);
+    await page.getByLabel('Title').fill(title);
+    await page.getByLabel('Notes').fill(notes);
+    await page.getByLabel('Tags').fill(tags);
+    await page.locator(SUBMIT).click();
+  }
+
+  /** Describe the focused element: its tag, text, and owning bookmark title. */
+  const focused = (page) =>
+    page.evaluate(() => {
+      const el = document.activeElement;
+      return {
+        tag: el.tagName,
+        id: el.id,
+        text: el.textContent.trim(),
+        className: el.className,
+        inChips: !!el.closest('#tag-filter'),
+        bookmark: el.closest('.bookmark')?.querySelector('.bookmark-title')?.textContent ?? null,
+      };
+    });
+
+  /** Press Enter on a locator via the keyboard. */
+  async function press(locator) {
+    await locator.focus();
+    await locator.press('Enter');
+  }
+
+  // Newest first: Third, Second, First.
+  async function seedThree(page) {
+    await page.goto('/');
+    await add(page, { url: 'https://a.example.com', title: 'First', tags: 'alpha, beta' });
+    await page.waitForTimeout(5);
+    await add(page, { url: 'https://b.example.com', title: 'Second', tags: 'alpha' });
+    await page.waitForTimeout(5);
+    await add(page, { url: 'https://c.example.com', title: 'Third', tags: 'beta' });
+    await expect(page.locator('.bookmark')).toHaveCount(3);
+  }
+
+  test.describe('D1 keyboard focus', () => {
+    test.beforeEach(async ({ page }) => seedThree(page));
+
+    test('tag chip keeps focus after filtering, and Tab moves to the next chip', async ({ page, browserName }) => {
+      const chip = page.locator('#tag-filter .chip', { hasText: 'alpha' });
+      await press(chip);
+      expect(await focused(page)).toMatchObject({ tag: 'BUTTON', text: 'alpha', inChips: true });
+      // macOS WebKit skips buttons on plain Tab (Safari setting); Option+Tab reaches them.
+      await page.keyboard.press(browserName === 'webkit' ? 'Alt+Tab' : 'Tab');
+      expect(await focused(page)).toMatchObject({ text: 'beta', inChips: true });
+    });
+
+    test('"All" chip keeps focus after clearing the filter', async ({ page }) => {
+      await press(page.locator('#tag-filter .chip', { hasText: 'alpha' }));
+      await press(page.locator('#tag-filter .chip', { hasText: 'All' }));
+      expect(await focused(page)).toMatchObject({ tag: 'BUTTON', text: 'All', inChips: true });
+    });
+
+    test('a tag on a bookmark keeps focus on the same tag of the same bookmark', async ({ page }) => {
+      const item = page.locator('.bookmark', { hasText: 'Second' });
+      await press(item.locator('button.tag', { hasText: 'alpha' }));
+      expect(await focused(page)).toMatchObject({
+        tag: 'BUTTON',
+        text: 'alpha',
+        inChips: false,
+        bookmark: 'Second',
+      });
+    });
+
+    test('deleting moves focus to the next bookmark title', async ({ page }) => {
+      page.once('dialog', (d) => d.accept());
+      await press(page.getByRole('button', { name: 'Delete Second' }));
+      expect(await focused(page)).toMatchObject({ tag: 'A', text: 'First' });
+    });
+
+    test('deleting the last bookmark moves focus to the previous title', async ({ page }) => {
+      page.once('dialog', (d) => d.accept());
+      await press(page.getByRole('button', { name: 'Delete First' }));
+      expect(await focused(page)).toMatchObject({ tag: 'A', text: 'Second' });
+    });
+
+    test('deleting the only bookmark moves focus to the form toggle', async ({ page }) => {
+      page.on('dialog', (d) => d.accept());
+      await press(page.getByRole('button', { name: 'Delete Third' }));
+      await press(page.getByRole('button', { name: 'Delete Second' }));
+      await press(page.getByRole('button', { name: 'Delete First' }));
+      await expect(page.locator('.bookmark')).toHaveCount(0);
+      expect(await focused(page)).toMatchObject({ id: 'form-toggle' });
+    });
+
+    test('dismissing the delete dialog keeps focus on Delete', async ({ page }) => {
+      page.once('dialog', (d) => d.dismiss());
+      const del = page.getByRole('button', { name: 'Delete Second' });
+      await press(del);
+      expect(await focused(page)).toMatchObject({ className: 'delete-button' });
+      await expect(del).toBeFocused();
+    });
+
+    test('a successful save moves focus to the form toggle', async ({ page }) => {
+      await openForm(page);
+      await page.getByLabel('URL').fill('https://d.example.com');
+      await page.getByLabel('Title').fill('Fourth');
+      await page.locator(SUBMIT).focus();
+      await page.locator(SUBMIT).press('Enter');
+      await expect(page.locator('.bookmark')).toHaveCount(4);
+      expect(await focused(page)).toMatchObject({ id: 'form-toggle' });
+    });
+
+    test('a successful update moves focus to the form toggle', async ({ page }) => {
+      await press(page.getByRole('button', { name: 'Edit Second' }));
+      await page.getByLabel('Title').fill('Second edited');
+      await page.locator(SUBMIT).focus();
+      await page.locator(SUBMIT).press('Enter');
+      await expect(page.locator('.bookmark-title', { hasText: 'Second edited' })).toBeVisible();
+      expect(await focused(page)).toMatchObject({ id: 'form-toggle' });
+    });
+  });
+
+  test.describe('D2 long tags on phones', () => {
+    for (const width of [320, 375]) {
+      test(`no sideways scrolling at ${width}px`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 640 });
+        await page.goto('/');
+        await add(page, { url: 'https://example.com', title: 'Long tag', tags: LONG_TAG });
+        await expect(page.locator('.bookmark')).toHaveCount(1);
+
+        const m = await page.evaluate(() => ({
+          scroll: document.documentElement.scrollWidth,
+          client: document.documentElement.clientWidth,
+          chipRight: document.querySelector('#tag-filter .chip:last-child').getBoundingClientRect().right,
+          tagRight: document.querySelector('.bookmark button.tag').getBoundingClientRect().right,
+        }));
+        expect(m.scroll).toBeLessThanOrEqual(m.client);
+        expect(m.chipRight).toBeLessThanOrEqual(m.client);
+        expect(m.tagRight).toBeLessThanOrEqual(m.client);
+      });
+    }
+  });
+
+  test.describe('D3 URL validation', () => {
+    const MESSAGE = /URL|http/;
+    for (const bad of [
+      'https:example.com',
+      'http:/example.com',
+      'https://exa mple.com',
+      'ftp://example.com',
+    ]) {
+      test(`rejects ${bad}`, async ({ page }) => {
+        await page.goto('/');
+        await add(page, { url: 'https://keep.example.com', title: 'Keep' });
+        const before = await storedBookmarks(page);
+
+        await add(page, { url: bad, title: 'Bad' });
+        await expect(page.locator('#form-error')).toBeVisible();
+        await expect(page.locator('#form-error')).toContainText(MESSAGE);
+        await expect(page.locator('.bookmark')).toHaveCount(1);
+        expect(await storedBookmarks(page)).toEqual(before);
+      });
+    }
+
+    for (const good of ['HTTPS://Example.com', 'https://example.com/path?q=1#x']) {
+      test(`accepts ${good}`, async ({ page }) => {
+        await page.goto('/');
+        await add(page, { url: good, title: 'Good' });
+        await expect(page.locator('#form-error')).toBeHidden();
+        await expect(page.locator('.bookmark')).toHaveCount(1);
+        expect(await storedBookmarks(page)).toHaveLength(1);
+      });
+    }
+  });
+
+  test.describe('R5 input border contrast', () => {
+    /** WCAG contrast ratio of two "rgb(r, g, b)" strings. */
+    function contrast(a, b) {
+      const lum = (css) => {
+        const [r, g, bl] = css.match(/[\d.]+/g).slice(0, 3).map((v) => {
+          const c = Number(v) / 255;
+          return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+      };
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    }
+
+    for (const scheme of ['light', 'dark']) {
+      test(`${scheme}: URL input border is at least 3:1`, async ({ page }) => {
+        await page.emulateMedia({ colorScheme: scheme });
+        await page.goto('/');
+        await openForm(page);
+        const s = await page.evaluate(() => {
+          const input = document.getElementById('url');
+          const style = getComputedStyle(input);
+          return {
+            border: style.borderTopColor,
+            field: style.backgroundColor,
+            panel: getComputedStyle(input.closest('.panel')).backgroundColor,
+          };
+        });
+        expect(contrast(s.border, s.field)).toBeGreaterThanOrEqual(3);
+        expect(contrast(s.border, s.panel)).toBeGreaterThanOrEqual(3);
+      });
+    }
+  });
+});

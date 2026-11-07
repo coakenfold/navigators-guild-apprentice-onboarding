@@ -54,17 +54,16 @@ function formatDate(isoString) {
 
 // Returns an error message for an unusable URL, or '' if it is valid.
 function validateUrl(text) {
-  let parsed;
+  if (!/^https?:\/\//i.test(text)) {
+    return "URL must start with http:// or https://";
+  }
   try {
-    parsed = new URL(text);
+    new URL(text);
   } catch {
     return "Enter a valid URL, for example https://example.com.";
   }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return "URL must start with http:// or https://";
-  }
-  if (!parsed.hostname) {
-    return "URL must include a website name, for example https://example.com.";
+  if (/\s/.test(text)) {
+    return "URL can't contain spaces. Enter it like https://example.com.";
   }
   return "";
 }
@@ -132,6 +131,7 @@ function handleSubmit(event) {
   resetForm();
   setFormOpen(false);
   render();
+  formToggle.focus();
 }
 
 const FORM_DURATION = 450;
@@ -313,6 +313,7 @@ function startEdit(bookmark) {
 function deleteBookmark(id) {
   if (!confirm("Are you sure?")) return;
 
+  const position = [...list.children].findIndex((item) => item.dataset.id === id);
   bookmarks = bookmarks.filter((bookmark) => bookmark.id !== id);
   saveBookmarks();
   if (id === editingId) {
@@ -320,6 +321,11 @@ function deleteBookmark(id) {
     setFormOpen(false);
   }
   render();
+
+  // Focus the bookmark that took its place (or the previous one), else the toggle.
+  const titles = list.querySelectorAll(".bookmark-title");
+  const next = titles[Math.min(position, titles.length - 1)];
+  (next ?? formToggle).focus();
 }
 
 // "https://www.example.com/a/b" -> "example.com"
@@ -388,6 +394,7 @@ function createEditIcon() {
 function createBookmarkItem(bookmark) {
   const item = document.createElement("li");
   item.className = "bookmark";
+  item.dataset.id = bookmark.id;
 
   const header = document.createElement("div");
   header.className = "bookmark-header";
@@ -434,6 +441,8 @@ function createBookmarkItem(bookmark) {
       pill.type = "button";
       pill.className = "tag";
       pill.textContent = tag;
+      pill.dataset.id = bookmark.id;
+      pill.dataset.tag = tag;
       pill.addEventListener("click", () => toggleTag(tag));
       tags.append(pill);
     }
@@ -476,6 +485,7 @@ function createChip(label, tag) {
   chip.type = "button";
   chip.className = "tag chip";
   chip.textContent = label;
+  chip.dataset.tag = tag ?? "";
   const active = selectedTag === tag;
   chip.classList.toggle("selected", active);
   chip.setAttribute("aria-pressed", active);
@@ -510,7 +520,23 @@ function matchesSearch(bookmark, query) {
   );
 }
 
+// A selector for the focused chip or bookmark tag, or null for anything else.
+function focusedTagSelector() {
+  const el = document.activeElement;
+  if (!el.dataset || el.dataset.tag === undefined) return null;
+  const tag = `[data-tag="${CSS.escape(el.dataset.tag)}"]`;
+  if (tagFilter.contains(el)) return `#tag-filter ${tag}`;
+  return `#bookmark-list [data-id="${CSS.escape(el.dataset.id)}"]${tag}`;
+}
+
+// Rebuilding the DOM drops focus, so put it back on the matching button.
 function render() {
+  const refocus = focusedTagSelector();
+  renderAll();
+  if (refocus) document.querySelector(refocus)?.focus();
+}
+
+function renderAll() {
   list.innerHTML = "";
   renderTagFilter();
 
