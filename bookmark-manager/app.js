@@ -15,6 +15,7 @@ const formToggleLabel = document.getElementById("form-toggle-label");
 const formCancel = document.getElementById("form-cancel");
 
 const submitButton = form.querySelector('button[type="submit"]');
+const formHeading = document.getElementById("form-heading");
 
 let bookmarks = loadBookmarks();
 let editingId = null;
@@ -186,6 +187,8 @@ function animateForm(open) {
       for (const el of row.elements) el.style.opacity = "";
     }
     form.hidden = !open;
+    // Add-mode names wait until the drawer is shut so the closing rows don't change.
+    if (!open && editingId === null) setFormMode();
   };
 
   if (reduceMotion) {
@@ -253,17 +256,11 @@ function rollToggleLabel(text, down) {
 
 // Show or hide the add form; the toggle button always reflects the state.
 function setFormOpen(open) {
+  if (open && editingId === null) setFormMode();
   if (open !== formOpen) animateForm(open);
   formOpen = open;
   formToggle.setAttribute("aria-expanded", open);
-  rollToggleLabel(
-    open
-      ? editingId === null
-        ? "Close form"
-        : "Editing bookmark"
-      : "Add a bookmark",
-    open,
-  );
+  rollToggleLabel(open ? "Close form" : "Add a bookmark", open);
   formToggle.classList.toggle("open", open);
 }
 
@@ -285,10 +282,18 @@ function handleFormKeydown(event) {
   if (event.key === "Escape") cancelForm();
 }
 
-// Return the form to add mode and clear it.
+// Name the form and its buttons for add mode, or for editing `title`.
+function setFormMode(title) {
+  const editing = title !== undefined;
+  formHeading.textContent = editing ? `Edit bookmark: ${title}` : "Add a bookmark";
+  submitButton.textContent = editing ? "Save changes" : "Save";
+  formCancel.textContent = editing ? "Discard changes" : "Cancel";
+}
+
+// Return the form to add mode and clear it. The add-mode heading and button
+// names are applied once the drawer has closed (see animateForm).
 function resetForm() {
   editingId = null;
-  submitButton.textContent = "Save";
   clearError();
   form.reset();
 }
@@ -300,7 +305,7 @@ function startEdit(bookmark) {
   form.title.value = bookmark.title;
   form.notes.value = bookmark.notes;
   form.tags.value = bookmark.tags.join(", ");
-  submitButton.textContent = "Update";
+  setFormMode(bookmark.title);
   setFormOpen(true);
   form.url.focus();
 }

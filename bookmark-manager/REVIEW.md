@@ -121,7 +121,7 @@ I found **3 confirmed defects**, all low to medium severity. Two break a stated 
 ## Questions
 
 1. **Resolved (see the update at the end).** **The design document and the build have drifted apart.** DESIGN §3 shows the add form always open, and §7 lists dark mode as a future idea. The build ships a collapsed form, a JavaScript drawer animation, a rolling label, dark mode and a domain label. `prompt-slice-6.md` says "Don't change any behavior" and also asks for the collapsing form. Should DESIGN.md be updated to describe what was built? Or are these extras outside version 1? Note that the collapsed form adds a click to the "save a link in a few seconds" goal.
-2. **Decided, fix pending (see the update at the end).** **Accessible names in edit mode.** During an edit, the toggle reads "Editing bookmark" ([app.js:259-266](app.js#L259-L266)), but pressing it closes the form and discards the edit. The form's `aria-label` also stays "Add a bookmark" ([index.html:20](index.html#L20)). Is that what you want a screen-reader user to hear?
+2. **Resolved (see the update at the end).** **Accessible names in edit mode.** During an edit, the toggle reads "Editing bookmark" ([app.js:259-266](app.js#L259-L266)), but pressing it closes the form and discards the edit. The form's `aria-label` also stays "Add a bookmark" ([index.html:20](index.html#L20)). Is that what you want a screen-reader user to hear?
 3. **Resolved: intentional (see the update at the end).** **Escape discards edits.** Escape anywhere in the form ([app.js:284-286](app.js#L284-L286)) and clicking Edit on a different bookmark both drop unsaved changes without asking. Is that intended?
 4. **Resolved: intentional (see the update at the end).** **Duplicate URLs.** The same URL can be saved more than once. Is that fine for version 1?
 5. **Resolved: intentional (see the update at the end).** **URL shown twice.** Each card shows both the domain label and the full URL. DESIGN §2.2 asks for "the URL in smaller text" only. Is the duplication wanted?
@@ -180,6 +180,8 @@ The author chose to keep the toggle's name about its action and move the edit st
 
 The work is described in [prompt-review-fixes-2.md](prompt-review-fixes-2.md), which keeps Escape behaviour (Question 3) and focus handling (D1) out of scope. **It has not been built yet.** Question 2 is marked "Decided, fix pending" until that prompt has run and its tests pass. Then it can be marked resolved.
 
+- **Built (2026-11-07):** prompt-review-fixes-2.md has run and Question 2 is resolved. The toggle, form heading and buttons now use the names above, DESIGN.md Addendum A.1 and A.4 describe them, and new `Edit mode names` Playwright tests cover them (105 tests pass in Chromium, Firefox and WebKit).
+
 ## Update (2026-11-05): Questions 3, 4 and 5 resolved
 
 The author confirmed that all three behaviours are intentional for version 1:
@@ -188,7 +190,7 @@ The author confirmed that all three behaviours are intentional for version 1:
 - **Question 4, duplicate URLs:** allowed on purpose. Saving the same URL twice, for example with different notes or tags, is not treated as an error.
 - **Question 5, URL shown twice:** the domain label and the full URL line are both intended, as described in DESIGN.md Addendum A.4.
 
-All the review's questions now have an answer. Question 2 is still waiting on its fix, as noted above. The defects (D1–D3) and risks (R1–R6) are unchanged.
+All the review's questions now have an answer. Question 2 was waiting on its fix at the time; it has since been built (see the Question 2 update above). The defects (D1–D3) and risks (R1–R6) are unchanged.
 
 ## Update (2026-11-05): fix planned for D1, D2, D3 and R5
 

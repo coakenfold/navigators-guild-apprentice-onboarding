@@ -17,7 +17,9 @@
         <span class="form-toggle-icon" aria-hidden="true">+</span>
         <span id="form-toggle-label"><span class="roll-text">Add a bookmark</span></span>
       </button>
-      <form id="bookmark-form" aria-label="Add a bookmark" novalidate hidden>
+      <form id="bookmark-form" aria-labelledby="form-heading" novalidate hidden>
+        <h2 id="form-heading" class="form-heading">Add a bookmark</h2>
+
         <label for="url">URL</label>
         <input type="url" id="url" name="url" placeholder="https://..." required>
 

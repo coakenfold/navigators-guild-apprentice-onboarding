@@ -179,9 +179,11 @@ These features were added on purpose during the build (slice 6 and the follow-up
 ### A.1 Collapsible add form (changes §3)
 
 - The add form starts **collapsed**. A full-width toggle button with a round "+" icon sits where the form was, labelled "Add a bookmark".
-- Activating the toggle opens the form and moves focus to the URL field. While the form is open, the "+" turns into an "×" and the label reads "Close form". It reads "Editing bookmark" while an edit is in progress.
-- The form closes after a successful Save or Update, and also when you press the toggle again, press the new **Cancel** button, or press **Escape** inside the form. Closing the form clears it and returns it to add mode.
-- **Edit** on a bookmark opens the form if it is closed.
+- Activating the toggle opens the form and moves focus to the URL field. While the form is open, the "+" turns into an "×" and the label reads "Close form", in add mode and edit mode alike. The toggle always names its action.
+- The form starts with a visible heading that carries the edit status: "Add a bookmark" in add mode, or "Edit bookmark: <title>" while editing, using the title the bookmark had when the edit started. The form takes its accessible name from this heading (`aria-labelledby`).
+- The buttons read **Save** and **Cancel** in add mode, and **Save changes** and **Discard changes** in edit mode.
+- The form closes after a successful save, and also when you press the toggle again, press **Cancel** / **Discard changes**, or press **Escape** inside the form. Deleting the bookmark being edited closes it too. Closing the form clears it and returns it to add mode; the heading and buttons switch back to their add-mode names once the drawer has closed.
+- **Edit** on a bookmark opens the form if it is closed. Pressing Edit on another bookmark while editing switches the form, and its heading, to that bookmark.
 - The toggle uses `aria-expanded` and `aria-controls`, so its state is announced.
 
 ### A.2 Motion
@@ -200,7 +202,7 @@ These features were added on purpose during the build (slice 6 and the follow-up
 
 - Each bookmark shows its **domain** (for example `developer.mozilla.org`, with `www.` removed) as a small muted label next to the title, as well as the full URL line.
 - **Edit** and **Delete** are icon buttons: a pencil and a trash can. Their accessible names are "Edit <title>" and "Delete <title>", and they show tooltips.
-- In edit mode the submit button reads **Update** instead of Save.
+- In edit mode the form's heading reads **Edit bookmark: <title>**, the submit button reads **Save changes** instead of Save, and the cancel button reads **Discard changes** instead of Cancel (see A.1).
 
 ### A.5 Validation and errors (adds to §2.1)
 
