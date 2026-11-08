@@ -253,6 +253,9 @@ button.secondary {
 .bookmark {
   padding: 14px 0;
   border-bottom: 1px solid var(--border);
+}
+
+.bookmark.entering {
   animation: fade-in 0.25s ease;
 }
 

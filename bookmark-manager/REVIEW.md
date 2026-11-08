@@ -19,7 +19,7 @@ I found **3 confirmed defects**, all low to medium severity. Two break a stated 
 | #   | Type   | Finding                                                                | Severity                         |
 | --- | ------ | ---------------------------------------------------------------------- | -------------------------------- |
 | D1  | Defect | Keyboard focus is lost after tag, Delete and Update actions (fixed)    | Medium                           |
-| D2  | Defect | A long tag causes sideways scrolling on phones                         | Low–Medium                       |
+| D2  | Defect | A long tag causes sideways scrolling on phones (fixed)                 | Low–Medium                       |
 | D3  | Defect | URL validation accepts URLs that don't start with `http://`/`https://` | Low                              |
 | R1  | Risk   | Two open tabs overwrite each other's bookmarks (reproduced)            | Medium                           |
 | R2  | Risk   | One malformed stored record blanks the whole list (reproduced)         | Medium (High once import exists) |
@@ -130,16 +130,16 @@ I found **3 confirmed defects**, all low to medium severity. Two break a stated 
 
 ## Optional improvements
 
-- O1. **Covered by [prompt-review-fixes-3.md](prompt-review-fixes-3.md) (D1); fixes-4 confirms it.** **Restore focus after render (fixes D1).** Give chips a `data-tag` attribute and refocus the matching chip after `render()`. After a delete, focus the next bookmark, or the list. After an update, focus the toggle or the edited item.
-- O2. **Covered by [prompt-review-fixes-3.md](prompt-review-fixes-3.md) (D2); fixes-4 confirms it.** **Let tags wrap (fixes D2).** Add `overflow-wrap: anywhere` and `max-width: 100%` to `.tag`, then add a 375px `scrollWidth` test.
+- O1. **Done by [prompt-review-fixes-3.md](prompt-review-fixes-3.md) (D1); confirmed 2026-11-07 by fixes-4.** **Restore focus after render (fixes D1).** Give chips a `data-tag` attribute and refocus the matching chip after `render()`. After a delete, focus the next bookmark, or the list. After an update, focus the toggle or the edited item.
+- O2. **Done by [prompt-review-fixes-3.md](prompt-review-fixes-3.md) (D2); confirmed 2026-11-07 by fixes-4.** **Let tags wrap (fixes D2).** Add `overflow-wrap: anywhere` and `max-width: 100%` to `.tag`, then add a 375px `scrollWidth` test.
 - **Stricter URL check (fixes D3).** Before parsing, test `/^https?:\/\//i.test(text)`. Either remove the unreachable hostname branch or add a comment explaining why it stays.
 - O3. **Acknowledged (2026-11-05). No change is planned.** **Normalize on load (R2).** A small `normalizeBookmark()` that defaults `tags` to `[]` and `notes` to `""`, and drops records with no `url`, `title` or `id`. Import will need it too.
 - O4. **Acknowledged (2026-11-05). No change is planned.** **Handle the `storage` event (R1).** Add `window.addEventListener("storage", …)` to reload `bookmarks` and re-render. It's about five lines.
 - O5. **Acknowledged (2026-11-05). No change is planned.** **Wrap `saveBookmarks` in try/catch (R3)** and show the error through `showError`.
 - O6. **Acknowledged (2026-11-05). No change is planned.** **Readability.** `form.title` and `form.url` ([app.js:94-95](app.js#L94-L95)) only work because form controls shadow built-in properties. `form.title` would normally be the form's own `title` attribute. `form.elements.title` is clearer, which supports the "understand every line" goal.
-- O7. **Planned in [prompt-review-fixes-4.md](prompt-review-fixes-4.md).** **Animation.** Every item replays the `fade-in` animation on every keystroke and filter click, because the list is rebuilt each time ([style.css:246](style.css#L246), [app.js:535](app.js#L535)). Consider animating only newly added items.
-- O8. **Planned in [prompt-review-fixes-4.md](prompt-review-fixes-4.md).** **Tag buttons on bookmarks.** Their accessible name is only the tag (for example "recipes"), and they don't show the selected state. `aria-label="Filter by recipes"` and the `selected` class would match the chips.
-- O9. **Planned in [prompt-review-fixes-4.md](prompt-review-fixes-4.md).** **Test gaps** (PROCESS.md already names some of these):
+- O7. **Done (2026-11-07) by [prompt-review-fixes-4.md](prompt-review-fixes-4.md).** **Animation.** Every item replays the `fade-in` animation on every keystroke and filter click, because the list is rebuilt each time ([style.css:246](style.css#L246), [app.js:535](app.js#L535)). Consider animating only newly added items.
+- O8. **Done (2026-11-07) by [prompt-review-fixes-4.md](prompt-review-fixes-4.md).** **Tag buttons on bookmarks.** Their accessible name is only the tag (for example "recipes"), and they don't show the selected state. `aria-label="Filter by recipes"` and the `selected` class would match the chips.
+- O9. **Done (2026-11-07) by [prompt-review-fixes-4.md](prompt-review-fixes-4.md).** **Test gaps** (PROCESS.md already names some of these):
   - There is no permanent tag-filter test block. Cover: a chip filters, clicking it again clears, "All" clears, clicking a bookmark's tag filters, and the filter resets when its last tag disappears ([app.js:491](app.js#L491)).
   - There are no tests for the URL error messages, the phone layout, keyboard focus or reduced motion.
   - The `openForm` helper uses `isVisible()`, which doesn't retry ([tests/bookmarks.spec.js:18-21](tests/bookmarks.spec.js#L18-L21)), and fields are filled while the drawer is still animating. Everything passes today, but this pattern tends to become flaky.
@@ -238,3 +238,7 @@ Every finding in this review now has a status: planned, decided, resolved or ack
 ## Update (2026-11-07): D1, D2, D3 and R5 fixed
 
 D1, D2, D3 and R5 are fixed and marked as such above. The new tests are in the `Review fixes` block of `tests/bookmarks.spec.js`: `D1 keyboard focus` (9 tests), `D2 long tags on phones` (320px and 375px), `D3 URL validation` (4 rejected inputs, 2 accepted) and `R5 input border contrast` (light and dark). All pass in Chromium, Firefox and WebKit.
+
+## Update (2026-11-07): O7, O8 and O9 done, O1 and O2 confirmed
+
+O7, O8 and O9 are done and marked above. O1 and O2 were checked: the fixes-3 focus and long-tag tests pass. The new tests are in these blocks of `tests/bookmarks.spec.js`: `O7 animate only bookmarks that enter the list` (8 tests), `O8 tag buttons on bookmarks` (4), `Tag filter` (7), `Form errors` (7), `Phone layout (375x640)` (5), `Keyboard and focus rings` (3) and `Reduced motion` (3). The `openForm` and `addBookmark` helpers now wait instead of checking once. CLAUDE.md describes what the spec covers.

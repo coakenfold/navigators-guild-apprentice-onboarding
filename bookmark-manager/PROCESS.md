@@ -93,6 +93,22 @@ Verification here was mostly scripted sampling rather than looking at the result
 - **Adjusted:** one test needed a browser-specific key. Playwright's macOS WebKit does not Tab onto buttons (checked with a plain page of three buttons), so the chip Tab test uses Option+Tab there. No existing test changed.
 - **Result:** the new tests pass in all three browsers, and the full suite passed: 162 tests across Chromium, Firefox and WebKit. Not done: a manual keyboard run-through or a check for console errors; the tests don't assert on the console.
 
+### 9. Review fixes: O7, O8 and O9 (2026-11-07)
+
+- **Asked:** [`prompt-review-fixes-4.md`](./prompt-review-fixes-4.md): red/green tests for list animation (O7), tag button names (O8) and the test gaps (O9). O1 and O2 only had to be confirmed. The prerequisite check passed first: the `Review fixes` block was green (162 tests) and D1 and D2 were marked fixed.
+- **Red:** 111 new tests (37 per browser). Thirty runs failed (10 per browser), all for the stated reason. The seven O7 tests failed because bookmarks that should have stayed still were animating. The three failing O8 tests failed because no button was named "Filter by recipes" and `aria-pressed` was missing. My first O8 draft found its buttons by accessible name, so two tests failed at the locator, not at the state check. I moved them to `data-tag` selectors so they fail on `aria-pressed`.
+- **Coverage tests passed straight away, so each got a temporary break** (applied from a saved copy, run in Chromium, then restored; `diff` against the originals showed no leftovers):
+  - Tag filter: ignoring `selectedTag` (6 failed), removing the toggle-off (1), a no-op `clearTag` (1), removing `.sort()` (1), removing the reset line (2), a no-op tag click (1), and dropping the "All" chip (7).
+  - Form errors: changing each message (3, 1, 1 and 1 failed), not setting or not removing `aria-invalid` and `aria-describedby` (6 to 7 failed each, 1 for the removals), not focusing the field (6).
+  - Phone layout: moving the breakpoint (3 failed), two-column form (1), search width (1), date beside title (1), 30px buttons and 30px inputs (1 each), a 500px search box (2), chips above search (1).
+  - Keyboard: no Escape handler, no URL focus, `aria-expanded` stuck, no focus return, and `outline: none` each failed 1 test.
+  - Reduced motion: form, label, transition and animation breaks each failed the matching test.
+  - Two breaks showed weak tests. "Error not hidden after success" passed 7 of 7, because an empty paragraph has no box and `toBeHidden()` proved nothing, so I now assert the `hidden` property. "Filters in a row" changed nothing visible, because flex wrapping still put the search above the chips, so I used `column-reverse` instead.
+- **Green:** `render()` keeps the ids from the last render (`null` at first load) and adds an `entering` class only to new ones, and the `fade-in` animation moved to `.bookmark.entering`. Tag buttons get `aria-label="Filter by <tag>"`, `aria-pressed` and the `selected` class. After the fix, the reduced-motion and filter-row breaks were rerun and still failed their tests.
+- **Result:** the full suite passes: 273 tests across Chromium, Firefox and WebKit. No existing test changed. Only the `openForm` and `addBookmark` helpers did.
+- **`--repeat-each=5`:** the first run had 2 failures out of 1365 (a Chromium Phone layout test, a label measured 3px low). The cause was my `openForm`: the drawer sets `overflow` a frame before `height`, so waiting for "no inline height" could pass before the animation started. The helper now waits for the form to have no inline style at all. After that, the Phone layout tests passed 150 of 150 (30 repeats), and the full run passed 1365 of 1365 (17 minutes).
+- **Not done:** no manual screen reader check. Console errors are asserted only in the `Add & list` and `Edit mode names` blocks.
+
 ## Learnings
 
 Generating a design document worked quite well. Applying the `/decomposition` skill against that document provided me with vertical slices that I could work on in phases. Scope can creep very easily in the slices with a single sentence.

@@ -20,6 +20,8 @@ const formHeading = document.getElementById("form-heading");
 let bookmarks = loadBookmarks();
 let editingId = null;
 let selectedTag = null;
+// Ids shown by the last render; null until the first one, so nothing fades in on load.
+let renderedIds = null;
 
 // Read bookmarks from localStorage, falling back to an empty array.
 function loadBookmarks() {
@@ -441,6 +443,10 @@ function createBookmarkItem(bookmark) {
       pill.type = "button";
       pill.className = "tag";
       pill.textContent = tag;
+      // The name contains the visible text, as WCAG 2.5.3 (Label in Name) asks.
+      pill.setAttribute("aria-label", `Filter by ${tag}`);
+      pill.setAttribute("aria-pressed", selectedTag === tag);
+      pill.classList.toggle("selected", selectedTag === tag);
       pill.dataset.id = bookmark.id;
       pill.dataset.tag = tag;
       pill.addEventListener("click", () => toggleTag(tag));
@@ -551,8 +557,12 @@ function renderAll() {
   );
 
   for (const bookmark of newestFirst) {
-    list.append(createBookmarkItem(bookmark));
+    const item = createBookmarkItem(bookmark);
+    // Only bookmarks that weren't visible last time fade in.
+    if (renderedIds && !renderedIds.has(bookmark.id)) item.classList.add("entering");
+    list.append(item);
   }
+  renderedIds = new Set(newestFirst.map((bookmark) => bookmark.id));
 
   emptyMessage.textContent =
     bookmarks.length === 0 ? NO_BOOKMARKS_TEXT : NO_MATCH_TEXT;

@@ -14,13 +14,28 @@ const EXAMPLE = {
   tags: 'recipes, dinner',
 };
 
-/** The add form starts collapsed; open it if it is not already. */
+/**
+ * The add form starts collapsed. Open it if the toggle says it is closed, then
+ * wait for the drawer animation to finish (it leaves inline styles while it runs).
+ * @param {import('@playwright/test').Page} page
+ */
 async function openForm(page) {
-  const toggle = page.getByRole('button', { name: 'Add a bookmark', exact: true });
-  if (await toggle.isVisible()) await toggle.click();
+  const toggle = page.locator('#form-toggle');
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
+  const form = page.locator('#bookmark-form');
+  await expect(form).toBeVisible();
+  // The animation sets overflow first and height a frame later, then clears both
+  // when it ends, so "no inline style at all" is the only safe finished signal.
+  await expect
+    .poll(() => form.evaluate((el) => el.style.cssText))
+    .toBe('');
 }
 
-/** @param {import('@playwright/test').Page} page */
+/**
+ * Fill the form and save. A good save closes the form, so wait for that. A bad
+ * one shows the error instead, so wait for either outcome.
+ * @param {import('@playwright/test').Page} page
+ */
 async function addBookmark(page, { url, title, notes, tags }) {
   await openForm(page);
   await page.getByLabel('URL').fill(url);
@@ -28,6 +43,15 @@ async function addBookmark(page, { url, title, notes, tags }) {
   await page.getByLabel('Notes').fill(notes);
   await page.getByLabel('Tags').fill(tags);
   await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.getElementById('bookmark-form').hidden ||
+          !document.getElementById('form-error').hidden
+      )
+    )
+    .toBe(true);
 }
 
 /** @param {import('@playwright/test').Page} page */
@@ -751,5 +775,483 @@ test.describe('Review fixes', () => {
         expect(contrast(s.border, s.panel)).toBeGreaterThanOrEqual(3);
       });
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review fixes 4: O7 (animation), O8 (tag buttons) and O9 (test gaps)
+// ---------------------------------------------------------------------------
+
+const SOUP = { url: 'https://example.com/soup', title: 'Soup Basics', notes: '', tags: 'recipes' };
+const SUBMIT_BUTTON = '#bookmark-form button[type="submit"]';
+
+/** @param {import('@playwright/test').Page} page */
+const titles = (page) => page.locator('.bookmark .bookmark-title');
+
+/** Titles of the bookmarks that have a running animation, sorted. */
+const animating = (page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll('.bookmark')]
+      .filter((el) => el.getAnimations().length > 0)
+      .map((el) => el.querySelector('.bookmark-title').textContent)
+      .sort()
+  );
+
+/** Wait until no bookmark is animating. */
+const settle = (page) => expect.poll(() => animating(page)).toEqual([]);
+
+/** Open the form and fill it, but don't wait for the result of saving. */
+async function fillAndSubmit(page, { url = '', title = '', notes = '', tags = '' }) {
+  await openForm(page);
+  await page.getByLabel('URL').fill(url);
+  await page.getByLabel('Title').fill(title);
+  await page.getByLabel('Notes').fill(notes);
+  await page.getByLabel('Tags').fill(tags);
+  await page.locator(SUBMIT_BUTTON).click();
+}
+
+/** Playwright's macOS WebKit only Tabs onto buttons when Option is held. */
+const tabKeys = (browserName) =>
+  browserName === 'webkit'
+    ? { tab: 'Alt+Tab', shiftTab: 'Alt+Shift+Tab' }
+    : { tab: 'Tab', shiftTab: 'Shift+Tab' };
+
+test.describe('O7 animate only bookmarks that enter the list', () => {
+  const search = (page) => page.getByLabel('Search bookmarks');
+  const chip = (page, name) =>
+    page.locator('#tag-filter').getByRole('button', { name, exact: true });
+
+  /** Three bookmarks, newest first: Soup, Pasta, MDN. Waits for the fade to end. */
+  async function seed(page) {
+    await page.goto('/');
+    await addBookmark(page, MDN);
+    await addBookmark(page, EXAMPLE);
+    await addBookmark(page, SOUP);
+    await expect(page.locator('.bookmark')).toHaveCount(3);
+    await settle(page);
+  }
+
+  test('typing a search character that keeps every bookmark leaves them unanimated', async ({ page }) => {
+    await seed(page);
+    await search(page).press('e'); // in all three titles or URLs
+    await expect(page.locator('.bookmark')).toHaveCount(3);
+    expect(await animating(page)).toEqual([]);
+  });
+
+  test('narrowing a filter leaves the remaining bookmarks unanimated', async ({ page }) => {
+    await seed(page);
+    await chip(page, 'recipes').click();
+    await expect(titles(page)).toHaveText([SOUP.title, EXAMPLE.title]);
+    expect(await animating(page)).toEqual([]);
+  });
+
+  test('clearing a filter animates only the bookmarks that come back', async ({ page }) => {
+    await seed(page);
+    await chip(page, 'recipes').click();
+    await settle(page);
+    await chip(page, 'All').click();
+    await expect(page.locator('.bookmark')).toHaveCount(3);
+    expect(await animating(page)).toEqual([MDN.title]);
+  });
+
+  test('clearing a search animates only the bookmarks that come back', async ({ page }) => {
+    await seed(page);
+    await search(page).fill('pasta');
+    await expect(titles(page)).toHaveText([EXAMPLE.title]);
+    await settle(page);
+    await search(page).fill('');
+    await expect(page.locator('.bookmark')).toHaveCount(3);
+    expect(await animating(page)).toEqual([MDN.title, SOUP.title].sort());
+  });
+
+  test('a newly added bookmark animates and the others do not', async ({ page }) => {
+    await seed(page);
+    await fillAndSubmit(page, { url: 'https://new.example.com', title: 'Newest Bookmark' });
+    await expect(page.locator('.bookmark')).toHaveCount(4);
+    expect(await animating(page)).toEqual(['Newest Bookmark']);
+  });
+
+  test('deleting leaves the remaining bookmarks unanimated', async ({ page }) => {
+    await seed(page);
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByRole('button', { name: `Delete ${SOUP.title}` }).click();
+    await expect(page.locator('.bookmark')).toHaveCount(2);
+    expect(await animating(page)).toEqual([]);
+  });
+
+  test('nothing animates when the page first loads', async ({ page }) => {
+    await seed(page);
+    await page.reload();
+    await expect(page.locator('.bookmark')).toHaveCount(3);
+    expect(await animating(page)).toEqual([]);
+  });
+
+  test('with reduced motion no bookmark ever animates', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await seed(page);
+    const stillEveryTime = async (count) => {
+      await expect(page.locator('.bookmark')).toHaveCount(count);
+      expect(await animating(page)).toEqual([]);
+    };
+
+    await fillAndSubmit(page, { url: 'https://new.example.com', title: 'Newest Bookmark' });
+    await stillEveryTime(4);
+    await search(page).fill('pasta');
+    await stillEveryTime(1);
+    await search(page).fill('');
+    await stillEveryTime(4);
+    await chip(page, 'recipes').click();
+    await stillEveryTime(2);
+    await chip(page, 'All').click();
+    await stillEveryTime(4);
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByRole('button', { name: `Delete ${SOUP.title}` }).click();
+    await stillEveryTime(3);
+    await page.reload();
+    await stillEveryTime(3);
+  });
+});
+
+test.describe('O8 tag buttons on bookmarks', () => {
+  const item = (page, bookmark) => page.locator('.bookmark', { hasText: bookmark.title });
+  // Found by data-tag so the state tests don't depend on the accessible name.
+  const recipeButtons = (page) => page.locator('.bookmark button.tag[data-tag="recipes"]');
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await addBookmark(page, MDN);
+    await addBookmark(page, EXAMPLE);
+    await addBookmark(page, SOUP);
+  });
+
+  test('is named "Filter by recipes", not pressed, and still reads "recipes"', async ({ page }) => {
+    const button = item(page, EXAMPLE).getByRole('button', { name: 'Filter by recipes', exact: true });
+    await expect(button).toHaveCount(1);
+    await expect(button).toHaveText('recipes');
+    await expect(button).toHaveAttribute('aria-pressed', 'false');
+    await expect(button).not.toHaveClass(/selected/);
+  });
+
+  test('pressing it marks every recipes button as pressed and selected', async ({ page }) => {
+    await item(page, EXAMPLE).locator('button.tag[data-tag="recipes"]').click();
+
+    await expect(recipeButtons(page)).toHaveCount(2);
+    for (const button of await recipeButtons(page).all()) {
+      await expect(button).toHaveAttribute('aria-pressed', 'true');
+      await expect(button).toHaveClass(/selected/);
+    }
+    const dinner = item(page, EXAMPLE).locator('button.tag[data-tag="dinner"]');
+    await expect(dinner).toHaveAttribute('aria-pressed', 'false');
+    await expect(dinner).not.toHaveClass(/selected/);
+
+    const chipRecipes = page.locator('#tag-filter .chip[data-tag="recipes"]');
+    await expect(chipRecipes).toHaveClass(/selected/);
+    await expect(chipRecipes).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('pressing it again returns every button to not pressed and selects All', async ({ page }) => {
+    const first = item(page, EXAMPLE).locator('button.tag[data-tag="recipes"]');
+    await first.click();
+    await first.click();
+
+    await expect(recipeButtons(page)).toHaveCount(2);
+    for (const button of await recipeButtons(page).all()) {
+      await expect(button).toHaveAttribute('aria-pressed', 'false');
+      await expect(button).not.toHaveClass(/selected/);
+    }
+    const all = page.locator('#tag-filter .chip[data-tag=""]');
+    await expect(all).toHaveClass(/selected/);
+    await expect(all).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('the filter row keeps its chip names', async ({ page }) => {
+    const row = page.getByRole('group', { name: 'Filter by tag' });
+    await expect(row.getByRole('button')).toHaveText(['All', 'dinner', 'javascript', 'recipes', 'reference']);
+    await expect(row.getByRole('button', { name: 'recipes', exact: true })).toHaveCount(1);
+    await expect(row.getByRole('button', { name: 'All', exact: true })).toHaveCount(1);
+    await expect(row.getByRole('button', { name: /^Filter by/ })).toHaveCount(0);
+  });
+});
+
+test.describe('Tag filter', () => {
+  const chip = (page, tag) => page.locator(`#tag-filter .chip[data-tag="${tag}"]`);
+  const allChip = (page) => chip(page, '');
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await addBookmark(page, MDN);
+    await addBookmark(page, EXAMPLE);
+    await addBookmark(page, SOUP);
+  });
+
+  test('a chip shows only the bookmarks with that tag', async ({ page }) => {
+    await chip(page, 'recipes').click();
+    await expect(titles(page)).toHaveText([SOUP.title, EXAMPLE.title]);
+    await expect(chip(page, 'recipes')).toHaveClass(/selected/);
+    await expect(allChip(page)).not.toHaveClass(/selected/);
+  });
+
+  test('pressing the same chip again clears the filter', async ({ page }) => {
+    await chip(page, 'recipes').click();
+    await chip(page, 'recipes').click();
+    await expect(titles(page)).toHaveText([SOUP.title, EXAMPLE.title, MDN.title]);
+    await expect(allChip(page)).toHaveClass(/selected/);
+  });
+
+  test('"All" clears the filter', async ({ page }) => {
+    await chip(page, 'javascript').click();
+    await expect(titles(page)).toHaveText([MDN.title]);
+    await allChip(page).click();
+    await expect(titles(page)).toHaveText([SOUP.title, EXAMPLE.title, MDN.title]);
+    await expect(allChip(page)).toHaveClass(/selected/);
+    await expect(allChip(page)).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('pressing a tag on a bookmark filters the list', async ({ page }) => {
+    await page.locator('.bookmark button.tag[data-tag="dinner"]').click();
+    await expect(titles(page)).toHaveText([EXAMPLE.title]);
+    await expect(chip(page, 'dinner')).toHaveClass(/selected/);
+  });
+
+  test('chips are sorted A to Z and start with "All"', async ({ page }) => {
+    await expect(page.locator('#tag-filter .chip')).toHaveText([
+      'All',
+      'dinner',
+      'javascript',
+      'recipes',
+      'reference',
+    ]);
+  });
+
+  test('resets to "All" when the last bookmark with the selected tag is deleted', async ({ page }) => {
+    await addBookmark(page, { url: 'https://solo.example.com', title: 'Solo', notes: '', tags: 'solo' });
+    await chip(page, 'solo').click();
+    await expect(titles(page)).toHaveText(['Solo']);
+
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByRole('button', { name: 'Delete Solo' }).click();
+
+    await expect(chip(page, 'solo')).toHaveCount(0);
+    await expect(allChip(page)).toHaveClass(/selected/);
+    await expect(titles(page)).toHaveText([SOUP.title, EXAMPLE.title, MDN.title]);
+  });
+
+  test('resets to "All" when the last bookmark with the selected tag is edited to drop it', async ({ page }) => {
+    await addBookmark(page, { url: 'https://solo.example.com', title: 'Solo', notes: '', tags: 'solo' });
+    await chip(page, 'solo').click();
+    await expect(titles(page)).toHaveText(['Solo']);
+
+    await page.getByRole('button', { name: 'Edit Solo' }).click();
+    await page.getByLabel('Tags').fill('');
+    await page.locator(SUBMIT_BUTTON).click();
+
+    await expect(chip(page, 'solo')).toHaveCount(0);
+    await expect(allChip(page)).toHaveClass(/selected/);
+    await expect(titles(page)).toHaveText(['Solo', SOUP.title, EXAMPLE.title, MDN.title]);
+  });
+});
+
+test.describe('Form errors', () => {
+  const error = (page) => page.locator('#form-error');
+
+  /** @type {[string, object, string, string, string][]} */
+  const cases = [
+    ['both fields empty', {}, 'Please fill in both URL and Title.', 'url'],
+    ['empty title', { url: 'https://example.com' }, 'Please fill in both URL and Title.', 'title'],
+    ['empty URL', { title: 'No URL' }, 'Please fill in both URL and Title.', 'url'],
+    ['wrong scheme', { url: 'ftp://x.com', title: 'T' }, 'URL must start with http:// or https://', 'url'],
+    ['unparseable URL', { url: 'http://', title: 'T' }, 'Enter a valid URL, for example https://example.com.', 'url'],
+    [
+      'space in the path',
+      { url: 'https://example.com/a b', title: 'T' },
+      "URL can't contain spaces. Enter it like https://example.com.",
+      'url',
+    ],
+  ];
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+  });
+
+  for (const [name, fields, message, fieldId] of cases) {
+    test(`${name}: exact message, aria attributes and focus`, async ({ page }) => {
+      await fillAndSubmit(page, fields);
+
+      await expect(error(page)).toBeVisible();
+      await expect(error(page)).toHaveText(message);
+      const field = page.locator(`#${fieldId}`);
+      await expect(field).toHaveAttribute('aria-invalid', 'true');
+      await expect(field).toHaveAttribute('aria-describedby', 'form-error');
+      await expect(field).toBeFocused();
+      await expect(page.locator('#bookmark-form [aria-invalid]')).toHaveCount(1);
+      await expect(page.locator('.bookmark')).toHaveCount(0);
+    });
+  }
+
+  test('a successful save hides the error and removes both attributes', async ({ page }) => {
+    await fillAndSubmit(page, { url: 'ftp://x.com', title: 'T' });
+    await expect(error(page)).toBeVisible();
+    await expect(page.locator('#url')).toHaveAttribute('aria-invalid', 'true');
+
+    await page.getByLabel('URL').fill('https://example.com');
+    await page.locator(SUBMIT_BUTTON).click();
+
+    await expect(page.locator('.bookmark')).toHaveCount(1);
+    // Check the property: an empty paragraph has no box, so toBeHidden() proves nothing.
+    await expect(error(page)).toHaveJSProperty('hidden', true);
+    await expect(error(page)).toHaveText('');
+    await expect(page.locator('#bookmark-form [aria-invalid]')).toHaveCount(0);
+    await expect(page.locator('#bookmark-form [aria-describedby]')).toHaveCount(0);
+  });
+});
+
+test.describe('Phone layout (375x640)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 640 });
+    await page.goto('/');
+    await addBookmark(page, MDN);
+    await addBookmark(page, EXAMPLE);
+  });
+
+  test('the form is a single column with each label above its field', async ({ page }) => {
+    await openForm(page);
+    const tracks = await page.evaluate(
+      () => getComputedStyle(document.getElementById('bookmark-form')).gridTemplateColumns.split(' ').length
+    );
+    expect(tracks).toBe(1);
+
+    for (const id of ['url', 'title', 'notes', 'tags']) {
+      const label = await page.locator(`label[for="${id}"]`).boundingBox();
+      const field = await page.locator(`#${id}`).boundingBox();
+      expect(label.y + label.height, `${id} label above field`).toBeLessThanOrEqual(field.y + 1);
+      expect(Math.abs(label.x - field.x), `${id} label and field share a left edge`).toBeLessThan(1);
+    }
+  });
+
+  test('the search box sits above the chips and spans the panel width', async ({ page }) => {
+    const search = await page.locator('#search').boundingBox();
+    const chips = await page.locator('#tag-filter').boundingBox();
+    expect(search.y + search.height).toBeLessThanOrEqual(chips.y + 1);
+
+    const contentWidth = await page.evaluate(() => {
+      const panel = document.getElementById('search').closest('.panel');
+      const style = getComputedStyle(panel);
+      return panel.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    });
+    expect(Math.abs(search.width - contentWidth)).toBeLessThanOrEqual(1);
+  });
+
+  test('the date sits below the title', async ({ page }) => {
+    const first = page.locator('.bookmark').first();
+    const title = await first.locator('.bookmark-title').boundingBox();
+    const date = await first.locator('.bookmark-date').boundingBox();
+    expect(date.y).toBeGreaterThanOrEqual(title.y + title.height - 1);
+  });
+
+  test('buttons, chips and inputs are at least 44px tall', async ({ page }) => {
+    await openForm(page);
+    const tooShort = await page.evaluate(() =>
+      [...document.querySelectorAll('button, input, textarea')]
+        .map((el) => ({ el, height: el.getBoundingClientRect().height }))
+        .filter(({ height }) => height > 0 && height < 43.5)
+        .map(({ el, height }) => `${el.tagName}#${el.id}.${el.className} ${height}px`)
+    );
+    expect(tooShort).toEqual([]);
+  });
+
+  test('nothing scrolls sideways, with the form open or closed', async ({ page }) => {
+    const overflow = () =>
+      page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(await overflow()).toBeLessThanOrEqual(0);
+    await openForm(page);
+    expect(await overflow()).toBeLessThanOrEqual(0);
+  });
+});
+
+test.describe('Keyboard and focus rings', () => {
+  const toggle = (page) => page.locator('#form-toggle');
+  const outlineStyle = (page) =>
+    page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle);
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await addBookmark(page, MDN);
+  });
+
+  test('Enter on the toggle opens the form and focuses the URL field', async ({ page }) => {
+    await toggle(page).focus();
+    await page.keyboard.press('Enter');
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByLabel('URL')).toBeFocused();
+    await expect(page.locator('#bookmark-form')).toBeVisible();
+  });
+
+  test('Escape closes the form and returns focus to the toggle', async ({ page }) => {
+    await openForm(page);
+    await page.getByLabel('Title').focus();
+    await page.keyboard.press('Escape');
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle(page)).toBeFocused();
+    await expect(page.locator('#bookmark-form')).toBeHidden();
+  });
+
+  test('a control focused by keyboard has a visible outline', async ({ page, browserName }) => {
+    const { tab, shiftTab } = tabKeys(browserName);
+    await page.getByLabel('Search bookmarks').focus();
+    expect(await outlineStyle(page)).not.toBe('none');
+
+    await page.keyboard.press(shiftTab);
+    await expect(toggle(page)).toBeFocused();
+    expect(await outlineStyle(page)).not.toBe('none');
+
+    await page.keyboard.press(tab); // search box
+    await page.keyboard.press(tab); // the "All" chip
+    await expect(page.locator('#tag-filter .chip[data-tag=""]')).toBeFocused();
+    expect(await outlineStyle(page)).not.toBe('none');
+  });
+});
+
+test.describe('Reduced motion', () => {
+  const toggle = (page) => page.locator('#form-toggle');
+
+  test.beforeEach(async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto('/');
+  });
+
+  test('opening the form shows it at full height straight away', async ({ page }) => {
+    await toggle(page).click();
+    // No waiting: the form must already be settled when the click returns.
+    const state = await page.evaluate(() => {
+      const form = document.getElementById('bookmark-form');
+      return {
+        hidden: form.hidden,
+        height: form.style.height,
+        overflow: form.style.overflow,
+        offsetHeight: form.offsetHeight,
+        scrollHeight: form.scrollHeight,
+      };
+    });
+    expect(state.hidden).toBe(false);
+    expect(state.height).toBe('');
+    expect(state.overflow).toBe('');
+    expect(state.offsetHeight).toBeGreaterThan(0);
+    expect(state.offsetHeight).toBe(state.scrollHeight);
+  });
+
+  test('the toggle has a single .roll-text span, with no leftover rolling text', async ({ page }) => {
+    await toggle(page).click();
+    await expect(page.locator('#form-toggle-label .roll-text')).toHaveCount(1);
+    await expect(page.locator('#form-toggle-label .roll-text')).toHaveText('Close form');
+    await toggle(page).click();
+    await expect(page.locator('#form-toggle-label .roll-text')).toHaveCount(1);
+    await expect(page.locator('#form-toggle-label .roll-text')).toHaveText('Add a bookmark');
+  });
+
+  test('the + icon has no transition', async ({ page }) => {
+    const duration = await page.evaluate(
+      () => getComputedStyle(document.querySelector('.form-toggle-icon')).transitionDuration
+    );
+    expect(duration).toBe('0s');
   });
 });
