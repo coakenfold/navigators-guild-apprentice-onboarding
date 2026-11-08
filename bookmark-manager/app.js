@@ -339,143 +339,52 @@ function getDomain(url) {
   }
 }
 
-// Trash can icon; decorative, the button's aria-label names the action.
-function createTrashIcon() {
-  const svgNs = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(svgNs, "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("width", "18");
-  svg.setAttribute("height", "18");
-  svg.setAttribute("fill", "none");
-  svg.setAttribute("stroke", "currentColor");
-  svg.setAttribute("stroke-width", "2");
-  svg.setAttribute("stroke-linecap", "round");
-  svg.setAttribute("stroke-linejoin", "round");
-  svg.setAttribute("aria-hidden", "true");
-  svg.setAttribute("focusable", "false");
-
-  const paths = [
-    "M3 6h18",
-    "M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2",
-    "M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6",
-    "M10 11v6",
-    "M14 11v6",
-  ];
-  for (const d of paths) {
-    const path = document.createElementNS(svgNs, "path");
-    path.setAttribute("d", d);
-    svg.append(path);
-  }
-  return svg;
+function createTagPill(tag, bookmarkId) {
+  const pill = document.createElement("button");
+  pill.type = "button";
+  pill.className = "tag";
+  pill.textContent = tag;
+  // The name contains the visible text, as WCAG 2.5.3 (Label in Name) asks.
+  pill.setAttribute("aria-label", `Filter by ${tag}`);
+  pill.setAttribute("aria-pressed", selectedTag === tag);
+  pill.classList.toggle("selected", selectedTag === tag);
+  pill.dataset.id = bookmarkId;
+  pill.dataset.tag = tag;
+  pill.addEventListener("click", () => toggleTag(tag));
+  return pill;
 }
 
-// Pencil icon; decorative, the button's aria-label names the action.
-function createEditIcon() {
-  const svgNs = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(svgNs, "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("width", "18");
-  svg.setAttribute("height", "18");
-  svg.setAttribute("fill", "none");
-  svg.setAttribute("stroke", "currentColor");
-  svg.setAttribute("stroke-width", "2");
-  svg.setAttribute("stroke-linecap", "round");
-  svg.setAttribute("stroke-linejoin", "round");
-  svg.setAttribute("aria-hidden", "true");
-  svg.setAttribute("focusable", "false");
-
-  const paths = ["M12 20h9", "M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"];
-  for (const d of paths) {
-    const path = document.createElementNS(svgNs, "path");
-    path.setAttribute("d", d);
-    svg.append(path);
-  }
-  return svg;
-}
+const bookmarkTemplate = document.getElementById("bookmark-template");
 
 function createBookmarkItem(bookmark) {
-  const item = document.createElement("li");
-  item.className = "bookmark";
+  const item = bookmarkTemplate.content.firstElementChild.cloneNode(true);
   item.dataset.id = bookmark.id;
 
-  const header = document.createElement("div");
-  header.className = "bookmark-header";
-
-  const link = document.createElement("a");
-  link.className = "bookmark-title";
+  const link = item.querySelector(".bookmark-title");
   link.href = bookmark.url;
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
   link.textContent = bookmark.title;
+  item.querySelector(".bookmark-domain").textContent = getDomain(bookmark.url);
+  item.querySelector(".bookmark-date").textContent = formatDate(bookmark.createdAt);
+  item.querySelector(".bookmark-url").textContent = bookmark.url;
 
-  const date = document.createElement("span");
-  date.className = "bookmark-date";
-  date.textContent = formatDate(bookmark.createdAt);
+  const notes = item.querySelector(".bookmark-notes");
+  if (bookmark.notes) notes.textContent = bookmark.notes;
+  else notes.remove();
 
-  const domain = document.createElement("span");
-  domain.className = "bookmark-domain";
-  domain.textContent = getDomain(bookmark.url);
-
-  const heading = document.createElement("div");
-  heading.className = "bookmark-heading";
-  heading.append(link, domain);
-
-  header.append(heading, date);
-
-  const url = document.createElement("div");
-  url.className = "bookmark-url";
-  url.textContent = bookmark.url;
-
-  item.append(header, url);
-
-  if (bookmark.notes) {
-    const notes = document.createElement("p");
-    notes.className = "bookmark-notes";
-    notes.textContent = bookmark.notes;
-    item.append(notes);
-  }
-
+  const tags = item.querySelector(".tags");
   if (bookmark.tags.length > 0) {
-    const tags = document.createElement("div");
-    tags.className = "tags";
-    for (const tag of bookmark.tags) {
-      const pill = document.createElement("button");
-      pill.type = "button";
-      pill.className = "tag";
-      pill.textContent = tag;
-      // The name contains the visible text, as WCAG 2.5.3 (Label in Name) asks.
-      pill.setAttribute("aria-label", `Filter by ${tag}`);
-      pill.setAttribute("aria-pressed", selectedTag === tag);
-      pill.classList.toggle("selected", selectedTag === tag);
-      pill.dataset.id = bookmark.id;
-      pill.dataset.tag = tag;
-      pill.addEventListener("click", () => toggleTag(tag));
-      tags.append(pill);
-    }
-    item.append(tags);
+    tags.append(...bookmark.tags.map((tag) => createTagPill(tag, bookmark.id)));
+  } else {
+    tags.remove();
   }
 
-  const actions = document.createElement("div");
-  actions.className = "bookmark-actions";
-
-  const editButton = document.createElement("button");
-  editButton.type = "button";
-  editButton.className = "edit-button";
-  editButton.title = "Edit";
+  const editButton = item.querySelector(".edit-button");
   editButton.setAttribute("aria-label", `Edit ${bookmark.title}`);
-  editButton.append(createEditIcon());
   editButton.addEventListener("click", () => startEdit(bookmark));
 
-  const deleteButton = document.createElement("button");
-  deleteButton.type = "button";
-  deleteButton.className = "delete-button";
-  deleteButton.title = "Delete";
+  const deleteButton = item.querySelector(".delete-button");
   deleteButton.setAttribute("aria-label", `Delete ${bookmark.title}`);
-  deleteButton.append(createTrashIcon());
   deleteButton.addEventListener("click", () => deleteBookmark(bookmark.id));
-
-  actions.append(editButton, deleteButton);
-  item.append(actions);
 
   return item;
 }
