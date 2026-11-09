@@ -109,6 +109,15 @@ Verification here was mostly scripted sampling rather than looking at the result
 - **`--repeat-each=5`:** the first run had 2 failures out of 1365 (a Chromium Phone layout test, a label measured 3px low). The cause was my `openForm`: the drawer sets `overflow` a frame before `height`, so waiting for "no inline height" could pass before the animation started. The helper now waits for the form to have no inline style at all. After that, the Phone layout tests passed 150 of 150 (30 repeats), and the full run passed 1365 of 1365 (17 minutes).
 - **Not done:** no manual screen reader check. Console errors are asserted only in the `Add & list` and `Edit mode names` blocks.
 
+### 10. Refactor Phase 1: markup into HTML (2026-11-09)
+
+- **Asked:** Phase 1 of [`prompt-app-refactor-1.md`](./prompt-app-refactor-1.md): a pure refactor that moves the bookmark markup and icons out of JavaScript. The existing suite was the safety net.
+- **`index.html`:** a hidden SVG sprite with `icon-edit` and `icon-trash` symbols (path data copied unchanged from `app.js`, `viewBox` on each symbol), and `<template id="bookmark-template">` holding the full `<li class="bookmark">`. The stroke and fill attributes sit on the outer `<svg>` and the icons use `currentColor`. The template has no `id`s, so cloning it can't create duplicates.
+- **`app.js`:** `createTrashIcon` and `createEditIcon` are deleted, so no `createElementNS` or path data is left in JS. `createBookmarkItem` clones the template, fills it with `textContent` and attributes, removes the empty notes and tags nodes, then sets the `aria-label`s and listeners. User data still never goes through `innerHTML`.
+- **Decision:** I kept a small `createTagPill` helper, not a second template. The plan allowed either, and the helper is shorter. The filter chips are untouched.
+- **`style.css`:** no change needed. No selectors target `svg` or `path`, and the buttons set `color`.
+- **Result:** the suite passed on Chromium (91 tests) with no test changes. Not done: a baseline run before the change, the other two browsers, and a look at the icons in light and dark and in hover and focus states.
+
 ## Learnings
 
 Generating a design document worked quite well. Applying the `/decomposition` skill against that document provided me with vertical slices that I could work on in phases. Scope can creep very easily in the slices with a single sentence.
