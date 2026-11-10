@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Timer | now make it dance | 2/3</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        display: grid;
+        place-items: center;
+        min-height: 100vh;
+        margin: 0;
+        background: #111;
+        color: #eee;
+      }
+      main {
+        text-align: center;
+      }
+      #display {
+        font-size: 5rem;
+        font-variant-numeric: tabular-nums;
+        margin: 1rem 0;
+      }
+      #display {
+        display: inline-block;
+        transform-origin: 50% 100%;
+      }
+      #display.running {
+        animation: groove 1s ease-in-out infinite;
+      }
+      #display.done {
+        animation:
+          party 0.6s linear infinite,
+          rainbow 1.2s linear infinite;
+      }
+      @keyframes groove {
+        0%,
+        100% {
+          transform: rotate(-4deg) translateY(0);
+        }
+        25% {
+          transform: rotate(0deg) translateY(-12px) scale(1.05);
+        }
+        50% {
+          transform: rotate(4deg) translateY(0);
+        }
+        75% {
+          transform: rotate(0deg) translateY(-12px) scale(1.05);
+        }
+      }
+      @keyframes party {
+        0% {
+          transform: rotate(-15deg) translateY(0) scale(1);
+        }
+        25% {
+          transform: rotate(0) translateY(-40px) scale(1.2);
+        }
+        50% {
+          transform: rotate(15deg) translateY(0) scale(1);
+        }
+        75% {
+          transform: rotate(0) translateY(-40px) scale(1.2) scaleX(-1);
+        }
+        100% {
+          transform: rotate(-15deg) translateY(0) scale(1);
+        }
+      }
+      @keyframes rainbow {
+        to {
+          filter: hue-rotate(360deg);
+        }
+      }
+      #display.done {
+        color: #f5a;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #display {
+          animation: none !important;
+        }
+      }
+      input {
+        width: 4rem;
+        font-size: 1.5rem;
+        text-align: center;
+        background: #222;
+        color: #eee;
+        border: 1px solid #444;
+        border-radius: 6px;
+        padding: 0.3rem;
+      }
+      button {
+        font-size: 1.1rem;
+        padding: 0.5rem 1.2rem;
+        margin: 0.3rem;
+        border: 0;
+        border-radius: 6px;
+        background: #3a7;
+        color: #fff;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #555;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="display">05:00</div>
+      <div>
+        <input id="min" type="number" min="0" value="5" aria-label="Minutes" />
+        :
+        <input
+          id="sec"
+          type="number"
+          min="0"
+          max="59"
+          value="0"
+          aria-label="Seconds"
+        />
+      </div>
+      <div>
+        <button id="start">Start</button>
+        <button id="reset" class="secondary">Reset</button>
+      </div>
+    </main>
+    <script>
+      const display = document.getElementById("display");
+      const minEl = document.getElementById("min");
+      const secEl = document.getElementById("sec");
+      const startBtn = document.getElementById("start");
+      let remaining = 0,
+        endTime = 0,
+        handle = null;
+
+      const fmt = (s) =>
+        `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+      const readInputs = () =>
+        Math.max(0, (+minEl.value || 0) * 60 + (+secEl.value || 0));
+      const show = (s) => {
+        display.textContent = fmt(s);
+        document.title = fmt(s) + " – Timer";
+      };
+
+      function tick() {
+        remaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
+        show(remaining);
+        if (remaining === 0) {
+          clearInterval(handle);
+          handle = null;
+          display.classList.remove("running");
+          display.classList.add("done");
+          startBtn.textContent = "Start";
+          beep();
+        }
+      }
+
+      function beep() {
+        try {
+          const ctx = new AudioContext(),
+            o = ctx.createOscillator();
+          o.connect(ctx.destination);
+          o.frequency.value = 880;
+          o.start();
+          o.stop(ctx.currentTime + 0.6);
+        } catch (e) {}
+      }
+
+      startBtn.onclick = () => {
+        if (handle) {
+          // pause
+          clearInterval(handle);
+          handle = null;
+          display.classList.remove("running");
+          startBtn.textContent = "Resume";
+          return;
+        }
+        if (!remaining) remaining = readInputs();
+        if (!remaining) return;
+        display.classList.remove("done");
+        display.classList.add("running");
+        endTime = Date.now() + remaining * 1000;
+        handle = setInterval(tick, 250);
+        startBtn.textContent = "Pause";
+        tick();
+      };
+
+      document.getElementById("reset").onclick = () => {
+        clearInterval(handle);
+        handle = null;
+        remaining = 0;
+        display.classList.remove("done", "running");
+        startBtn.textContent = "Start";
+        show(readInputs());
+      };
+
+      [minEl, secEl].forEach(
+        (el) =>
+          (el.oninput = () => {
+            if (!handle) {
+              remaining = 0;
+              show(readInputs());
+            }
+          }),
+      );
+    </script>
+  </body>
+</html>

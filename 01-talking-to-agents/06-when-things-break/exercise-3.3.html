@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Timer | make it more like hip hop | 3/5</title>
+    <style>
+      :root {
+        --beat: 0.667s; /* 90 BPM */
+        --gold: #ffc400;
+        --pink: #ff2e93;
+        --cyan: #19e3ff;
+      }
+      body {
+        font-family: Impact, "Arial Black", system-ui, sans-serif;
+        display: grid;
+        place-items: center;
+        min-height: 100vh;
+        margin: 0;
+        overflow: hidden;
+        color: #fff;
+        background: #0d0d12;
+        background-image: repeating-linear-gradient(
+          45deg,
+          #15151d 0 14px,
+          #0d0d12 14px 28px
+        );
+      }
+      main {
+        text-align: center;
+        position: relative;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1rem;
+        letter-spacing: 0.5em;
+        color: var(--gold);
+        text-transform: uppercase;
+      }
+      #display {
+        display: inline-block;
+        font-size: clamp(4rem, 18vw, 9rem);
+        margin: 0.6rem 0;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.04em;
+        color: var(--gold);
+        text-shadow:
+          4px 4px 0 var(--pink),
+          8px 8px 0 #000;
+        transform-origin: 50% 100%;
+      }
+      /* Head-nod bounce: drop on the beat, rise between, lean side to side every 2 beats */
+      #display.running {
+        animation:
+          nod var(--beat) ease-in-out infinite,
+          lean calc(var(--beat) * 4) ease-in-out infinite;
+      }
+      #display.done {
+        animation:
+          breakdance 1.2s linear infinite,
+          flash 0.3s steps(2) infinite;
+      }
+      @keyframes nod {
+        0% {
+          translate: 0 0;
+          scale: 1 1;
+        }
+        15% {
+          translate: 0 14px;
+          scale: 1.08 0.88;
+        } /* hit */
+        60% {
+          translate: 0 -6px;
+          scale: 0.98 1.04;
+        }
+        100% {
+          translate: 0 0;
+          scale: 1 1;
+        }
+      }
+      @keyframes lean {
+        0%,
+        100% {
+          rotate: -5deg;
+        }
+        50% {
+          rotate: 5deg;
+        }
+      }
+      @keyframes breakdance {
+        0% {
+          transform: rotate(0) scale(1);
+        }
+        50% {
+          transform: rotate(180deg) scale(1.3) translateY(-20px);
+        }
+        100% {
+          transform: rotate(360deg) scale(1);
+        }
+      }
+      @keyframes flash {
+        50% {
+          color: var(--cyan);
+          text-shadow:
+            4px 4px 0 var(--gold),
+            8px 8px 0 #000;
+        }
+      }
+
+      .controls {
+        display: flex;
+        gap: 0.5rem;
+        justify-content: center;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      input {
+        width: 4rem;
+        font: inherit;
+        font-size: 1.6rem;
+        text-align: center;
+        background: #000;
+        color: var(--gold);
+        border: 3px solid var(--gold);
+        padding: 0.2rem;
+      }
+      button {
+        font: inherit;
+        font-size: 1.2rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        padding: 0.5rem 1.4rem;
+        margin: 0.5rem 0.25rem;
+        cursor: pointer;
+        background: var(--pink);
+        color: #fff;
+        border: 3px solid #000;
+        box-shadow: 4px 4px 0 #000;
+      }
+      button:active {
+        transform: translate(3px, 3px);
+        box-shadow: 1px 1px 0 #000;
+      }
+      button.secondary {
+        background: var(--cyan);
+        color: #000;
+      }
+      #beat[aria-pressed="false"] {
+        background: #444;
+        color: #aaa;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #display {
+          animation: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Boom Bap Timer</h1>
+      <div id="display">05:00</div>
+      <div class="controls">
+        <input id="min" type="number" min="0" value="5" aria-label="Minutes" />
+        :
+        <input
+          id="sec"
+          type="number"
+          min="0"
+          max="59"
+          value="0"
+          aria-label="Seconds"
+        />
+      </div>
+      <div>
+        <button id="start">Start</button>
+        <button id="reset" class="secondary">Reset</button>
+        <button id="beat" class="secondary" aria-pressed="true">
+          Beat: On
+        </button>
+      </div>
+    </main>
+    <script>
+      const display = document.getElementById("display");
+      const minEl = document.getElementById("min");
+      const secEl = document.getElementById("sec");
+      const startBtn = document.getElementById("start");
+      const beatBtn = document.getElementById("beat");
+      let remaining = 0,
+        endTime = 0,
+        handle = null;
+
+      const fmt = (s) =>
+        `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+      const readInputs = () =>
+        Math.max(0, (+minEl.value || 0) * 60 + (+secEl.value || 0));
+      const show = (s) => {
+        display.textContent = fmt(s);
+        document.title = fmt(s) + " – Timer";
+      };
+
+      /* ---------- Boom-bap beat, synthesized, 90 BPM, locked to the CSS animation ---------- */
+      const BPM = 90,
+        STEP = 60 / BPM / 2; // 8th-note steps
+      // 16 steps = 2 bars. K = kick, S = snare, h = hat
+      const KICK = [1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0];
+      const SNARE = [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1];
+      let ctx = null,
+        beatOn = true,
+        nextTime = 0,
+        stepIdx = 0,
+        scheduler = null;
+
+      function kick(t) {
+        const o = ctx.createOscillator(),
+          g = ctx.createGain();
+        o.frequency.setValueAtTime(150, t);
+        o.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+        g.gain.setValueAtTime(0.9, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+        o.connect(g).connect(ctx.destination);
+        o.start(t);
+        o.stop(t + 0.3);
+      }
+      function noise(t, dur, freq, vol) {
+        const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate),
+          d = buf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        const f = ctx.createBiquadFilter();
+        f.type = "highpass";
+        f.frequency.value = freq;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(vol, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        src.connect(f).connect(g).connect(ctx.destination);
+        src.start(t);
+      }
+      function schedule() {
+        while (nextTime < ctx.currentTime + 0.2) {
+          const i = stepIdx % 16;
+          if (KICK[i]) kick(nextTime);
+          if (SNARE[i]) noise(nextTime, 0.18, 1200, 0.5);
+          noise(nextTime, 0.04, 7000, i % 2 ? 0.12 : 0.25); // hats, off-beats softer
+          nextTime += STEP;
+          stepIdx++;
+        }
+      }
+      function startBeat() {
+        if (!beatOn || scheduler) return;
+        try {
+          ctx = ctx || new AudioContext();
+          ctx.resume();
+          nextTime = ctx.currentTime + 0.05;
+          stepIdx = 0;
+          scheduler = setInterval(schedule, 50);
+        } catch (e) {}
+      }
+      function stopBeat() {
+        clearInterval(scheduler);
+        scheduler = null;
+      }
+
+      function airhorn() {
+        try {
+          ctx = ctx || new AudioContext();
+          const t = ctx.currentTime;
+          [440, 554, 659].forEach((f) => {
+            const o = ctx.createOscillator(),
+              g = ctx.createGain();
+            o.type = "sawtooth";
+            o.frequency.value = f;
+            g.gain.setValueAtTime(0.15, t);
+            g.gain.setValueAtTime(0.15, t + 0.5);
+            g.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
+            o.connect(g).connect(ctx.destination);
+            o.start(t);
+            o.stop(t + 0.8);
+          });
+        } catch (e) {}
+      }
+
+      /* ---------- Timer ---------- */
+      function tick() {
+        remaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
+        show(remaining);
+        if (remaining === 0) {
+          clearInterval(handle);
+          handle = null;
+          stopBeat();
+          display.classList.remove("running");
+          display.classList.add("done");
+          startBtn.textContent = "Start";
+          airhorn();
+        }
+      }
+
+      startBtn.onclick = () => {
+        if (handle) {
+          // pause
+          clearInterval(handle);
+          handle = null;
+          stopBeat();
+          display.classList.remove("running");
+          startBtn.textContent = "Resume";
+          return;
+        }
+        if (!remaining) remaining = readInputs();
+        if (!remaining) return;
+        display.classList.remove("done");
+        // restart the animation so the first nod lands with the first kick
+        display.classList.remove("running");
+        void display.offsetWidth;
+        display.classList.add("running");
+        startBeat();
+        endTime = Date.now() + remaining * 1000;
+        handle = setInterval(tick, 250);
+        startBtn.textContent = "Pause";
+        tick();
+      };
+
+      document.getElementById("reset").onclick = () => {
+        clearInterval(handle);
+        handle = null;
+        remaining = 0;
+        stopBeat();
+        display.classList.remove("done", "running");
+        startBtn.textContent = "Start";
+        show(readInputs());
+      };
+
+      beatBtn.onclick = () => {
+        beatOn = !beatOn;
+        beatBtn.setAttribute("aria-pressed", beatOn);
+        beatBtn.textContent = "Beat: " + (beatOn ? "On" : "Off");
+        if (!beatOn) stopBeat();
+        else if (handle) startBeat();
+      };
+
+      [minEl, secEl].forEach(
+        (el) =>
+          (el.oninput = () => {
+            if (!handle) {
+              remaining = 0;
+              show(readInputs());
+            }
+          }),
+      );
+    </script>
+  </body>
+</html>

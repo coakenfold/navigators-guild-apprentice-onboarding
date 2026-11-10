@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>
+      Timer | I think it needs more 'under the cobblestones, the beach' | 5/5
+    </title>
+    <style>
+      @property --r {
+        syntax: "<number>";
+        inherits: true;
+        initial-value: 0;
+      }
+      :root {
+        --wall: #c9b95a;
+        --light: #f4f0c8;
+        --ink: #2b2a14;
+        --r: 0;
+        --floor-h: 27vh;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        background: #000;
+        font-family: "Courier New", Courier, monospace;
+        color: var(--ink);
+      }
+
+      /* ---------- The scene: beach underneath, room on top ---------- */
+      #scene {
+        position: fixed;
+        inset: 0;
+        animation: hum 6s ease-in-out infinite;
+        transition: --r 1s linear;
+      }
+      @keyframes hum {
+        0%,
+        100% {
+          filter: brightness(1);
+        }
+        50% {
+          filter: brightness(0.94);
+        }
+      }
+
+      #beach {
+        position: absolute;
+        inset: 0;
+        background:
+      /* sand */
+          radial-gradient(
+              circle at 20% 80%,
+              rgba(120, 95, 40, 0.25) 0 1px,
+              transparent 2px
+            )
+            0 0 / 9px 9px,
+          linear-gradient(
+            to bottom,
+            #f6d9c0 0,
+            #f2e3d0 30%,
+            /* hazy sky */ #f2e3d0 44%,
+            #8ec3c9 44.5%,
+            #4f98a8 72%,
+            /* sea */ #efe0b0 72.5%,
+            #e2c98e 100%
+          ); /* sand */
+      }
+      #sea-shimmer {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 44.5%;
+        height: 27.5%;
+        opacity: 0.5;
+        background: repeating-linear-gradient(
+          0deg,
+          rgba(255, 255, 255, 0.35) 0 2px,
+          transparent 2px 14px
+        );
+        animation: tide 7s ease-in-out infinite alternate;
+      }
+      @keyframes tide {
+        from {
+          transform: translateY(-4px);
+          opacity: 0.25;
+        }
+        to {
+          transform: translateY(6px);
+          opacity: 0.55;
+        }
+      }
+
+      #wall {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        bottom: var(--floor-h);
+        background:
+          radial-gradient(
+            ellipse 70% 60% at 50% 0%,
+            rgba(255, 252, 210, 0.75),
+            transparent 70%
+          ),
+          repeating-linear-gradient(
+            90deg,
+            var(--wall) 0 38px,
+            #bfae4f 38px 40px,
+            var(--wall) 40px 78px,
+            #b5a448 78px 80px
+          );
+        /* the wallpaper peels away from the bottom as time runs out */
+        --cut: calc(100% - var(--r) * 55%);
+        -webkit-mask-image: linear-gradient(
+          to bottom,
+          #000 0,
+          #000 var(--cut),
+          transparent calc(var(--cut) + 10%)
+        );
+        mask-image: linear-gradient(
+          to bottom,
+          #000 0,
+          #000 var(--cut),
+          transparent calc(var(--cut) + 10%)
+        );
+      }
+
+      /* cobblestones: they lift away, one by one, to show the sand */
+      #floor {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: var(--floor-h);
+        display: flex;
+        flex-direction: column;
+        padding: 2px 0;
+        gap: 3px;
+        box-shadow: 0 -30px 50px rgba(0, 0, 0, 0.18);
+      }
+      .row {
+        flex: 1;
+        display: flex;
+        gap: 3px;
+      }
+      .row:nth-child(even) {
+        margin-left: -3.5vw;
+      }
+      .stone {
+        flex: 1;
+        border-radius: 38% 42% 36% 40% / 45% 38% 44% 40%;
+        background: radial-gradient(
+          ellipse at 35% 30%,
+          #9a9aa3,
+          #6c6c78 70%,
+          #4f4f5a
+        );
+        box-shadow:
+          inset 0 -4px 6px rgba(0, 0, 0, 0.35),
+          0 3px 0 rgba(0, 0, 0, 0.25);
+        transition:
+          transform 1.6s cubic-bezier(0.2, 0.8, 0.2, 1),
+          opacity 1.6s ease-in;
+      }
+      .stone.gone {
+        transform: translateY(-40px) rotate(var(--spin, 20deg)) scale(0.6);
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      /* vignette + VHS scanlines over everything */
+      #vhs {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 5;
+        mix-blend-mode: multiply;
+        background:
+          repeating-linear-gradient(
+            0deg,
+            rgba(0, 0, 0, 0.07) 0 1px,
+            transparent 1px 3px
+          ),
+          radial-gradient(
+            ellipse at center,
+            transparent 45%,
+            rgba(20, 16, 0, 0.6) 100%
+          );
+      }
+      @keyframes flicker {
+        0%,
+        18%,
+        22%,
+        60%,
+        64%,
+        100% {
+          opacity: 1;
+        }
+        20% {
+          opacity: 0.35;
+        }
+        62% {
+          opacity: 0.6;
+        }
+        63% {
+          opacity: 0.2;
+        }
+      }
+
+      /* ---------- Sign and controls ---------- */
+      main {
+        position: relative;
+        z-index: 2;
+        text-align: center;
+        padding: 1rem;
+        margin-top: -8vh;
+      }
+      .sign {
+        display: inline-block;
+        padding: 1.2rem 2.4rem 1rem;
+        background: var(--light);
+        border: 6px solid #d7d2a8;
+        box-shadow:
+          0 0 0 2px #7f7a52,
+          0 20px 40px rgba(0, 0, 0, 0.35),
+          0 0 120px rgba(255, 250, 200, 0.35);
+      }
+      .label {
+        font-size: 0.8rem;
+        letter-spacing: 0.4em;
+        text-transform: uppercase;
+        opacity: 0.6;
+        margin-bottom: 0.2rem;
+      }
+      #display {
+        font-size: clamp(3.5rem, 16vw, 8rem);
+        letter-spacing: 0.06em;
+        font-variant-numeric: tabular-nums;
+        color: #3a3a1c;
+        text-shadow:
+          0 0 1px rgba(0, 0, 0, 0.5),
+          2px 0 rgba(255, 0, 0, 0.18),
+          -2px 0 rgba(0, 120, 255, 0.18);
+        display: inline-block;
+      }
+      #display.running {
+        animation: drift 9s ease-in-out infinite;
+      }
+      @keyframes drift {
+        0%,
+        100% {
+          transform: translateY(0);
+          opacity: 1;
+        }
+        50% {
+          transform: translateY(-3px);
+          opacity: 0.88;
+        }
+      }
+      #display.done {
+        animation: flicker 1.7s steps(1) infinite;
+      }
+      .note {
+        margin-top: 0.4rem;
+        font-size: 0.85rem;
+        opacity: 0.6;
+        min-height: 1.2em;
+        letter-spacing: 0.15em;
+      }
+
+      .controls {
+        margin-top: 1.4rem;
+        display: flex;
+        gap: 0.6rem;
+        justify-content: center;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      input {
+        width: 3.8rem;
+        font: inherit;
+        font-size: 1.4rem;
+        text-align: center;
+        padding: 0.2rem;
+        background: var(--light);
+        color: var(--ink);
+        border: 2px solid #7f7a52;
+      }
+      button {
+        font: inherit;
+        font-size: 1rem;
+        letter-spacing: 0.15em;
+        text-transform: lowercase;
+        padding: 0.5rem 1.2rem;
+        margin: 0.3rem 0.2rem;
+        cursor: pointer;
+        background: var(--light);
+        color: var(--ink);
+        border: 2px solid #7f7a52;
+        box-shadow: 2px 2px 0 #5d5a3a;
+      }
+      button:hover {
+        background: #fff;
+      }
+      button:active {
+        transform: translate(2px, 2px);
+        box-shadow: none;
+      }
+      #hum[aria-pressed="false"] {
+        opacity: 0.5;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #scene,
+        #sea-shimmer,
+        #display {
+          animation: none !important;
+        }
+        .stone {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="scene" aria-hidden="true">
+      <div id="beach"></div>
+      <div id="sea-shimmer"></div>
+      <div id="wall"></div>
+      <div id="floor"></div>
+    </div>
+    <div id="vhs" aria-hidden="true"></div>
+
+    <main>
+      <div class="sign">
+        <div class="label" id="label">you are here</div>
+        <div id="display">05:00</div>
+        <div class="note" id="note">&nbsp;</div>
+      </div>
+      <div class="controls">
+        <input id="min" type="number" min="0" value="5" aria-label="Minutes" />
+        :
+        <input
+          id="sec"
+          type="number"
+          min="0"
+          max="59"
+          value="0"
+          aria-label="Seconds"
+        />
+      </div>
+      <div>
+        <button id="start">start</button>
+        <button id="reset">reset</button>
+        <button id="hum" aria-pressed="true">sound: on</button>
+      </div>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const display = $("display"),
+        note = $("note"),
+        label = $("label");
+      const minEl = $("min"),
+        secEl = $("sec"),
+        startBtn = $("start"),
+        humBtn = $("hum");
+      let remaining = 0,
+        total = 0,
+        endTime = 0,
+        handle = null,
+        whisperTimer = null;
+
+      const fmt = (s) =>
+        `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+      const readInputs = () =>
+        Math.max(0, (+minEl.value || 0) * 60 + (+secEl.value || 0));
+      const show = (s) => {
+        display.textContent = fmt(s);
+        document.title = fmt(s) + " – Timer";
+      };
+
+      /* ---------- Cobblestones ---------- */
+      const floor = $("floor"),
+        stones = [];
+      (function buildFloor() {
+        const rows = 5,
+          cols = 17;
+        for (let r = 0; r < rows; r++) {
+          const row = document.createElement("div");
+          row.className = "row";
+          for (let c = 0; c < cols; c++) {
+            const s = document.createElement("div");
+            s.className = "stone";
+            s.style.setProperty(
+              "--spin",
+              (Math.random() * 80 - 40).toFixed(0) + "deg",
+            );
+            s.style.flexGrow = (0.85 + Math.random() * 0.3).toFixed(2);
+            s._at = 0.03 + Math.random() * 0.94; // progress at which this stone lets go
+            row.appendChild(s);
+            stones.push(s);
+          }
+          floor.appendChild(row);
+        }
+      })();
+
+      let lastGone = 0;
+      function setProgress(p) {
+        document.documentElement.style.setProperty("--r", p.toFixed(3));
+        let gone = 0;
+        stones.forEach((s) => {
+          const g = p >= s._at;
+          s.classList.toggle("gone", g);
+          if (g) gone++;
+        });
+        if (gone > lastGone) thud(Math.min(3, gone - lastGone));
+        lastGone = gone;
+        wavesLevel(p);
+        label.textContent = p > 0.6 ? "sous les pavés" : "you are here";
+      }
+
+      /* ---------- Whispers ---------- */
+      const EARLY = [
+        "the hallway continues",
+        "no one else is here",
+        "this room feels familiar",
+        "the lights have always been on",
+        "nothing is wrong",
+        "the carpet is damp",
+      ];
+      const LATE = [
+        "sous les pavés, la plage",
+        "under the carpet, sand",
+        "you can hear the sea through the wall",
+        "the floor was never solid",
+        "salt in the air",
+        "the horizon was behind the wallpaper",
+        "the tide is patient",
+        "exit: not required",
+      ];
+      function whisper() {
+        const p = total ? 1 - remaining / total : 0;
+        const pool = p < 0.3 ? EARLY : Math.random() < p ? LATE : EARLY;
+        note.textContent = pool[Math.floor(Math.random() * pool.length)];
+        setTimeout(() => {
+          if (handle) note.innerHTML = "&nbsp;";
+        }, 4500);
+      }
+
+      /* ---------- Audio: fluorescent hum fading into the sea ---------- */
+      let ctx = null,
+        soundOn = true,
+        nodes = null;
+      const ac = () => (ctx = ctx || new AudioContext());
+
+      function noiseBuffer(sec) {
+        const b = ctx.createBuffer(1, ctx.sampleRate * sec, ctx.sampleRate),
+          d = b.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        return b;
+      }
+
+      function startAmbient() {
+        if (!soundOn || nodes) return;
+        try {
+          ac();
+          ctx.resume();
+          const master = ctx.createGain();
+          master.gain.value = 0;
+          master.gain.linearRampToValueAtTime(0.5, ctx.currentTime + 3);
+          master.connect(ctx.destination);
+
+          const delay = ctx.createDelay();
+          delay.delayTime.value = 0.45;
+          const fb = ctx.createGain();
+          fb.gain.value = 0.55;
+          const lp = ctx.createBiquadFilter();
+          lp.type = "lowpass";
+          lp.frequency.value = 1200;
+          delay.connect(lp).connect(fb).connect(delay);
+          lp.connect(master);
+
+          const humBus = ctx.createGain();
+          humBus.gain.value = 1;
+          humBus.connect(master);
+          const oscs = [];
+          const add = (type, freq, vol, wet, bus) => {
+            const o = ctx.createOscillator(),
+              g = ctx.createGain();
+            o.type = type;
+            o.frequency.value = freq;
+            g.gain.value = vol;
+            o.connect(g);
+            g.connect(bus || master);
+            if (wet) g.connect(delay);
+            o.start();
+            oscs.push(o);
+          };
+          add("sawtooth", 60, 0.035, false, humBus); // mains hum
+          add("sawtooth", 120.4, 0.02, false, humBus);
+          add("sine", 196.0, 0.06, true); // pad: open fifth, detuned
+          add("sine", 196.9, 0.06, true);
+          add("sine", 293.7, 0.04, true);
+          add("sine", 294.6, 0.04, true);
+
+          // the sea: looped noise, band-passed, swelling every ~9s
+          const src = ctx.createBufferSource();
+          src.buffer = noiseBuffer(3);
+          src.loop = true;
+          const bp = ctx.createBiquadFilter();
+          bp.type = "bandpass";
+          bp.frequency.value = 600;
+          bp.Q.value = 0.5;
+          const swell = ctx.createGain();
+          swell.gain.value = 0.5;
+          const lfo = ctx.createOscillator(),
+            lg = ctx.createGain();
+          lfo.frequency.value = 0.11;
+          lg.gain.value = 0.45;
+          lfo.connect(lg).connect(swell.gain);
+          lfo.start();
+          oscs.push(lfo);
+          const waves = ctx.createGain();
+          waves.gain.value = 0;
+          src.connect(bp).connect(swell).connect(waves).connect(master);
+          src.start();
+
+          nodes = { master, oscs, src, humBus, waves };
+          wavesLevel(total ? 1 - remaining / total : 0);
+        } catch (e) {}
+      }
+      function wavesLevel(p) {
+        if (!nodes) return;
+        const t = ctx.currentTime;
+        nodes.waves.gain.setTargetAtTime(0.02 + p * 0.5, t, 1.5);
+        nodes.humBus.gain.setTargetAtTime(1 - p * 0.75, t, 1.5); // the hum gives way to the water
+      }
+      function stopAmbient() {
+        if (!nodes) return;
+        const { master, oscs, src } = nodes;
+        nodes = null;
+        const t = ctx.currentTime;
+        master.gain.cancelScheduledValues(t);
+        master.gain.setValueAtTime(master.gain.value, t);
+        master.gain.linearRampToValueAtTime(0, t + 1.5);
+        setTimeout(() => {
+          oscs.forEach((o) => {
+            try {
+              o.stop();
+            } catch (e) {}
+          });
+          try {
+            src.stop();
+          } catch (e) {}
+        }, 1700);
+      }
+      function thud(n) {
+        // a stone letting go
+        if (!soundOn || !nodes) return;
+        for (let i = 0; i < n; i++) {
+          const t = ctx.currentTime + i * 0.07,
+            o = ctx.createOscillator(),
+            g = ctx.createGain();
+          o.type = "sine";
+          o.frequency.setValueAtTime(110 + Math.random() * 40, t);
+          o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+          g.gain.setValueAtTime(0.18, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+          o.connect(g).connect(ctx.destination);
+          o.start(t);
+          o.stop(t + 0.2);
+        }
+      }
+      function doneChime() {
+        try {
+          ac();
+          const t = ctx.currentTime,
+            o = ctx.createOscillator(),
+            g = ctx.createGain();
+          o.type = "sine";
+          o.frequency.value = 523.25;
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(0.25, t + 0.05);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 4);
+          o.connect(g).connect(ctx.destination);
+          o.start(t);
+          o.stop(t + 4);
+        } catch (e) {}
+      }
+
+      /* ---------- Timer ---------- */
+      function tick() {
+        remaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
+        show(remaining);
+        setProgress(total ? 1 - remaining / total : 0);
+        if (remaining === 0) {
+          clearInterval(handle);
+          handle = null;
+          clearInterval(whisperTimer);
+          display.classList.remove("running");
+          display.classList.add("done");
+          note.textContent = "sous les pavés, la plage.";
+          startBtn.textContent = "start";
+          doneChime();
+          setTimeout(stopAmbient, 6000); // let the sea carry on for a while
+        }
+      }
+
+      startBtn.onclick = () => {
+        if (handle) {
+          // pause
+          clearInterval(handle);
+          handle = null;
+          clearInterval(whisperTimer);
+          stopAmbient();
+          display.classList.remove("running");
+          note.textContent = "paused. nothing moves.";
+          startBtn.textContent = "resume";
+          return;
+        }
+        if (!remaining) {
+          remaining = total = readInputs();
+          setProgress(0);
+        }
+        if (!remaining) return;
+        display.classList.remove("done");
+        display.classList.add("running");
+        note.innerHTML = "&nbsp;";
+        startAmbient();
+        whisperTimer = setInterval(whisper, 17000);
+        endTime = Date.now() + remaining * 1000;
+        handle = setInterval(tick, 250);
+        startBtn.textContent = "pause";
+        tick();
+      };
+
+      function resetAll() {
+        clearInterval(handle);
+        handle = null;
+        clearInterval(whisperTimer);
+        remaining = total = 0;
+        lastGone = 0;
+        stopAmbient();
+        display.classList.remove("done", "running");
+        note.innerHTML = "&nbsp;";
+        startBtn.textContent = "start";
+        stones.forEach((s) => s.classList.remove("gone"));
+        setProgress(0);
+        lastGone = 0;
+        show(readInputs());
+      }
+      $("reset").onclick = resetAll;
+
+      humBtn.onclick = () => {
+        soundOn = !soundOn;
+        humBtn.setAttribute("aria-pressed", soundOn);
+        humBtn.textContent = "sound: " + (soundOn ? "on" : "off");
+        if (!soundOn) stopAmbient();
+        else if (handle) startAmbient();
+      };
+
+      [minEl, secEl].forEach(
+        (el) =>
+          (el.oninput = () => {
+            if (!handle) resetAll();
+          }),
+      );
+      setProgress(0);
+    </script>
+  </body>
+</html>
