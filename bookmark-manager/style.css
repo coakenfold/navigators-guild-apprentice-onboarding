@@ -216,6 +216,11 @@ textarea {
   color: var(--error);
 }
 
+.save-status {
+  margin: 8px 0 0;
+  color: var(--accent);
+}
+
 .form-actions {
   display: flex;
   justify-content: flex-end;

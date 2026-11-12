@@ -8,6 +8,8 @@
   const emptyMessage = document.getElementById("empty-message");
   const tagFilter = document.getElementById("tag-filter");
   const searchInput = document.getElementById("search");
+  const saveStatus = document.getElementById("save-status");
+  let saveStatusTimer = null;
 
   const NO_BOOKMARKS_TEXT = "No bookmarks yet. Add your first one above.";
   const NO_MATCH_TEXT = "No bookmarks match your search.";
@@ -136,6 +138,19 @@
     setFormOpen(false);
     render();
     formToggle.focus();
+    // The saved bookmark may be hidden by the search or tag filter,
+    // so confirm the save in words.
+    if (searchInput.value.trim() !== "" || selectedTag !== null) showSaved();
+  }
+
+  function showSaved() {
+    clearTimeout(saveStatusTimer);
+    saveStatus.textContent = "Saved";
+    saveStatus.hidden = false;
+    saveStatusTimer = setTimeout(() => {
+      saveStatus.hidden = true;
+      saveStatus.textContent = "";
+    }, 3000);
   }
 
   const FORM_DURATION = 450;

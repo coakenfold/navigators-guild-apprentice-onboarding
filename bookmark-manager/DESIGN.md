@@ -185,6 +185,7 @@ These features were added on purpose during the build (slice 6 and the follow-up
 - The form closes after a successful save, and also when you press the toggle again, press **Cancel** / **Discard changes**, or press **Escape** inside the form. Deleting the bookmark being edited closes it too. Closing the form clears it and returns it to add mode; the heading and buttons switch back to their add-mode names once the drawer has closed.
 - **Edit** on a bookmark opens the form if it is closed. Pressing Edit on another bookmark while editing switches the form, and its heading, to that bookmark.
 - The toggle uses `aria-expanded` and `aria-controls`, so its state is announced.
+- If a search or tag filter is active when a save succeeds, a short "Saved" message (`role="status"`) appears above the list for about 3 seconds. The new bookmark may be hidden by the search or filter, so the message confirms the save. The search and filter are left as they are. No message shows when neither is active.
 
 ### A.2 Motion
 

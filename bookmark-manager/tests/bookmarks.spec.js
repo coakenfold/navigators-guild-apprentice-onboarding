@@ -1614,3 +1614,27 @@ test.describe("Reduced motion", () => {
     expect(duration).toBe("0s");
   });
 });
+
+test.describe("Saved message", () => {
+  test('shows "Saved" when a search hides the new bookmark', async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await addBookmark(page, EXAMPLE);
+    await page.getByLabel("Search bookmarks").fill("pasta");
+    await addBookmark(page, {
+      url: "https://example.com/soup",
+      title: "Soup",
+      notes: "",
+      tags: "",
+    });
+    await expect(page.locator("#save-status")).toHaveText("Saved");
+    await expect(page.locator(".bookmark")).toHaveCount(1);
+  });
+
+  test("shows nothing when no search or filter is active", async ({ page }) => {
+    await page.goto("/");
+    await addBookmark(page, EXAMPLE);
+    await expect(page.locator("#save-status")).toBeHidden();
+  });
+});
