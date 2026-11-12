@@ -177,6 +177,8 @@
       "(prefers-reduced-motion: reduce)",
     ).matches;
     form.hidden = false;
+    // Closing fields leave the tab order at once, not when the animation ends.
+    form.inert = !open;
     form.style.height = "";
     form.style.overflow = "";
     const rows = measureFormRows();
