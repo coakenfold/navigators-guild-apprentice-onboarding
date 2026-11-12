@@ -31,10 +31,34 @@
   function loadBookmarks() {
     try {
       const data = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      return Array.isArray(data) ? data : [];
+      return Array.isArray(data) ? data.map(normaliseRecord).filter(Boolean) : [];
     } catch {
       return [];
     }
+  }
+
+  // Returns a safe copy of a stored record, or null if it can't be used.
+  function normaliseRecord(record) {
+    if (!record || typeof record !== "object" || Array.isArray(record)) return null;
+    const { id, url, title } = record;
+    if (typeof id !== "string" || typeof url !== "string" || typeof title !== "string") {
+      return null;
+    }
+    if (validateUrl(url) !== "") return null;
+    const created = new Date(record.createdAt);
+    return {
+      id,
+      url,
+      title,
+      notes: typeof record.notes === "string" ? record.notes : "",
+      tags: Array.isArray(record.tags)
+        ? record.tags.filter((tag) => typeof tag === "string")
+        : [],
+      createdAt:
+        typeof record.createdAt === "string" && !Number.isNaN(created.getTime())
+          ? record.createdAt
+          : new Date().toISOString(),
+    };
   }
 
   function saveBookmarks() {

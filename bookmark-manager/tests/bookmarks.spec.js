@@ -1638,3 +1638,55 @@ test.describe("Saved message", () => {
     await expect(page.locator("#save-status")).toBeHidden();
   });
 });
+
+test.describe("R1 malformed stored data", () => {
+  const good = {
+    id: "1",
+    url: "https://a.com",
+    title: "Good",
+    notes: "n",
+    tags: ["x"],
+    createdAt: "2026-10-01T00:00:00.000Z",
+  };
+
+  /** Seed storage before the app script runs, then load the page. */
+  async function seed(page, raw) {
+    await page.addInitScript((value) => {
+      if (!sessionStorage.getItem("seeded")) {
+        localStorage.setItem("bookmarks", value);
+        sessionStorage.setItem("seeded", "1");
+      }
+    }, raw);
+    await page.goto("/");
+  }
+
+  const cases = {
+    "invalid JSON": "{not json",
+    "missing tags/notes": JSON.stringify([
+      { id: "1", url: "https://a.com", title: "Good", createdAt: good.createdAt },
+    ]),
+    "null entry": JSON.stringify([good, null]),
+    "javascript: URL": JSON.stringify([
+      good,
+      { ...good, id: "2", url: "javascript:alert(1)", title: "Bad" },
+    ]),
+  };
+
+  for (const [name, raw] of Object.entries(cases)) {
+    test(`${name} does not break the app`, async ({ page }) => {
+      const errors = [];
+      page.on("pageerror", (e) => errors.push(e.message));
+      await seed(page, raw);
+      if (name === "invalid JSON") {
+        await expect(page.getByText("No bookmarks yet. Add your first one above.")).toBeVisible();
+      } else {
+        await expect(page.locator(".bookmark-title")).toHaveText(["Good"]);
+      }
+      expect(errors).toEqual([]);
+      const hrefs = await page
+        .locator("a")
+        .evaluateAll((as) => as.map((a) => a.getAttribute("href") ?? ""));
+      expect(hrefs.some((h) => h.startsWith("javascript:"))).toBe(false);
+    });
+  }
+});

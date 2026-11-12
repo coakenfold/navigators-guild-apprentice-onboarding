@@ -94,7 +94,7 @@ Model: Sonnet 5.5 Medium
 ```
 Read: `guild-portfolio/bookmark-manager/REVIEW-4.md`
 
-Re: 
+Fix: `R1. One malformed stored record blanks the whole app`
 ```
 
 ### Prompt 2
