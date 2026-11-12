@@ -29,14 +29,14 @@ App:
 
 Review this code against the attached design and acceptance criteria. Report confirmed defects separately from risks and questions. For each finding, cite the relevant requirement and code location, explain impact, and suggest a way to reproduce or test it.
 
-Save the review to `guild-portfolio/bookmark-manager/REVIEW-3.md`
+Save the review to `guild-portfolio/02-the-methodology/01-how-we-build/REVIEW-3.md`
 
 ## Important
 
 There are previously created REVIEW documents. Ignore them and do not read.
 
-- `guild-portfolio/bookmark-manager/REVIEW.md`
-- `guild-portfolio/bookmark-manager/REVIEW-2.md`
+- `guild-portfolio/02-the-methodology/01-how-we-build/REVIEW.md`
+- `guild-portfolio/02-the-methodology/01-how-we-build/REVIEW-2.md`
 ```
 
 ---
@@ -48,7 +48,7 @@ There are previously created REVIEW documents. Ignore them and do not read.
 Model: Sonnet 5.5 Medium
 
 ```
-Read: `guild-portfolio/bookmark-manager/REVIEW-3.md`
+Read: `guild-portfolio/02-the-methodology/01-how-we-build/REVIEW-3.md`
 
 Re: > Q2. Should a new bookmark be visible after saving while a search or filter is active?
 
@@ -74,15 +74,15 @@ App:
 
 Review this code against the attached design and acceptance criteria. Report confirmed defects separately from risks and questions. For each finding, cite the relevant requirement and code location, explain impact, and suggest a way to reproduce or test it.
 
-Save the review to `guild-portfolio/bookmark-manager/REVIEW-4.md`
+Save the review to `guild-portfolio/02-the-methodology/01-how-we-build/REVIEW-4.md`
 
 ## Important
 
 There are previously created REVIEW documents. Ignore them and do not read.
 
-- `guild-portfolio/bookmark-manager/REVIEW.md`
-- `guild-portfolio/bookmark-manager/REVIEW-2.md`
-- `guild-portfolio/bookmark-manager/REVIEW-3.md`
+- `guild-portfolio/02-the-methodology/01-how-we-build/REVIEW.md`
+- `guild-portfolio/02-the-methodology/01-how-we-build/REVIEW-2.md`
+- `guild-portfolio/02-the-methodology/01-how-we-build/REVIEW-3.md`
 ```
 
 ## Round 3
@@ -92,7 +92,7 @@ There are previously created REVIEW documents. Ignore them and do not read.
 Model: Sonnet 5.5 Medium
 
 ```
-Read: `guild-portfolio/bookmark-manager/REVIEW-4.md`
+Read: `guild-portfolio/02-the-methodology/01-how-we-build/REVIEW-4.md`
 
 Fix: `R1. One malformed stored record blanks the whole app`
 ```
@@ -116,14 +116,14 @@ App:
 
 Review this code against the attached design and acceptance criteria. Report confirmed defects separately from risks and questions. For each finding, cite the relevant requirement and code location, explain impact, and suggest a way to reproduce or test it.
 
-Save the review to `guild-portfolio/bookmark-manager/REVIEW-5.md`
+Save the review to `guild-portfolio/02-the-methodology/01-how-we-build/REVIEW-5.md`
 
 ## Important
 
 There are previously created REVIEW documents. Ignore them and do not read.
 
-- `guild-portfolio/bookmark-manager/REVIEW.md`
-- `guild-portfolio/bookmark-manager/REVIEW-2.md`
-- `guild-portfolio/bookmark-manager/REVIEW-3.md`
-- `guild-portfolio/bookmark-manager/REVIEW-4.md`
+- `guild-portfolio/02-the-methodology/01-how-we-build/REVIEW.md`
+- `guild-portfolio/02-the-methodology/01-how-we-build/REVIEW-2.md`
+- `guild-portfolio/02-the-methodology/01-how-we-build/REVIEW-3.md`
+- `guild-portfolio/02-the-methodology/01-how-we-build/REVIEW-4.md`
 ```
