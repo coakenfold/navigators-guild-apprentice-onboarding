@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
@@ -244,10 +244,26 @@ pub fn write_file(path: &Path, contents: &str) -> Result<()> {
     tmp_name.push(".tmp");
     let tmp = path.with_file_name(tmp_name);
 
-    fs::write(&tmp, contents)
-        .map_err(|e| Error::store(format!("Can't write {}: {e}", tmp.display())))?;
-    fs::rename(&tmp, path).map_err(|e| {
+    // Flushed to disk before the rename. Otherwise a crash could keep the
+    // rename but lose the data, leaving an empty file in place of the old one.
+    let written = File::create(&tmp).and_then(|mut file| {
+        file.write_all(contents.as_bytes())?;
+        file.sync_all()
+    });
+    if let Err(e) = written {
         let _ = fs::remove_file(&tmp);
-        Error::store(format!("Can't write {}: {e}", path.display()))
-    })
+        return Err(Error::store(format!("Can't write {}: {e}", tmp.display())));
+    }
+    if let Err(e) = fs::rename(&tmp, path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(Error::store(format!("Can't write {}: {e}", path.display())));
+    }
+    // Flushing the folder keeps the rename itself. This is best effort,
+    // because not every system lets a folder be opened and flushed.
+    if let Some(dir) = path.parent()
+        && let Ok(dir) = File::open(dir)
+    {
+        let _ = dir.sync_all();
+    }
+    Ok(())
 }
