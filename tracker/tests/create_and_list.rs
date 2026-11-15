@@ -730,3 +730,42 @@ fn titles_and_project_names_cant_hold_terminal_control_characters() {
     );
     assert!(message.contains("U+001B"), "{message}");
 }
+
+#[test]
+fn a_bad_project_key_in_config_json_is_refused() {
+    let env = Env::new();
+    let root = env.dir("proj");
+    let config_path = env.home.path().join("config.json");
+
+    // `../../pwned` would put its item files two folders above `items/`.
+    for key in ["../../pwned", "bm", "X-Y", ""] {
+        let config = json!({ "projects": { key: { "name": "p", "root": root } } });
+        fs::write(&config_path, config.to_string()).unwrap();
+
+        for args in [&["list"][..], &["project", "list"]] {
+            let output = env.cmd().args(args).arg("--json").assert().code(3);
+            let message = parse(&output.get_output().stdout)["error"]
+                .as_str()
+                .unwrap()
+                .to_string();
+            assert!(
+                message.contains("isn't valid"),
+                "{key:?} {args:?}: {message}"
+            );
+        }
+        env.cmd()
+            .current_dir(&root)
+            .args(["create", "escape"])
+            .assert()
+            .code(3);
+    }
+
+    // Nothing was written outside the store, or in it. `items/../../` is
+    // the folder that holds the store.
+    let above_the_store = env.home.path().parent().unwrap();
+    assert!(!above_the_store.join("pwned-1.json").exists());
+    assert_eq!(
+        fs::read_dir(env.home.path().join("items")).unwrap().count(),
+        0
+    );
+}

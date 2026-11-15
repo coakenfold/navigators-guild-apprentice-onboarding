@@ -80,6 +80,19 @@ impl Item {
     }
 }
 
+/// Whether `id` is an item ID: a project key, a dash and a number from 1
+/// with no leading zeros, such as `BM-12`. Nothing else may become part of
+/// an item file's path.
+pub fn is_valid_id(id: &str) -> bool {
+    let Some((key, number)) = id.split_once('-') else {
+        return false;
+    };
+    crate::config::is_valid_key(key)
+        && number.starts_with(|c: char| ('1'..='9').contains(&c))
+        && number.chars().all(|c| c.is_ascii_digit())
+        && number.parse::<u64>().is_ok()
+}
+
 /// The current time to the second, which is how item files record times.
 pub fn now() -> Timestamp {
     Timestamp::from_second(Timestamp::now().as_second()).expect("the current time is in range")

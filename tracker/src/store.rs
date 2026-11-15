@@ -60,8 +60,16 @@ impl Store {
         self.home.join("items")
     }
 
-    pub fn item_path(&self, id: &str) -> PathBuf {
-        self.items_dir().join(format!("{id}.json"))
+    /// The item file for `id`. Anything that isn't an item ID, such as
+    /// `../config`, is refused, so no ID can name a file outside `items/`.
+    pub fn item_path(&self, id: &str) -> Result<PathBuf> {
+        if !item::is_valid_id(id) {
+            return Err(Error::input(format!(
+                "\"{id}\" isn't an item ID. An ID is a project key, a dash and a number, \
+                 such as BM-12."
+            )));
+        }
+        Ok(self.items_dir().join(format!("{id}.json")))
     }
 
     /// Creates whatever parts of the store are missing and leaves the rest
@@ -204,7 +212,7 @@ impl Store {
 
     /// Writes a new item's file. Call this only while holding the lock.
     pub fn save_item(&self, item: &Item) -> Result<()> {
-        write_file(&self.item_path(&item.id), &item::to_json(item))
+        write_file(&self.item_path(&item.id)?, &item::to_json(item))
     }
 
     /// Reads every item file, sorted by project and then by number.

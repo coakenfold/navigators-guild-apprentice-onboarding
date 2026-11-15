@@ -43,8 +43,21 @@ impl Project {
 pub fn load(store: &Store) -> Result<Config> {
     let path = store.config_path();
     let text = store::read_file(&path)?;
-    serde_json::from_str(&text)
-        .map_err(|e| Error::store(format!("Can't parse {}: {e}", path.display())))
+    let config: Config = serde_json::from_str(&text)
+        .map_err(|e| Error::store(format!("Can't parse {}: {e}", path.display())))?;
+    // Keys written by hand are checked too: a key becomes part of every item
+    // ID, and so of a file path, and a key such as `../x` would put item
+    // files outside the store.
+    for key in config.projects.keys() {
+        if !is_valid_key(key) {
+            return Err(Error::store(format!(
+                "{} has a project key \"{key}\", which isn't valid. A key is up to 10 \
+                 capital letters and digits, starting with a letter, such as BM. Rename it there.",
+                path.display()
+            )));
+        }
+    }
+    Ok(config)
 }
 
 /// Adds a project to `config.json`. Call this only while holding the lock.
@@ -83,15 +96,23 @@ pub fn add_project(store: &Store, key: &str, project: &Project) -> Result<()> {
 /// before the dash in an item ID, such as `BM` in `BM-12`.
 pub fn normalize_key(key: &str) -> Result<String> {
     let key = key.trim().to_ascii_uppercase();
-    let starts_with_letter = key.starts_with(|c: char| c.is_ascii_alphabetic());
-    let letters_and_digits = key.chars().all(|c| c.is_ascii_alphanumeric());
-    if !starts_with_letter || !letters_and_digits || key.len() > 10 {
+    if !is_valid_key(&key) {
         return Err(Error::input(format!(
             "\"{key}\" isn't a valid project key. Use up to 10 letters and digits, \
              starting with a letter, such as BM or TR."
         )));
     }
     Ok(key)
+}
+
+/// Whether `key` is a project key exactly as stored: up to 10 capital
+/// letters and digits, starting with a letter, such as `BM` or `TR2`.
+pub fn is_valid_key(key: &str) -> bool {
+    key.len() <= 10
+        && key.starts_with(|c: char| c.is_ascii_uppercase())
+        && key
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
 }
 
 /// The key of the project whose root contains `dir`. When roots are nested,
