@@ -75,6 +75,8 @@ impl Store {
     /// Creates whatever parts of the store are missing and leaves the rest
     /// alone. Returns true if the store is new.
     pub fn init(&self) -> Result<bool> {
+        create_private_dir(&self.home)
+            .map_err(|e| Error::store(format!("Can't create {}: {e}", self.home.display())))?;
         let items = self.items_dir();
         fs::create_dir_all(&items)
             .map_err(|e| Error::store(format!("Can't create {}: {e}", items.display())))?;
@@ -237,6 +239,25 @@ impl Store {
         }
         items.sort_by_key(|item| (item.project.clone(), item.number()));
         Ok(items)
+    }
+}
+
+/// Creates `path`, and any missing folders above it, readable only by me
+/// (0700), since items hold my notes and, later, check output. A folder that
+/// already exists is left as it is: `TRACKER_HOME` might name a folder that
+/// has other uses.
+fn create_private_dir(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(path)
+    }
+    #[cfg(not(unix))]
+    {
+        fs::create_dir_all(path)
     }
 }
 

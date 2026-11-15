@@ -769,3 +769,32 @@ fn a_bad_project_key_in_config_json_is_refused() {
         0
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn a_new_store_is_readable_only_by_its_owner() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mode = |path: &std::path::Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+
+    // A store folder that `init` creates, along with a missing folder above it.
+    let env = Env::without_store();
+    let home = env.home.path().join("parent").join("store");
+    let run = |home: &std::path::Path| {
+        env.cmd()
+            .env("TRACKER_HOME", home)
+            .args(["init", "--json"])
+            .assert()
+            .success();
+    };
+    run(&home);
+    assert_eq!(mode(&home), 0o700);
+    assert_eq!(mode(home.parent().unwrap()), 0o700);
+
+    // A folder that already exists keeps its permissions.
+    let existing = env.home.path().join("shared");
+    fs::create_dir(&existing).unwrap();
+    fs::set_permissions(&existing, fs::Permissions::from_mode(0o755)).unwrap();
+    run(&existing);
+    assert_eq!(mode(&existing), 0o755);
+}
