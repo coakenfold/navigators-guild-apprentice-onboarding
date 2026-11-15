@@ -497,7 +497,11 @@ One central store at `~/.tracker/`, or wherever the `TRACKER_HOME` environment v
       "name": "tracker",
       "root": "~/Documents/Code/guild-projects/guild-portfolio/tracker",
       "design": "DESIGN.md",
-      "checks": ["cargo fmt --check", "cargo clippy -- -D warnings", "cargo test"],
+      "checks": [
+        "cargo fmt --check",
+        "cargo clippy -- -D warnings",
+        "cargo test"
+      ],
       "check_timeout_secs": 300,
       "review": {
         "risky_paths": ["src/store.rs", "src/gates.rs"],
@@ -580,7 +584,11 @@ Each item is one JSON file, and serde maps it to Rust structs and back. The tool
         "secs": 6,
         "output": "✓ 1 [chromium] › bookmarks.spec.js:142:5 › filters by tag (1.1s)\n1 passed (6.0s)"
       },
-      { "cmd": "npx playwright test --project=chromium", "ok": true, "secs": 38 }
+      {
+        "cmd": "npx playwright test --project=chromium",
+        "ok": true,
+        "secs": 38
+      }
     ],
     "judges": [],
     "triggers": []
