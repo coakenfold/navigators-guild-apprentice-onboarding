@@ -53,12 +53,13 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 
 ### Slice 1: Create and list
 
-- **Prompt:** "Create the `tracker` crate with `cargo init` in `guild-portfolio/tracker/`, a folder in the existing guild-portfolio git repo that already holds CLAUDE.md. Don't make it a nested repo, and add a `tracker/.gitignore` for `/target`. Use `git mv` to move `DESIGN.md`, `PLAN.md`, `walkthrough.html` and `judge-eval/` there from `02-the-methodology/02-tracking-your-work/`. Set up the test harness: assert_cmd and tempfile, with every test on its own temporary `TRACKER_HOME`. Implement `init`, `project add`, `project list` (item counts by state), `create "title" [--description]` and `list` as §3 and §4.1–4.3 describe:
+- **Prompt:** "Create the `tracker` crate with `cargo init` in `guild-portfolio/tracker/`, a folder in the existing guild-portfolio git repo that already holds CLAUDE.md. Don't make it a nested repo, and add a `tracker/.gitignore` for `/target`. Use `git mv` to move `DESIGN.md`, `PLAN.md`, `walkthrough.html` and `judge-eval/` there from `chapters/02-the-methodology/02-tracking-your-work/`. Set up the test harness: assert_cmd and tempfile, with every test on its own temporary `TRACKER_HOME`. Implement `init`, `project add`, `project list` (item counts by state), `create "title" [--description]` and `list` as §3 and §4.1–4.3 describe:
   - one item file per item
   - IDs taken from `counters.json` under an exclusive lock on the store's `lock` file
   - the project defaulting to the one whose root contains the current folder
 
   Every command supports `--json`."
+
 - **Done when:**
   - Three creates in two projects get `XX-1`, `XX-2` and `YY-1`. `list` shows all three, and `project list` shows the counts.
   - Inside XX's root, `create` needs no `--project`. Outside every project root, without `--project`, it exits 1.
@@ -106,6 +107,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - An unreadable store exits 3.
 
   Then polish: error messages that say how to fix the problem, colour (anstream/anstyle) that turns off when output isn't a terminal, `--help` text on every command and flag, and empty states such as 'No open items. Nice work!'."
+
 - **Done when:**
   - A hand-corrupted item file is reported with its name, line and reason, and the other items still list.
   - With no store, commands say "Run `tracker init`." and never panic. A store with `chmod 000` exits 3.
@@ -125,6 +127,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - interactive-only `criterion accept`
 
   Add gates G1 (at start: the item has criteria, and no other item in the project is in progress or review), G2 and G6. They run in a new `gates <id>` dry run and in front of `submit`. Any failure lists every reason, changes nothing and exits 2."
+
 - **Done when:**
   - `start` with no criteria is refused by G1 with exit 2, and so is `start` while another item in the project is in progress.
   - A manual criterion with no evidence fails G2. A `design` naming a missing section fails G6, and a numbered section with content under it passes.
@@ -146,6 +149,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - A failure reports the command, exit code and last lines of output.
 
   After G1, `start` runs each criterion check once, records the results in `started.checks`, and warns, without refusing, about any check that already passes. Keep the last 20 lines of each check's output for the verification record."
+
 - **Done when:**
   - A failing check shows its command, exit code and last lines of output.
   - A check running longer than its timeout is stopped and fails.
@@ -161,6 +165,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - G5 requires a clean working tree and at least one item commit. The clean-tree check is limited to the project root by the folder rule in the assumptions, and ignored files don't count.
 
   A passing submit now auto-verifies. It writes the full verification record and creates `refs/tracker/<ID>`, which `delete` removes. Shelving an in-progress item needs a clean tree and passing project checks. `submit` re-reads the item under the lock and writes nothing (exit 1) if it changed while the gates ran. A project root that isn't inside a git work tree exits 3."
+
 - **Done when:**
   - In a throwaway repo:
     - An uncommitted change fails G5, and so does an untracked file.
@@ -184,6 +189,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - `show --diff`, which prints the item's commits and their combined diff
 
   `status` refuses an item in review and points to `approve` and `reject`."
+
 - **Done when:**
   - A manual criterion with evidence is held under T6. A `needs-review` item is held under T9. An item with neither still auto-verifies.
   - `submit --json` matches the held shape in §3.
@@ -200,6 +206,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - Files outside the root still count toward T7.
 
   Add triggers T1, T2, T3, T4, T7 and T8, with §4.2's `review` config and its defaults, including `disabled`, which never switches off T6, T10 or T12. T4 fires only when an existing test file had lines changed or removed, or was deleted. `show --diff` lists the files that fired a trigger first."
+
 - **Done when:**
   - Each of the six triggers has one test where it fires and one where it stays quiet.
   - Adding a test case to an existing test file doesn't fire T4. Changing a line in one does, and so does deleting one.
@@ -215,6 +222,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - **T14**: fires for unscoped commits between `started.head` and `HEAD` that touch the project root.
 
   Compute the criteria fingerprint over each serialized criterion with its evidence removed. That way slice 12's judge fields are covered without changing the fingerprint."
+
 - **Done when:**
   - T13 fires for a `cargo test` filter that matched no tests at start.
   - T5 fires when a non-interactive command changes or removes a written criterion's text before start, and stays quiet when one adds a criterion or gives one a check.
@@ -230,6 +238,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - `pass_when`, refs, and a cache keyed by request fingerprint in `judge/cache/`
 
   G3 runs judges only after every script gate passes. It fails on a no, a missing input, zero `each` matches or a failed call. An unsure answer, or `auto_verify: false`, holds the item under T10."
+
 - **Done when:**
   - Tests cover:
     - a pass, a fail and an unsure answer
@@ -278,6 +287,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - `review` flags a digest older than `every_days` as overdue.
 
   Add `audit` and `judges` (§3), and bring `--help` text and empty states up to slice 5's standard for every command added since."
+
 - **Done when:**
   - `digest` lists every item auto-verified since that project's last ack, judge-passed first, plus agent-shelved items. `digest ack --project XX` empties only XX's digest.
   - `audit` reports a hand-edited status, a done item with no verification record, and an ID used twice.
