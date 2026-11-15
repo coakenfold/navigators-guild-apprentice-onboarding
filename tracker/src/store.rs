@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
@@ -80,15 +81,24 @@ impl Store {
         Ok(created)
     }
 
-    /// Fails with "Run `tracker init`." until the store has been created.
+    /// Fails with "Run `tracker init`." (exit 1) until the store has been
+    /// created, and with exit 3 if the store is there but can't be read.
     pub fn require_exists(&self) -> Result<()> {
-        if self.config_path().is_file() {
-            Ok(())
-        } else {
-            Err(Error::input(format!(
+        let path = self.config_path();
+        match fs::metadata(&path) {
+            Ok(meta) if meta.is_file() => Ok(()),
+            Ok(_) => Err(Error::store(format!(
+                "{} isn't a file, so the store can't be read.",
+                path.display()
+            ))),
+            Err(e) if e.kind() == ErrorKind::NotFound => Err(Error::input(format!(
                 "There's no tracker store at {}. Run `tracker init`.",
                 self.home.display()
-            )))
+            ))),
+            Err(e) => Err(Error::store(format!(
+                "Can't read the store at {}: {e}. Check that you can read and write that folder.",
+                self.home.display()
+            ))),
         }
     }
 

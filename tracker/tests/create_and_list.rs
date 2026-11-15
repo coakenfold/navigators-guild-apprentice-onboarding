@@ -520,3 +520,23 @@ fn bad_arguments_exit_1_and_help_exits_0() {
     env.cmd().arg("--help").assert().success();
     env.cmd().args(["create", "--help"]).assert().success();
 }
+
+#[cfg(unix)]
+#[test]
+fn an_unreadable_store_exits_3_and_isnt_reported_as_missing() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let env = Env::new();
+    let home = env.home.path();
+    fs::set_permissions(home, fs::Permissions::from_mode(0o000)).unwrap();
+
+    let output = env.cmd().args(["list", "--json"]).assert();
+    // Put the permissions back before checking, so the folder can be cleaned up.
+    fs::set_permissions(home, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = output.code(3);
+    let error = parse(&output.get_output().stdout);
+    let message = error["error"].as_str().unwrap();
+    assert_eq!(error["exit_code"], 3);
+    assert!(!message.contains("tracker init"), "{message}");
+}
