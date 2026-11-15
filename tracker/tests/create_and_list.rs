@@ -540,3 +540,37 @@ fn an_unreadable_store_exits_3_and_isnt_reported_as_missing() {
     assert_eq!(error["exit_code"], 3);
     assert!(!message.contains("tracker init"), "{message}");
 }
+
+#[test]
+fn a_reader_that_stops_early_doesnt_make_list_panic() {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create(
+        "XX",
+        "a title long enough that a few thousand of them fill the pipe",
+    );
+    // Copy the one real item file, as `tracker list` would take minutes to
+    // fill a pipe with items made one `create` at a time.
+    let template = fs::read_to_string(env.item_path("XX-1")).unwrap();
+    for n in 2..=3000 {
+        let text = template.replace("\"XX-1\"", &format!("\"XX-{n}\""));
+        fs::write(env.item_path(&format!("XX-{n}")), text).unwrap();
+    }
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_tracker"))
+        .env("TRACKER_HOME", env.home.path())
+        .current_dir(env.outside())
+        .arg("list")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    // Close the reading end without reading: the output is far bigger than
+    // the pipe's buffer, so the write fails with a broken pipe.
+    drop(child.stdout.take());
+    let output = child.wait_with_output().unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("panicked"), "{stderr}");
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+}

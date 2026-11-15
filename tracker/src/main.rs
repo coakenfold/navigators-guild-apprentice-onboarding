@@ -1,5 +1,6 @@
 //! The `tracker` command line (§3).
 
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -125,28 +126,46 @@ fn main() -> ExitCode {
 
     match result {
         Ok(output) => {
-            if cli.json {
-                println!("{}", pretty(&output.json));
+            let text = if cli.json {
+                format!("{}\n", pretty(&output.json))
             } else {
-                print!("{}", output.text);
-            }
-            ExitCode::SUCCESS
+                output.text
+            };
+            print_out(&text, ExitCode::SUCCESS)
         }
         Err(err) => fail(&err, cli.json),
     }
 }
 
+/// Writes `text` to stdout and returns `code`. A reader that has gone away,
+/// as in `tracker list | head -1`, isn't an error: it just didn't want the
+/// rest. `println!` would panic there instead.
+fn print_out(text: &str, code: ExitCode) -> ExitCode {
+    let mut stdout = std::io::stdout().lock();
+    match stdout
+        .write_all(text.as_bytes())
+        .and_then(|()| stdout.flush())
+    {
+        Ok(()) => code,
+        Err(e) if e.kind() == ErrorKind::BrokenPipe => code,
+        Err(e) => {
+            let _ = writeln!(std::io::stderr(), "error: Can't write the output: {e}");
+            ExitCode::from(3)
+        }
+    }
+}
+
 /// Reports an error, as text on stderr or as one JSON object on stdout.
 fn fail(err: &Error, json: bool) -> ExitCode {
+    let code = ExitCode::from(err.code);
     if json {
-        println!(
-            "{}",
-            pretty(&json!({ "error": err.message, "exit_code": err.code }))
-        );
+        let object = json!({ "error": err.message, "exit_code": err.code });
+        print_out(&format!("{}\n", pretty(&object)), code)
     } else {
-        eprintln!("error: {}", err.message);
+        // Ignored if stderr is closed: there's nowhere left to report it.
+        let _ = writeln!(std::io::stderr(), "error: {}", err.message);
+        code
     }
-    ExitCode::from(err.code)
 }
 
 fn pretty(value: &Value) -> String {
