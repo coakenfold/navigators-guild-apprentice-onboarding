@@ -190,12 +190,13 @@ footer { margin-top: 3rem; font-size: 13px; color: var(--muted); }
     <h3>Register a project</h3>
     <p>One store in <code>~/.tracker</code> holds every project. A project needs a key, a name and a root to start. The checks and review policy live in <code>config.json</code>.</p>
     <ul class="notice">
+      <li>The root can be the top of a git repo or <strong>a folder inside a larger one</strong>, such as one package in a monorepo. Either way, the gates and triggers look only inside it.</li>
       <li><strong>Project checks</strong> run on every submit (G4), whatever the item is about.</li>
       <li><code>source_paths</code> adds <code>*.js</code> to the <code>src/**</code> default, because this app keeps <code>app.js</code> at the top level and the rest of its code in <code>src/</code>. It decides which files count as source code, so adding a new one holds the item (T1).</li>
       <li>There are no judge settings here. Judges run only for items whose criteria ask for one, and the defaults suit most projects.</li>
       <li>Two lines in Claude Code's settings let agents run <code>tracker</code> <strong>without asking you each time</strong>, and stop its edit tools from touching the store.</li>
     </ul>
-    <div class="refs">§3 Setup · §4.2 Config · §5 Claude Code settings</div>
+    <div class="refs">§2.1 Root · §3 Setup · §4.2 Config · §5 Claude Code settings</div>
   </div>
   <div class="screens">
     <figure class="term you">
@@ -350,9 +351,9 @@ Running criterion checks. Each should fail before the work…
     <ul class="notice">
       <li><strong>Cheapest first.</strong> The static gates failed, so the 52 seconds of Playwright never ran.</li>
       <li>Every problem is listed at once, so the agent can fix them in one pass.</li>
-      <li>The scope in <code>feat(BM-12): …</code> is how the tool finds this item's changed files. A commit since <code>start</code> with no item scope would hold the item (T14).</li>
+      <li>The scope in <code>feat(BM-12): …</code> is how the tool finds this item's changed files. A commit since <code>start</code> that touches the project but has no item scope would hold the item (T14).</li>
       <li>Script criteria need <strong>no evidence note</strong>: each check's own output is the proof, saved at done. G2 only asks manual criteria for one. Adding test cases to an existing spec file doesn't fire T4 either; only changing or removing test lines does.</li>
-      <li>The working tree must be fully clean, including <strong>no untracked files</strong>, so the commit holds everything the tests ran with.</li>
+      <li>Everything under the project root must be clean, including <strong>no untracked files</strong>, so the commit holds everything the tests ran with. Files outside the root don't count.</li>
     </ul>
     <div class="refs">§2.1 Commits · §2.4 Gates · T14 · exit code 2</div>
     <div class="states"><span class="pill refused">BM-12 <b>1 gate would fail</b></span></div>
@@ -368,7 +369,7 @@ Running criterion checks. Each should fail before the work…
 <span class="p">$ </span><span class="k">tracker gates BM-12</span>
 <span class="d">Dry run. BM-12 stays in-progress.</span>
 <span class="x">✗</span> <span class="b">1 gate would fail</span>
-  <span class="x">G5</span>  the working tree isn't clean: app.css modified, notes.md untracked
+  <span class="x">G5</span>  the project root isn't clean: app.css modified, notes.md untracked
 <span class="d">Checks didn't run. They run once the static gates pass.</span>
 <span class="e">[exit 2]</span>
 
@@ -977,7 +978,7 @@ Type BM-7 to delete: <span class="y">BM-7</span>
   <header>
     <div class="eyebrow">What the mockup surfaced</div>
     <h2>Decisions it settled</h2>
-    <p class="lede" style="font-size:15px">Writing concrete screens exposed twelve gaps in the design doc. Each one is now decided in <code>DESIGN.md</code>.</p>
+    <p class="lede" style="font-size:15px">Writing concrete screens exposed twelve gaps in the design doc, and planning the build exposed one more. Each one is now decided in <code>DESIGN.md</code>.</p>
   </header>
   <div class="qgrid">
     <article class="q">
@@ -1040,9 +1041,14 @@ Type BM-7 to delete: <span class="y">BM-7</span>
       <p>Every command takes <code>--json</code>. The text can change freely, but <strong>the JSON fields are an interface</strong>, with refs and hold reasons as data (<a href="#s13">scene 13</a>).</p>
       <div class="refs">§3 Output for agents</div>
     </article>
+    <article class="q">
+      <h3>A project can live inside a larger repo</h3>
+      <p>A root can be a folder in a bigger repository, such as one package in a monorepo. G5, T14 and the path globs <strong>look only inside the root</strong>, so a dirty file or an unscoped commit elsewhere in the repo doesn't refuse or hold the item. The price: a change to a file outside the root that the tests read isn't caught (<a href="#s1">scene 1</a>).</p>
+      <div class="refs">§2.1 · G5 · T14 · §7</div>
+    </article>
   </div>
 </section>
 
-<footer>Companion to <code>guild-portfolio/02-the-methodology/02-tracking-your-work/DESIGN.md</code>. Item IDs, files, hashes and timings are illustrative.</footer>
+<footer>Companion to <code>DESIGN.md</code>, in the same folder. The build order is in <code>PLAN.md</code>. Item IDs, files, hashes and timings are illustrative.</footer>
 
 </div>
