@@ -227,6 +227,18 @@ fn project_add(
         design,
     };
     let _lock = store.lock()?;
+    // Two projects with one root would leave `create` guessing which one the
+    // current folder means. A root nested inside another is fine: the
+    // deeper one wins.
+    let existing = config::load(store)?;
+    if let Some(other) = config::project_with_root(&existing, Path::new(root))
+        && other != key
+    {
+        return Err(Error::input(format!(
+            "{other} already uses {root} as its root, so {key} can't share it. \
+             Register {key} with a different root, or use {other}."
+        )));
+    }
     config::add_project(store, &key, &project)?;
 
     Ok(Output {

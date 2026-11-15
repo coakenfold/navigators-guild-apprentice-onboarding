@@ -574,3 +574,35 @@ fn a_reader_that_stops_early_doesnt_make_list_panic() {
     assert!(!stderr.contains("panicked"), "{stderr}");
     assert_eq!(output.status.code(), Some(0), "{stderr}");
 }
+
+#[test]
+fn two_projects_cant_share_a_root() {
+    let env = Env::new();
+    let xx = env.add_project("XX", "xx");
+    let root = xx.to_str().unwrap();
+
+    let message = error_message(
+        &env,
+        &["project", "add", "YY", "--name", "y", "--root", root],
+    );
+    assert!(message.contains("XX"), "{message}");
+
+    // The same folder by another spelling is still the same root.
+    let other_spelling = format!("{root}/../xx");
+    error_message(
+        &env,
+        &[
+            "project",
+            "add",
+            "YY",
+            "--name",
+            "y",
+            "--root",
+            &other_spelling,
+        ],
+    );
+
+    let projects = env.json(&["project", "list"]);
+    assert_eq!(projects["projects"].as_array().unwrap().len(), 1);
+    assert_eq!(env.json_in(&xx, &["create", "here"])["id"], "XX-1");
+}

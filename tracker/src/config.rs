@@ -115,6 +115,14 @@ pub fn project_for_dir(config: &Config, dir: &Path) -> Option<String> {
     best.map(|(key, _)| key)
 }
 
+/// The key of the project whose root is exactly `root`, a canonical path.
+pub fn project_with_root(config: &Config, root: &Path) -> Option<String> {
+    config.projects.iter().find_map(|(key, project)| {
+        let theirs = fs::canonicalize(project.root_path()).ok()?;
+        (theirs == root).then(|| key.clone())
+    })
+}
+
 /// The registered keys, for error messages, such as "BM, TR".
 pub fn key_list(config: &Config) -> String {
     let keys: Vec<&str> = config.projects.keys().map(|k| k.as_str()).collect();
