@@ -460,6 +460,28 @@ fn project_add_keeps_settings_written_by_hand() {
     assert_eq!(saved["projects"]["YY"]["name"], "YY project");
 }
 
+#[test]
+fn a_relative_tracker_home_is_refused() {
+    let env = Env::without_store();
+    let here = env.outside();
+
+    for args in [&["init"][..], &["list"], &["project", "list"]] {
+        let output = env
+            .cmd()
+            .env("TRACKER_HOME", "store")
+            .args(args)
+            .arg("--json")
+            .assert()
+            .code(1);
+        let error = parse(&output.get_output().stdout);
+        let message = error["error"].as_str().unwrap();
+        assert!(message.contains("absolute path"), "{args:?}: {message}");
+    }
+
+    // Nothing was created relative to the current folder.
+    assert!(!here.join("store").exists());
+}
+
 #[cfg(unix)]
 #[test]
 fn an_argument_that_isnt_utf8_exits_1_without_panicking() {

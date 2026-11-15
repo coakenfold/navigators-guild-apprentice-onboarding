@@ -14,13 +14,24 @@ pub struct Store {
 
 impl Store {
     /// The store's folder: `TRACKER_HOME` if it's set, otherwise `~/.tracker`.
+    /// A relative `TRACKER_HOME` is refused, because it would name a
+    /// different store in every folder a command runs from.
     pub fn locate() -> Result<Store> {
         if let Some(home) = std::env::var_os("TRACKER_HOME")
             && !home.is_empty()
         {
-            return Ok(Store {
-                home: PathBuf::from(home),
-            });
+            let home = PathBuf::from(home);
+            if home.is_relative() {
+                return Err(Error::input(format!(
+                    "TRACKER_HOME is {}, a relative path, which would mean a different store \
+                     in every folder. Set it to an absolute path, such as {}.",
+                    home.display(),
+                    std::env::current_dir()
+                        .map(|cwd| cwd.join(&home).display().to_string())
+                        .unwrap_or_else(|_| "/Users/me/.tracker".to_string())
+                )));
+            }
+            return Ok(Store { home });
         }
         match std::env::var_os("HOME") {
             Some(home) => Ok(Store {
