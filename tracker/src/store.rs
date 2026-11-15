@@ -123,6 +123,11 @@ impl Store {
     /// Hands out the next ID for `project` from `counters.json` and records
     /// the number after it. IDs never come from the item files, so a deleted
     /// item's ID is never reused. Call this only while holding the lock.
+    ///
+    /// The item files are a tripwire, though: a counter at or below a number
+    /// already on disk means `counters.json` was lost or reset, and handing
+    /// out its next number could reuse a deleted item's ID, whose scoped
+    /// commits would then count as the new item's work (§2.8).
     pub fn next_id(&self, project: &str) -> Result<String> {
         let path = self.counters_path();
         let text = read_file(&path)?;
@@ -130,20 +135,46 @@ impl Store {
             .map_err(|e| Error::store(format!("Can't parse {}: {e}", path.display())))?;
 
         let number = counters.get(project).copied().unwrap_or(1);
-        let id = format!("{project}-{number}");
-        if self.item_path(&id).exists() {
+        if let Some(highest) = self.highest_number_on_disk(project)?
+            && number <= highest
+        {
             return Err(Error::store(format!(
-                "{} says the next {project} item is {id}, but {} already exists. \
-                 Set \"{project}\" in counters.json above the highest {project} number in use.",
+                "{} says the next {project} item is {project}-{number}, but {project}-{highest} \
+                 already exists, so the counter was probably lost or reset. Set \"{project}\" in \
+                 counters.json above the highest {project} number ever used: at least {}.",
                 path.display(),
-                self.item_path(&id).display()
+                highest + 1
             )));
         }
 
         counters.insert(project.to_string(), number + 1);
         let text = serde_json::to_string_pretty(&counters).expect("counters always serialize");
         write_file(&path, &format!("{text}\n"))?;
-        Ok(id)
+        Ok(format!("{project}-{number}"))
+    }
+
+    /// The highest number among `project`'s item files, such as 7 when
+    /// `BM-7.json` is the highest, or `None` if it has none.
+    fn highest_number_on_disk(&self, project: &str) -> Result<Option<u64>> {
+        let dir = self.items_dir();
+        let entries = fs::read_dir(&dir)
+            .map_err(|e| Error::store(format!("Can't read {}: {e}", dir.display())))?;
+        let prefix = format!("{project}-");
+        let mut highest = None;
+        for entry in entries {
+            let entry =
+                entry.map_err(|e| Error::store(format!("Can't read {}: {e}", dir.display())))?;
+            let name = entry.file_name();
+            let number = name
+                .to_str()
+                .and_then(|name| name.strip_suffix(".json"))
+                .and_then(|name| name.strip_prefix(&prefix))
+                .and_then(|n| n.parse::<u64>().ok());
+            if let Some(number) = number {
+                highest = highest.max(Some(number));
+            }
+        }
+        Ok(highest)
     }
 
     /// Writes a new item's file. Call this only while holding the lock.

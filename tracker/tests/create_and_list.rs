@@ -606,3 +606,46 @@ fn two_projects_cant_share_a_root() {
     assert_eq!(projects["projects"].as_array().unwrap().len(), 1);
     assert_eq!(env.json_in(&xx, &["create", "here"])["id"], "XX-1");
 }
+
+#[test]
+fn a_lost_counter_doesnt_hand_out_an_id_already_on_disk() {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.add_project("YY", "yy");
+    env.create("XX", "a");
+    env.create("XX", "b");
+    env.create("YY", "other project");
+    // XX-1 is deleted, then counters.json is lost and `init` recreates it.
+    fs::remove_file(env.item_path("XX-1")).unwrap();
+    fs::write(env.home.path().join("counters.json"), "{}\n").unwrap();
+
+    // Without the counter, XX would start again at XX-1, the deleted ID.
+    let output = env
+        .cmd()
+        .args(["create", "c", "--project", "XX", "--json"])
+        .assert()
+        .code(3);
+    let message = parse(&output.get_output().stdout)["error"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(message.contains("XX-2"), "{message}");
+    assert!(message.contains("at least 3"), "{message}");
+    assert!(!env.item_path("XX-1").exists());
+
+    // A counter at the highest number on disk is refused too.
+    fs::write(env.home.path().join("counters.json"), "{\"XX\": 2}\n").unwrap();
+    env.cmd()
+        .args(["create", "c", "--project", "XX"])
+        .assert()
+        .code(3);
+
+    // Set above it, IDs carry on. YY's counter is separate: YY-1 is on disk,
+    // so YY is refused until its counter is set as well.
+    fs::write(env.home.path().join("counters.json"), "{\"XX\": 3}\n").unwrap();
+    assert_eq!(env.create("XX", "c"), "XX-3");
+    env.cmd()
+        .args(["create", "d", "--project", "YY"])
+        .assert()
+        .code(3);
+}
