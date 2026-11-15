@@ -83,7 +83,9 @@ fn main() -> ExitCode {
         Err(err) => {
             // Bad arguments are bad input, so exit 1 rather than clap's 2,
             // which here means a gate refused (§3).
-            let wants_json = std::env::args().any(|arg| arg == "--json");
+            // `args_os`, because `args` panics on an argument that isn't
+            // valid UTF-8, which is one of the errors being reported here.
+            let wants_json = std::env::args_os().any(|arg| arg == "--json");
             if !wants_json {
                 let _ = err.print();
                 return ExitCode::from(1);

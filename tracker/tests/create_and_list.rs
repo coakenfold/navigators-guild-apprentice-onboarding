@@ -460,6 +460,35 @@ fn project_add_keeps_settings_written_by_hand() {
     assert_eq!(saved["projects"]["YY"]["name"], "YY project");
 }
 
+#[cfg(unix)]
+#[test]
+fn an_argument_that_isnt_utf8_exits_1_without_panicking() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    let title = OsStr::from_bytes(b"bad \xff title");
+
+    env.cmd()
+        .arg("create")
+        .arg(title)
+        .args(["--project", "XX"])
+        .assert()
+        .code(1);
+
+    let output = env
+        .cmd()
+        .arg("create")
+        .arg(title)
+        .args(["--project", "XX", "--json"])
+        .assert()
+        .code(1);
+    let error = parse(&output.get_output().stdout);
+    assert_eq!(error["exit_code"], 1);
+    assert!(!env.item_path("XX-1").exists());
+}
+
 #[test]
 fn bad_arguments_exit_1_and_help_exits_0() {
     let env = Env::new();
