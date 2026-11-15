@@ -82,24 +82,49 @@ impl Store {
     }
 
     /// Fails with "Run `tracker init`." (exit 1) until the store has been
-    /// created, and with exit 3 if the store is there but can't be read.
+    /// created, or when part of it is missing, which `init` puts back. Fails
+    /// with exit 3 if the store is there but can't be read.
     pub fn require_exists(&self) -> Result<()> {
-        let path = self.config_path();
-        match fs::metadata(&path) {
-            Ok(meta) if meta.is_file() => Ok(()),
-            Ok(_) => Err(Error::store(format!(
-                "{} isn't a file, so the store can't be read.",
-                path.display()
-            ))),
-            Err(e) if e.kind() == ErrorKind::NotFound => Err(Error::input(format!(
-                "There's no tracker store at {}. Run `tracker init`.",
-                self.home.display()
-            ))),
-            Err(e) => Err(Error::store(format!(
-                "Can't read the store at {}: {e}. Check that you can read and write that folder.",
-                self.home.display()
-            ))),
+        // `init` creates these three, and puts back whichever is missing.
+        let parts = [
+            (self.config_path(), false),
+            (self.counters_path(), false),
+            (self.items_dir(), true),
+        ];
+        for (i, (path, is_dir)) in parts.iter().enumerate() {
+            match fs::metadata(path) {
+                Ok(meta) if meta.is_dir() == *is_dir => {}
+                Ok(_) => {
+                    let wanted = if *is_dir { "a folder" } else { "a file" };
+                    return Err(Error::store(format!(
+                        "{} should be {wanted}, so the store can't be read.",
+                        path.display()
+                    )));
+                }
+                // No config.json means no store at all.
+                Err(e) if e.kind() == ErrorKind::NotFound && i == 0 => {
+                    return Err(Error::input(format!(
+                        "There's no tracker store at {}. Run `tracker init`.",
+                        self.home.display()
+                    )));
+                }
+                Err(e) if e.kind() == ErrorKind::NotFound => {
+                    return Err(Error::input(format!(
+                        "The store at {} is missing {}. Run `tracker init` to put it back.",
+                        self.home.display(),
+                        path.display()
+                    )));
+                }
+                Err(e) => {
+                    return Err(Error::store(format!(
+                        "Can't read the store at {}: {e}. Check that you can read and write \
+                         that folder.",
+                        self.home.display()
+                    )));
+                }
+            }
         }
+        Ok(())
     }
 
     /// Takes the exclusive lock on the store's `lock` file, waiting while

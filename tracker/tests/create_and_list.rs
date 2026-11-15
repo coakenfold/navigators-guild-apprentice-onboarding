@@ -649,3 +649,30 @@ fn a_lost_counter_doesnt_hand_out_an_id_already_on_disk() {
         .assert()
         .code(3);
 }
+
+#[test]
+fn a_store_missing_a_part_says_run_tracker_init() {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+
+    // The items folder goes missing: `list` and `create` both say how to fix it.
+    fs::remove_dir_all(env.home.path().join("items")).unwrap();
+    for args in [&["list"][..], &["create", "b", "--project", "XX"]] {
+        let message = error_message(&env, args);
+        assert!(
+            message.contains("Run `tracker init`"),
+            "{args:?}: {message}"
+        );
+        assert!(message.contains("items"), "{args:?}: {message}");
+    }
+    env.json(&["init"]);
+    assert_eq!(ids(&env.json(&["list"])), Vec::<&str>::new());
+
+    // So does counters.json.
+    fs::remove_file(env.home.path().join("counters.json")).unwrap();
+    let message = error_message(&env, &["create", "b", "--project", "XX"]);
+    assert!(message.contains("counters.json"), "{message}");
+    env.json(&["init"]);
+    assert_eq!(env.create("XX", "b"), "XX-1");
+}
