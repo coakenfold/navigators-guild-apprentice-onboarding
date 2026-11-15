@@ -201,6 +201,7 @@ fn project_add(
             "A project's --name can't be empty.".to_string(),
         ));
     }
+    check_printable(name, "A project's --name", "Use plain text.")?;
 
     let root = std::fs::canonicalize(root).map_err(|e| {
         Error::input(format!(
@@ -315,11 +316,7 @@ fn create(
                 .to_string(),
         ));
     }
-    if title.contains(['\n', '\r']) {
-        return Err(Error::input(
-            "A title must fit on one line. Put the details in --description.".to_string(),
-        ));
-    }
+    check_printable(title, "A title", "Put the details in --description.")?;
     let description = description.filter(|text| !text.trim().is_empty());
 
     let _lock = store.lock()?;
@@ -361,6 +358,33 @@ fn create(
         text: format!("Created {}: {}\n", item.id, item.title),
         json: serde_json::to_value(&item).expect("items always serialize"),
     })
+}
+
+/// Refuses text that's printed on one line, such as a title, if it holds a
+/// line break or a character that changes what the terminal shows: control
+/// characters, such as the escape that starts a colour code or moves the
+/// cursor, and the Unicode marks that reorder text. Otherwise an agent's
+/// title could rewrite the lines I read before deciding on its work.
+/// `what` names the text, and `fix` says what to do instead.
+fn check_printable(text: &str, what: &str, fix: &str) -> Result<()> {
+    for c in text.chars() {
+        let line_break = matches!(
+            c,
+            '\n' | '\r' | '\u{0b}' | '\u{0c}' | '\u{85}' | '\u{2028}' | '\u{2029}'
+        );
+        if line_break {
+            return Err(Error::input(format!("{what} must fit on one line. {fix}")));
+        }
+        let reorders = matches!(c, '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}');
+        if c.is_control() || reorders {
+            return Err(Error::input(format!(
+                "{what} can't contain the control character U+{:04X}, which would change \
+                 what the terminal shows. {fix}",
+                c as u32
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn unknown_project(config: &config::Config, key: &str) -> String {

@@ -676,3 +676,57 @@ fn a_store_missing_a_part_says_run_tracker_init() {
     env.json(&["init"]);
     assert_eq!(env.create("XX", "b"), "XX-1");
 }
+
+#[test]
+fn titles_and_project_names_cant_hold_terminal_control_characters() {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+
+    // An escape sequence that clears the line and writes over it.
+    let message = error_message(
+        &env,
+        &[
+            "create",
+            "evil\u{1b}[2K\u{1b}[1Gfake: all good\u{7}",
+            "--project",
+            "XX",
+        ],
+    );
+    assert!(message.contains("U+001B"), "{message}");
+
+    // Other control characters, and the marks that reorder text.
+    for title in [
+        "tab\there",
+        "bell\u{7}",
+        "c1\u{9b}31m",
+        "rtl \u{202e}txt.exe",
+        "lri \u{2066}x",
+    ] {
+        error_message(&env, &["create", title, "--project", "XX"]);
+    }
+    // Line breaks of every kind, not only \n and \r.
+    for title in ["a\u{b}b", "a\u{c}b", "a\u{85}b", "a\u{2028}b", "a\u{2029}b"] {
+        let message = error_message(&env, &["create", title, "--project", "XX"]);
+        assert!(message.contains("one line"), "{message}");
+    }
+    assert!(!env.item_path("XX-1").exists());
+
+    // Plain unicode is fine.
+    assert_eq!(env.create("XX", "Ünïcode “quotes” — and emoji 😀"), "XX-1");
+
+    // A project name is printed by `list` and `project list` too.
+    let root = env.dir("yy");
+    let message = error_message(
+        &env,
+        &[
+            "project",
+            "add",
+            "YY",
+            "--name",
+            "y\u{1b}[31m",
+            "--root",
+            root.to_str().unwrap(),
+        ],
+    );
+    assert!(message.contains("U+001B"), "{message}");
+}
