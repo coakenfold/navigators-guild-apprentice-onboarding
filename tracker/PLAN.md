@@ -30,7 +30,7 @@ The stack, where things live, the conventions and the test command are in `guild
 
 | #   | Slice                           | Outcome (I can…)                                                                                      | Depends on | Parallel with | Status |
 | --- | ------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------- | ------------- | ------ |
-| 1   | Create and list                 | create items in two projects and list them from one store                                             | —          | —             | todo   |
+| 1   | Create and list                 | create items in two projects and list them from one store                                             | —          | —             | done   |
 | 2   | States                          | start, submit, shelve and reopen items, with history kept                                             | 1          | —             | todo   |
 | 3   | Organise and filter             | set priority, kind and labels, edit items, filter a sorted list                                       | 2          | —             | todo   |
 | 4   | Show and delete                 | see an item's full record, and delete one from a real terminal                                        | 3          | —             | todo   |

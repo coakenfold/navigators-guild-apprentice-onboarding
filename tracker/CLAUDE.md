@@ -2,7 +2,7 @@
 
 A verification-gated work tracker: a Rust CLI for any project. Spec: [DESIGN.md](DESIGN.md), and every § below is a section of it. Build order, and each slice's prompt and _Done when_: [PLAN.md](PLAN.md).
 
-This folder is part of the guild-portfolio git repo, not a repo of its own. DESIGN.md, PLAN.md, walkthrough.html and `judge-eval/` sit here at the crate root; slice 1 moves them in from `../02-the-methodology/02-tracking-your-work/`.
+This folder is part of the guild-portfolio git repo, not a repo of its own. DESIGN.md, PLAN.md, walkthrough.html and `judge-eval/` sit here at the crate root; slice 1 moved them here with `git mv` from the repo's `chapters/02-the-methodology/02-tracking-your-work/`.
 
 ## Stack
 
