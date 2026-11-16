@@ -15,6 +15,23 @@ Slice 1 is implemented faithfully. Every _Done when_ check passes. `cargo fmt --
 
 What's left is mostly hardening around store files that are edited by hand, or by an agent's shell command (§7). It's small now, but slice 2 starts rewriting item files and slice 4 starts printing more agent-written text, so the first five findings should be fixed before slice 2.
 
+## Outcome
+
+Added after the fixes. The findings below are left as written, so their line links point at `7816399`, not at the fixed code. [slice-1-readme.md](slice-1-readme.md#fixes-after-review-2) describes each fix and its test.
+
+| Finding                                                   | Resolved by                                                                                     |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Fix before slice 2, items 1–5                             | One commit each: `ead1e81`, `b104bf9`, `6ec034f`, `d3ea4eb` and `536a921`, each with its tests |
+| Low severity: bad counter values                          | `8142f0f`                                                                                       |
+| Low severity: `project list` hides unregistered projects  | `0873bcd`                                                                                       |
+| Low severity: non-UTF-8 `TRACKER_HOME`, symlinked `.tmp`, hand-written names and `design` | Still open                                       |
+| Code and DESIGN.md, item 1                                | Still open, though findings 1 and 3 narrow the gap                                              |
+| Code and DESIGN.md, item 2                                | `1254541`                                                                                       |
+| Test gaps 1 and 4                                         | `64d5dc2` and `b04dcb3`                                                                         |
+| Test gaps 2 and 3                                         | Done with the fixes they test                                                                   |
+| Commit status                                             | `73d3f08` committed this review. The two commit-message points are left as history             |
+| Nits: `rust-version`                                      | `a610a92`                                                                                       |
+
 ## Fix before slice 2
 
 1. **An item file's name and its `id` aren't checked against each other.** [load_items](../src/store.rs#L221-L242) trusts the `id` inside the file. With `XX-1.json` copied to `XX-9.json`, `list --json` shows `XX-1` twice, with no warning. [highest_number_on_disk](../src/store.rs#L193-L213) reads numbers from file names, so the tripwire and the listing disagree about which items exist. In slice 2, a command that loads `XX-9.json` and saves through `item_path(&item.id)` would overwrite the real `XX-1.json`. Add one `load_item(id)` that refuses a file whose `id` doesn't match its name, or whose `id` doesn't start with its own `project`, and have `load_items` report mismatches.

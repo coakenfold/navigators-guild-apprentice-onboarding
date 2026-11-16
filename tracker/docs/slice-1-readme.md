@@ -6,10 +6,10 @@ After slice 1 you can **register projects, create items in them, and list everyt
 
 | | |
 | --- | --- |
-| Status | Done. Every _Done when_ check passes. From [review 1](slice-1-review-1.md), bugs 1–8 and security items S1–S3 are fixed, its design questions are settled, and its test gaps are closed ([below](#fixes-after-review-1)). |
+| Status | Done. Every _Done when_ check passes. From [review 1](slice-1-review-1.md), bugs 1–8 and security items S1–S3 are fixed, its design questions are settled, and its test gaps are closed ([below](#fixes-after-review-1)). From [review 2](slice-1-review-2.md), its five fixes before slice 2, two low-severity items, the schema mismatch, its test gaps and the `rust-version` nit are done ([below](#fixes-after-review-2)). |
 | Branch | `feat/tracker/slice-1` |
 | Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/` |
-| Tests | 46: 33 in `tests/create_and_list.rs`, 3 each in `tests/docs_links.rs`, `tests/fixtures.rs` and `tests/schemas.rs`, and 2 each in `tests/item_ids.rs` and `tests/store_writes.rs` |
+| Tests | 67: 38 in `tests/create_and_list.rs`, 8 in `tests/item_files.rs`, 6 in `tests/output.rs`, 5 in `tests/docs_links.rs`, 3 each in `tests/fixtures.rs` and `tests/schemas.rs`, and 2 each in `tests/item_ids.rs` and `tests/store_writes.rs` |
 
 ## Contents
 
@@ -23,6 +23,7 @@ After slice 1 you can **register projects, create items in them, and list everyt
 - [Testing](#testing)
 - [Decisions worth knowing](#decisions-worth-knowing)
 - [Fixes after review 1](#fixes-after-review-1)
+- [Fixes after review 2](#fixes-after-review-2)
 - [Limits, and what later slices change](#limits-and-what-later-slices-change)
 
 ## What's in this slice
@@ -90,9 +91,9 @@ BM   bookmarks  2     0            0       0     0        $DEMO/bookmarks
 
 | Command | What it does |
 | --- | --- |
-| `tracker init` | Creates whatever parts of the store are missing, so it also repairs a store that has lost `counters.json` or `items/`. Running it on a complete store changes nothing and exits 0. |
+| `tracker init` | Creates whatever parts of the store are missing, so it also repairs a store that has lost `config.json`, `counters.json` or `items/`, and says which parts it put back and what that means. It checks the files already there first, and exits 3, writing nothing, if `config.json` or `counters.json` can't be used. Running it on a complete store changes nothing and exits 0. |
 | `tracker project add KEY --name NAME --root PATH [--design FILE]` | Registers a project. The key is uppercased (`bm` becomes `BM`). The root must be an existing folder that no other project uses, and is stored as an absolute, canonical path. |
-| `tracker project list` | Lists projects with their item counts for all five states. |
+| `tracker project list` | Lists projects with their item counts for all five states, followed by any project that has items but isn't in `config.json`. |
 | `tracker create "title" [--description TEXT] [--project KEY]` | Creates an open item and prints its ID. Without `--project`, it uses the project whose root contains the current folder. |
 | `tracker list` | Lists every item, grouped by project and sorted by number. |
 
@@ -104,7 +105,7 @@ BM   bookmarks  2     0            0       0     0        $DEMO/bookmarks
 - **Description:** stored as given. An empty or whitespace-only one is left out.
 - **Project key:** up to 10 ASCII letters and digits, starting with a letter. A dash isn't allowed, since the dash separates the key from the number in `BM-12`. `--project` is also uppercased before lookup. Keys in `config.json` are checked too, including ones written by hand: they must already be in capitals.
 - **Project name:** can't be empty, and follows the title's rules for line breaks and control characters, since `list` and `project list` print it.
-- **Root:** must exist and be a folder. A relative path is resolved against the current folder. Two projects can't share a root, even when it's spelled differently (`xx/../xx`), but one root can be nested inside another.
+- **Root:** must exist and be a folder. A relative path is resolved against the current folder. Two projects can't share a root, even when it's spelled differently (`xx/../xx`), but one root can be nested inside another. Its path follows the title's rules for control characters, since `project list` prints it. A root written by hand in `config.json` must be absolute, or start with `~/`.
 - **`TRACKER_HOME`:** must be absolute. A relative path would name a different store in every folder, so it's refused with exit 1.
 
 **Exit codes** (§3):
@@ -114,7 +115,7 @@ BM   bookmarks  2     0            0       0     0        $DEMO/bookmarks
 | `0` | Success, including `init` on an existing store, and output cut short because its reader stopped early (`tracker list \| head -1`). |
 | `1` | Bad input: a bad title, key, name or root, a root another project already uses, an unknown project, no project for this folder, a duplicate key, a relative `TRACKER_HOME`, or a bad argument, including one that isn't valid UTF-8 (see below). Also a store that doesn't exist yet, or is missing `counters.json` or `items/`: both say "Run `tracker init`." |
 | `2` | Not used yet. It's reserved for "refused by a gate" (slice 6). |
-| `3` | The store can't be read or written: one that exists but can't be read (such as `chmod 000`), an unparseable `config.json`, `counters.json` or item file, a project key in `config.json` that isn't valid, a lock that can't be taken, a counter at or below a number already on disk, or output that can't be written. |
+| `3` | The store can't be read or written: one that exists but can't be read (such as `chmod 000`), an unparseable `config.json`, `counters.json` or item file, an item file whose name, `id` and `project` disagree, a project key or relative root in `config.json`, a lock that can't be taken, a counter of 0, at its largest, or at or below a number already on disk, an item file a rewrite would lose fields from, or output that can't be written. |
 
 clap normally exits with 2 when it can't parse the arguments. Here 2 means a gate refused, so bad arguments exit 1 instead. `--help` and `--version` exit 0.
 
@@ -133,7 +134,7 @@ $TRACKER_HOME/
 
 `digests.json` and `judge/` from §4.1 aren't created yet. The slices that use them add them.
 
-Every other command checks for `config.json`, `counters.json` and `items/` before doing anything ([store.rs](../src/store.rs) `require_exists`). With no `config.json` there's no store, and the message is "There's no tracker store at … Run `tracker init`." If only `counters.json` or `items/` is missing, the message names it and says to run `init` to put it back. Both exit 1. A store that's there but can't be read exits 3 instead, so a permissions problem isn't mistaken for a missing store.
+Every other command checks for `config.json`, `counters.json` and `items/` before doing anything ([store.rs](../src/store.rs) `require_exists`). With no `config.json` there's no store, and the message is "There's no tracker store at … Run `tracker init`." If only `counters.json` or `items/` is missing, the message names it and says to run `init` to put it back. `init` then says what it put back: `counters.json` comes back empty, so it says to set the counters again, and `config.json` comes back with no projects. Both exit 1. A store that's there but can't be read exits 3 instead, so a permissions problem isn't mistaken for a missing store.
 
 ### `config.json`
 
@@ -159,7 +160,7 @@ So far the tool reads only `name`, `root` and `design`. Any other setting from �
 }
 ```
 
-Each value is the **next** number to hand out. A project with no entry starts at 1. IDs come only from this file, never from the item files that happen to exist, so a deleted item's ID is never reused (§4.4).
+Each value is the **next** number to hand out. A project with no entry starts at 1. A value of 0 is refused, since IDs start at 1, and so is the largest number a `u64` holds, since no number is left after it. IDs come only from this file, never from the item files that happen to exist, so a deleted item's ID is never reused (§4.4).
 
 The item files are a tripwire, though. If a project's counter is at or below the highest number among its item files, `counters.json` was lost or reset, and its next number could be a deleted item's ID, whose scoped commits would then count as the new item's work (§2.8). So `create` refuses with exit 3 and says what to set the counter to. Each project is checked separately: after the file is lost, every project with items needs its counter set again. A project that lost its counter and has no item files left can't be checked, because nothing is left on disk to compare against.
 
@@ -186,6 +187,7 @@ The item files are a tripwire, though. If a project's counter is at or below the
 - `status` can hold any of the five §2.2 states: `open`, `in-progress`, `review`, `done` or `shelved`. `create` makes only `open` items, but a file with any of the five loads, and `project list` counts it.
 - Timestamps are RFC 3339 in UTC, to the second.
 - `description` is left out when there isn't one.
+- A file is read only as the item its name says: `BM-1.json` must hold `"id": "BM-1"` in project `BM` ([store.rs](../src/store.rs) `read_item`). Otherwise a copied or renamed file would list one ID twice, and a later rewrite would overwrite the other item's file. A mismatch exits 3 and names the file.
 
 Slice 1 writes only the fields it sets. The later fields in §4.3 (`labels`, `design`, `written`, `criteria`, `started`, `verification`, `history`) are added by the slices that need them.
 
@@ -220,6 +222,8 @@ The flushes make writes slower, which is noticeable only in the tests: `tests/cr
 
 Output goes through `print_out` in [main.rs](../src/main.rs) instead of `println!`. When the reader stops early, as in `tracker list | head -1`, `println!` panics on the broken pipe. `print_out` stops writing and exits with the command's usual code. Any other write error is reported on stderr and exits 3. Errors on stderr are written with `writeln!` and ignored if stderr is closed, since there's nowhere left to report them.
 
+Everything printed is escaped first ([text.rs](../src/text.rs)). Input is checked too, but a file edited by hand, or a folder's name, can still hold an escape sequence or a mark that reorders text. So text output writes each character that would change the display as `\u{1b}`, in table cells, headings and error messages alike, and a cell's line breaks too, so a title can't start a line of its own. JSON output writes them as JSON escapes such as `\u202e`, since serde_json escapes only those below U+0020 by itself. The JSON still parses to the same value.
+
 ### The default project
 
 When `create` has no `--project` flag, it canonicalizes the current folder and each project's root, and picks the project whose root contains the current folder ([config.rs](../src/config.rs) `project_for_dir`):
@@ -242,9 +246,9 @@ Each output is defined by a JSON Schema in [schemas/](../schemas/), which is the
 
 | Command | Prints | Schema |
 | --- | --- | --- |
-| `init` | `{"home": "<path>", "created": true}`, where `created` is false if the store already existed | [init](../schemas/init.schema.json) |
+| `init` | `{"home": "<path>", "created": true, "repaired": []}`, where `created` is false if the store already existed, and `repaired` lists the parts of an existing store it put back: `config.json`, `counters.json` or `items/` | [init](../schemas/init.schema.json) |
 | `project add` | `{"key", "name", "root", "design"}`, where `design` is `null` if it wasn't given | [project-add](../schemas/project-add.schema.json) |
-| `project list` | `{"projects": [{"key", "name", "root", "design", "counts": {"open", "in-progress", "review", "done", "shelved"}}]}`, with all five states always present and sorted by key | [project-list](../schemas/project-list.schema.json) |
+| `project list` | `{"projects": [{"key", "name", "root", "design", "counts": {"open", "in-progress", "review", "done", "shelved"}}]}`, with all five states always present and sorted by key, and `"unregistered": [{"key", "counts"}]` for projects that have items but aren't in `config.json` | [project-list](../schemas/project-list.schema.json) |
 | `create` | `{"item": <item>}`: the new item, exactly as its file holds it | [create](../schemas/create.schema.json) |
 | `list` | `{"items": [<item>, …]}`, sorted by project and then by number | [list](../schemas/list.schema.json) |
 | any failure | `{"error": "<message>", "exit_code": <n>}`, the base shape that slice 6's gate refusals add fields to | [error](../schemas/error.schema.json) |
@@ -264,9 +268,10 @@ The crate is a library plus a binary. The library holds the store and file forma
 | [src/main.rs](../src/main.rs) | clap definitions (`Cli`, `Command`, `ProjectCommand`), one function per command (`init`, `project_add`, `project_list`, `create`, `list`), the `Output { text, json }` each one returns, error printing and exit codes (`fail`), `print_out`, which writes to stdout without panicking on a closed pipe, and a small `table` helper for aligned text. |
 | [src/lib.rs](../src/lib.rs) | Declares the library modules. |
 | [src/error.rs](../src/error.rs) | `Error { code, message }`, with `Error::input` (exit 1) and `Error::store` (exit 3), and the `Result<T>` alias. |
-| [src/store.rs](../src/store.rs) | `Store`: finding the store (`locate`, which refuses a relative `TRACKER_HOME`), its paths, `init`, `require_exists`, `lock`, `next_id` with its tripwire `highest_number_on_disk`, `save_item` and `load_items`. Also the free functions `read_file` and `write_file`, which writes atomically and flushes to disk. |
+| [src/store.rs](../src/store.rs) | `Store`: finding the store (`locate`, which refuses a relative `TRACKER_HOME`), its paths, `init` and the `Init` it returns, `require_exists`, `lock`, `next_id` with `read_counters` and its tripwire `highest_number_on_disk`, `save_item` (new items only), `update_item` (rewrites, refused when they'd lose fields), `load_item` and `load_items`. Also the free functions `read_item`, which checks a file is the item its name says, `read_file` and `write_file`, which writes atomically and flushes to disk. |
 | [src/config.rs](../src/config.rs) | `Config` and `Project`, `load`, `add_project`, `normalize_key`, `project_for_dir`, `project_with_root` and `key_list`. |
-| [src/item.rs](../src/item.rs) | `Item` and the `Kind`, `Status` and `Priority` enums with their serde names, `Status::ALL`, `now()` (to the second), and `to_json`/`from_json`, the only code that turns an item into file text and back. |
+| [src/item.rs](../src/item.rs) | `Item` and the `Kind`, `Status` and `Priority` enums with their serde names, `Status::ALL`, `now()` (to the second), `to_json`/`from_json`, the only code that turns an item into file text and back, and `lost_on_rewrite`, the fields a rewrite would lose or change. |
+| [src/text.rs](../src/text.rs) | `check_printable`, which refuses control characters on input, and `for_terminal` and `for_json`, which escape them on output. `changes_display` is the rule both use. |
 
 To add a command: add a variant to `Command` in `main.rs`, write a function that returns `Result<Output>` with both `text` and `json` filled in, and call it from the `match` in `main`. Write commands should take `store.lock()` before reading the files they're going to change.
 
@@ -298,6 +303,7 @@ Every command a test runs is built in one place, `Env::std_cmd()`, which sets bo
 | `env.std_cmd()` | The same as a `std::process::Command`, for tests that spawn the process themselves |
 | `env.user_home()` | The folder `HOME` points at |
 | `env.json(args)` / `env.json_in(dir, args)` | Runs with `--json`, expects exit 0, checks the output against its schema, and returns the parsed `serde_json::Value` |
+| `env.error(args, code)` / `env.error_in(dir, args, code)` | Runs with `--json`, expects exit `code`, checks the output against `error.schema.json`, and returns the message |
 | `env.add_project(key, root)` | Registers a project with its root at `work/<root>` and returns that path |
 | `env.create(project, title)` | Creates an item and returns its ID |
 | `env.dir(rel)`, `env.item_path(id)`, `env.read_store_file(name)` | Paths and raw store files |
@@ -408,14 +414,40 @@ The review found two places where the code and DESIGN.md disagreed, settled afte
 | 4. `docs_links.rs` doesn't check `docs/` | `7816399` | Every `.md` file in `docs/` has its links checked, without being listed. | `the_docs_folder_is_checked`, `relative_links_in_the_docs_resolve` |
 | 5. The bugs have no regression tests | none | Already done: each fix above brought its own test. | |
 
-For gaps 1, 3 and 4, the new test was seen failing with what it guards broken. The link check only checks that a file exists, not that a `#L…` line anchor still points at the right line.
+For gaps 1, 3 and 4, the new test was seen failing with what it guards broken. The link check only checked that a file exists. Since review 2 it also checks that a `#L…` line anchor names lines the file has, but not that they still hold what the doc means.
 
 Still open from the review: its four nits, which are small cleanups ([slice-1-review-1.md](slice-1-review-1.md#nits)).
+
+## Fixes after review 2
+
+[slice-1-review-2.md](slice-1-review-2.md) found five things to fix before slice 2, and some smaller ones. Each fix is in its own commit with its tests.
+
+| Finding | Commit | Fix | Tests |
+| --- | --- | --- | --- |
+| 1. An item file's name and `id` aren't checked | `ead1e81` | `read_item` checks that `XX-1.json` holds `XX-1` in project `XX`, for `load_items` and the new `load_item`. | `tests/item_files.rs`: `a_file_whose_name_and_id_disagree_is_refused` and the two after it |
+| 2. A rewrite drops fields this version doesn't know | `b104bf9` | `Store::update_item` refuses a rewrite that `item::lost_on_rewrite` says would lose or change a field. `save_item` refuses to overwrite a file. Every fixture must be rewritable without loss. | `tests/item_files.rs`: `update_item_…`, `save_item_never_overwrites_a_file`; `tests/fixtures.rs` |
+| 3. Text from files, folder names and errors reaches the terminal unchanged | `6ec034f` | The new `text` module escapes every output, text and JSON, and `project add` refuses a root holding a control character. | `tests/output.rs` |
+| 4. A relative root in `config.json` matches different folders | `d3ea4eb` | `config::load` refuses a root that isn't absolute after `~/` expansion. | `a_relative_root_in_config_json_is_refused` |
+| 5. `init` says "Nothing changed" after a repair, and accepts a corrupt config | `536a921` | `init` lists what it put back (`repaired`), says what it means, and checks the existing files before writing anything. | `init_says_which_parts_it_put_back`, `init_refuses_a_store_whose_files_cant_be_read` |
+| Bad counter values | `8142f0f` | A counter of 0 or at the largest `u64` exits 3 and writes nothing, instead of a confusing error or a panic. | `a_counter_below_1_or_at_its_largest_is_refused` |
+| `project list` hides items of unregistered projects | `0873bcd` | They're listed after the registered ones, and in `unregistered` in the JSON. | `project_list_counts_items_whose_project_isnt_registered` |
+| `item.schema.json` doesn't enforce its title rule | `1254541` | A `pattern` refuses what `create` refuses. | `a_wrong_output_is_caught` in `tests/schemas.rs` |
+| Exit-3 errors aren't checked against the schema | `64d5dc2` | `Env::error` and `Env::error_in` check every error they see. | Every test that expects a failure under `--json` |
+| Line anchors aren't checked | `b04dcb3` | A `#L12` or `#L12-L30` link must name lines the file has. | `line_anchors_name_lines_that_exist` |
+| No `rust-version` | `a610a92` | `rust-version = "1.89"` in Cargo.toml, for `File::lock`. | |
+
+A few consequences:
+
+- **clap's error messages lose their colour**, because they're now written as plain text so they can be escaped. Slice 5 brings colour back with anstream.
+- **A hand-edited item with a tab in its title now lists**, with the tab shown as `\u{9}`.
+- **One mismatched item file stops `list` and `project list` with exit 3**, as an unparseable one does. Slice 5 makes both report the file and skip it.
+
+Still open from review 2: a non-UTF-8 `TRACKER_HOME` under `--json` (untested on macOS), the symlinked `.tmp` file, checking hand-written project names and `design`, DESIGN.md §4.4's "all validated" wording, and its two commit-message points.
 
 ## Limits, and what later slices change
 
 - **Item files change shape in later slices.** Each new field needs `#[serde(default, skip_serializing_if = …)]` so that files written by this slice still load and still round-trip byte for byte, which `tests/fixtures.rs` checks. Put each field where §4.3 places it: for example, `labels` between `priority` and `created`, and `history` before `description`. Add it to `schemas/item.schema.json` in the same slice, and add a `tests/fixtures/slice-<n>/` folder of files written by that slice's binary.
-- **This version drops fields it doesn't know** if it rewrites an item. It never rewrites an existing item, so nothing is lost now. From slice 2 on, commands rewrite items, so install a newer binary only between items (PLAN.md, integration risks).
+- **This version refuses to rewrite an item it would lose fields from**, such as one a newer tracker wrote. `Store::update_item` is the write slice 2's moves should use: it re-reads the file under the lock and exits 3 rather than drop a field. So install a newer binary only between items still (PLAN.md, integration risks), but a mistake now fails loudly instead of losing data.
 - **`Status` already has all five states**, but no command moves between them. Slice 2 adds the moves and `history`.
 - **Slice 5's store checks are partly here already.** A store with `chmod 000` exits 3 (`an_unreadable_store_exits_3_and_isnt_reported_as_missing`), and `commands_without_a_store_say_run_tracker_init` covers the "Run `tracker init`." wording for all four commands that need a store. Slice 5 still has to skip unparseable item files and test that no temporary files are left after every command.
 - **The tool isn't installed yet.** `cargo install --path .` and self-tracking with a `TR` project start after slice 6.
