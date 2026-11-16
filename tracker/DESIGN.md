@@ -65,6 +65,8 @@ The course offers a starting design to refine. These differences are deliberate:
 | **Digest**               | A per-project list of auto-verified items and items an agent shelved, for me to audit (§2.6).                                                          |
 | **Slice**                | One vertical slice of user behaviour from a `/decompose` plan, which usually becomes one item. [PLAN.md](PLAN.md) builds `tracker` in 16 of them (§9). |
 
+The examples use two projects: `BM`, a bookmark manager, and `TR`, `tracker` itself (§9). Neither is special to the tool, which works the same way for any project.
+
 ## 2. Concepts
 
 ### 2.1 Items
@@ -342,7 +344,7 @@ $ tracker submit BM-14
 
 The digest is how I check the checker. It never blocks an individual item.
 
-Each project has its own digest. It lists every item auto-verified since I last acknowledged that project's digest: titles, criteria, the checks that ran, the commits, and each judge's questions with their refs, answers and reasons. Items that passed on a judge, rather than only on scripts, are listed first. It also lists items an agent shelved, with the reason. `tracker digest` shows the current project's digest, or every project's outside a project folder, and `tracker digest ack` records that I've seen the current project's (or `--project BM`). If something looks wrong, `tracker reopen BM-12 --reason "…"` sends it back. If it comes back with unchanged code, T13 holds it, because its checks already pass at start. A project's digest older than its `review.digest.every_days` shows as overdue in `tracker review`.
+Each project has its own digest. It lists every item auto-verified since I last acknowledged that project's digest: titles, criteria, the checks that ran, the commits, and each judge's questions with their refs, answers and reasons. Items that passed on a judge, rather than only on scripts, are listed first. It also lists items an agent shelved, with the reason. `tracker digest` shows the current project's digest inside a project root, or every project's outside one or with `--all`, and `tracker digest ack` records that I've seen the current project's (or `--project <KEY>`'s). Outside every root, `digest ack` needs `--project`, so one command can't acknowledge every project at once (§3). If something looks wrong, `tracker reopen BM-12 --reason "…"` sends it back. If it comes back with unchanged code, T13 holds it, because its checks already pass at start. A project's digest older than its `review.digest.every_days` shows as overdue in `tracker review`.
 
 ### 2.7 Human actions
 
@@ -382,14 +384,19 @@ An item that shouldn't be done at all goes through both: the agent shelves it wi
 
 ## 3. Interface
 
-Commands work from any folder. If the current folder is inside a registered project's root, that project is the default. Otherwise use `--project BM`.
+Commands work from any folder, and pick their project like this:
+
+- **A command that works on one project**, such as `create` or `digest ack`, uses the project whose root contains the current folder, or the one `--project <KEY>` names. Outside every project root and without `--project`, it exits 1. When roots are nested, such as a monorepo and one of its packages, the deepest root that contains the folder wins.
+- **A command that lists items**, `list` or `digest`, shows the current project's items inside a project root, and every project's outside one. `--project <KEY>` picks one project, and `--all` shows every project from anywhere. The output always says which it covered, so a filtered list is never mistaken for an empty store.
+- **A command that takes an item ID**, such as `show BM-12`, needs no project, because the ID names it.
+- **`review`, `judges` and `audit` always cover every project.** The inbox shows held items wherever I am, because a held item pauses its project (§4.4), and the other two report on the whole store.
 
 **Setup**
 
 | Command                                                              | What it does                                                   |
 | -------------------------------------------------------------------- | -------------------------------------------------------------- |
 | `tracker init`                                                       | Creates the store if it doesn't exist.                         |
-| `tracker project add BM --name … --root <path> [--design DESIGN.md]` | Registers a project. Review policy is edited in `config.json`. |
+| `tracker project add <KEY> --name … --root <path> [--design DESIGN.md]` | Registers a project. Review policy is edited in `config.json`. |
 | `tracker project list`                                               | Lists projects with item counts by state.                      |
 
 **Agent workflow**
@@ -416,9 +423,9 @@ The `criterion` commands work at any time, but after `start` any change to the c
 
 | Command                               | What it does                                                                                                                                                                                   |
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tracker review`                      | **The inbox**: held items with their reasons, and whether a digest is pending. Prints "Nothing needs you." when it's empty. Each held item ends with a hint to run `tracker show <ID> --diff`. |
+| `tracker review`                      | **The inbox**: held items from every project with their reasons, and whether a digest is pending. Prints "Nothing needs you." when it's empty. Each held item ends with a hint to run `tracker show <ID> --diff`. |
 | `tracker approve` / `reject`          | §2.7.                                                                                                                                                                                          |
-| `tracker digest [ack] [--project BM]` | §2.6.                                                                                                                                                                                          |
+| `tracker digest [--project <KEY> \| --all]`, `tracker digest ack [--project <KEY>]` | §2.6.                                                                                                                                                                                          |
 | `tracker reopen BM-12 --reason "…"`   | done or shelved → open. A done item that comes back with unchanged code is held by T13, because its checks already pass at start.                                                              |
 | `tracker judges`                      | For each judge question, how often I approved and how often I rejected the items it held (§2.3.2).                                                                                             |
 | `tracker criterion accept BM-12`      | After I hand-edit a criterion, records its new text in `written` (§2.7).                                                                                                                       |
@@ -427,7 +434,7 @@ The `criterion` commands work at any time, but after `start` any change to the c
 
 | Command                                                                      | What it does                                                                                                                                                                                                                                                                                                  |
 | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tracker list [--project] [--status] [--priority] [--label] [--kind] [--by]` | Lists items grouped by project and sorted by priority. Without `--status`, it shows open, in-progress and review items. `--status` shows exactly the states named, such as `--status done` or `--status open,shelved`. `--by auto\|human\|unchecked` keeps done items verified that way. The filters combine. |
+| `tracker list [--project \| --all] [--status] [--priority] [--label] [--kind] [--by]` | Lists items grouped by project and sorted by priority: the current project's inside a project root, and every project's outside one or with `--all`. The text ends by saying which, such as "XX only. `--all` for every project.", and the JSON names it in `project`: the key, or `null` for every project. Without `--status`, it shows open, in-progress and review items. `--status` shows exactly the states named, such as `--status done` or `--status open,shelved`. `--by auto\|human\|unchecked` keeps done items verified that way. The filters combine. |
 | `tracker show BM-12 [--diff]`                                                | Everything, including the verification record and history. `--diff` adds the item's commits (§2.1) and their combined diff, with the files that fired a trigger listed first, so I can review a hold without leaving the tool.                                                                                |
 | `tracker delete BM-12`                                                       | Any item, from an interactive terminal only, after a prompt that says what will be lost (§2.8).                                                                                                                                                                                                               |
 | `tracker audit`                                                              | Reports files that can't be read, status changes with no matching history, done items with no verification record, and IDs used twice.                                                                                                                                                                        |
@@ -542,7 +549,7 @@ What the less obvious settings mean:
   - `max_input_bytes` is per question (about 12k tokens). A larger excerpt is refused, never truncated.
   - `context_lines` is how much code is shown around each `each` match.
 
-Every value has a sensible default, so a project needs only `name` and `root` to start. The bookmark manager (`BM`) keeps `app.js` at the top level and the rest of its code in `src/`, so it sets `"source_paths": ["*.js", "src/**"]`.
+Every value has a sensible default, so a project needs only `name` and `root` to start. For example, a bookmark manager (`BM`) that keeps `app.js` at the top level and the rest of its code in `src/` sets `"source_paths": ["*.js", "src/**"]`.
 
 ### 4.3 Item file
 

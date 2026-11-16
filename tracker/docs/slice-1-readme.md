@@ -331,7 +331,7 @@ ls -a | grep -x .git                        # prints nothing: no nested repo
 - **Bad arguments exit 1, not 2.** Under `--json`, clap's message is reduced to one line in the usual error object.
 - **Errors under `--json` go to stdout**, as one object, so an agent always parses exactly one object from stdout.
 - **`counters.json` stores the next number**, not the last one used, as §4.1 describes it.
-- **`list` shows every project's items wherever you run it.** §3 says the current folder picks the default project, but for `list` that's a filter, and filters (`--project`, `--status`, …) arrive in slice 3, along with priority sorting and hiding shelved items.
+- **`list` shows every project's items wherever you run it, for now.** After review 1, DESIGN.md §3 decided that inside a project root `list` shows only that project, with `--all` for every project and the scope named in its output. Slice 3 builds that, along with the other filters, priority sorting and hiding shelved items.
 - **An unparseable item file stops `list` and `project list` with exit 3**, naming the file and the parser's line and column. Slice 5 changes this to report the file and skip it (§4.4).
 - **Times are kept to the second**, to match §4.3's example and keep files easy to read.
 - **Titles must be one line**, since `list` prints one item per line. Details go in `--description`.
