@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracker.invalid/schemas/project-add.schema.json",
+  "title": "tracker project add --json",
+  "type": "object",
+  "required": ["key", "name", "root", "design"],
+  "properties": {
+    "key": { "$ref": "item.schema.json#/$defs/key" },
+    "name": { "type": "string", "minLength": 1 },
+    "root": {
+      "description": "The project's root, as an absolute, canonical path.",
+      "type": "string",
+      "minLength": 1
+    },
+    "design": {
+      "description": "The design doc, relative to the root, or null if none was given.",
+      "type": ["string", "null"]
+    }
+  },
+  "additionalProperties": false
+}

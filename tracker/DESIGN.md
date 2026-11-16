@@ -65,6 +65,8 @@ The course offers a starting design to refine. These differences are deliberate:
 | **Digest**               | A per-project list of auto-verified items and items an agent shelved, for me to audit (§2.6).                                                          |
 | **Slice**                | One vertical slice of user behaviour from a `/decompose` plan, which usually becomes one item. [PLAN.md](PLAN.md) builds `tracker` in 16 of them (§9). |
 
+The examples use two projects: `BM`, a bookmark manager, and `TR`, `tracker` itself (§9). Neither is special to the tool, which works the same way for any project.
+
 ## 2. Concepts
 
 ### 2.1 Items
@@ -342,7 +344,7 @@ $ tracker submit BM-14
 
 The digest is how I check the checker. It never blocks an individual item.
 
-Each project has its own digest. It lists every item auto-verified since I last acknowledged that project's digest: titles, criteria, the checks that ran, the commits, and each judge's questions with their refs, answers and reasons. Items that passed on a judge, rather than only on scripts, are listed first. It also lists items an agent shelved, with the reason. `tracker digest` shows the current project's digest, or every project's outside a project folder, and `tracker digest ack` records that I've seen the current project's (or `--project BM`). If something looks wrong, `tracker reopen BM-12 --reason "…"` sends it back. If it comes back with unchanged code, T13 holds it, because its checks already pass at start. A project's digest older than its `review.digest.every_days` shows as overdue in `tracker review`.
+Each project has its own digest. It lists every item auto-verified since I last acknowledged that project's digest: titles, criteria, the checks that ran, the commits, and each judge's questions with their refs, answers and reasons. Items that passed on a judge, rather than only on scripts, are listed first. It also lists items an agent shelved, with the reason. `tracker digest` shows the current project's digest inside a project root, or every project's outside one or with `--all`, and `tracker digest ack` records that I've seen the current project's (or `--project <KEY>`'s). Outside every root, `digest ack` needs `--project`, so one command can't acknowledge every project at once (§3). If something looks wrong, `tracker reopen BM-12 --reason "…"` sends it back. If it comes back with unchanged code, T13 holds it, because its checks already pass at start. A project's digest older than its `review.digest.every_days` shows as overdue in `tracker review`.
 
 ### 2.7 Human actions
 
@@ -382,14 +384,19 @@ An item that shouldn't be done at all goes through both: the agent shelves it wi
 
 ## 3. Interface
 
-Commands work from any folder. If the current folder is inside a registered project's root, that project is the default. Otherwise use `--project BM`.
+Commands work from any folder, and pick their project like this:
+
+- **A command that works on one project**, such as `create` or `digest ack`, uses the project whose root contains the current folder, or the one `--project <KEY>` names. Outside every project root and without `--project`, it exits 1. When roots are nested, such as a monorepo and one of its packages, the deepest root that contains the folder wins.
+- **A command that lists items**, `list` or `digest`, shows the current project's items inside a project root, and every project's outside one. `--project <KEY>` picks one project, and `--all` shows every project from anywhere. The output always says which it covered, so a filtered list is never mistaken for an empty store.
+- **A command that takes an item ID**, such as `show BM-12`, needs no project, because the ID names it.
+- **`review`, `judges` and `audit` always cover every project.** The inbox shows held items wherever I am, because a held item pauses its project (§4.4), and the other two report on the whole store.
 
 **Setup**
 
 | Command                                                              | What it does                                                   |
 | -------------------------------------------------------------------- | -------------------------------------------------------------- |
 | `tracker init`                                                       | Creates the store if it doesn't exist.                         |
-| `tracker project add BM --name … --root <path> [--design DESIGN.md]` | Registers a project. Review policy is edited in `config.json`. |
+| `tracker project add <KEY> --name … --root <path> [--design DESIGN.md]` | Registers a project. Review policy is edited in `config.json`. |
 | `tracker project list`                                               | Lists projects with item counts by state.                      |
 
 **Agent workflow**
@@ -416,9 +423,9 @@ The `criterion` commands work at any time, but after `start` any change to the c
 
 | Command                               | What it does                                                                                                                                                                                   |
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tracker review`                      | **The inbox**: held items with their reasons, and whether a digest is pending. Prints "Nothing needs you." when it's empty. Each held item ends with a hint to run `tracker show <ID> --diff`. |
+| `tracker review`                      | **The inbox**: held items from every project with their reasons, and whether a digest is pending. Prints "Nothing needs you." when it's empty. Each held item ends with a hint to run `tracker show <ID> --diff`. |
 | `tracker approve` / `reject`          | §2.7.                                                                                                                                                                                          |
-| `tracker digest [ack] [--project BM]` | §2.6.                                                                                                                                                                                          |
+| `tracker digest [--project <KEY> \| --all]`, `tracker digest ack [--project <KEY>]` | §2.6.                                                                                                                                                                                          |
 | `tracker reopen BM-12 --reason "…"`   | done or shelved → open. A done item that comes back with unchanged code is held by T13, because its checks already pass at start.                                                              |
 | `tracker judges`                      | For each judge question, how often I approved and how often I rejected the items it held (§2.3.2).                                                                                             |
 | `tracker criterion accept BM-12`      | After I hand-edit a criterion, records its new text in `written` (§2.7).                                                                                                                       |
@@ -427,7 +434,7 @@ The `criterion` commands work at any time, but after `start` any change to the c
 
 | Command                                                                      | What it does                                                                                                                                                                                                                                                                                                  |
 | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tracker list [--project] [--status] [--priority] [--label] [--kind] [--by]` | Lists items grouped by project and sorted by priority. Without `--status`, it shows open, in-progress and review items. `--status` shows exactly the states named, such as `--status done` or `--status open,shelved`. `--by auto\|human\|unchecked` keeps done items verified that way. The filters combine. |
+| `tracker list [--project \| --all] [--status] [--priority] [--label] [--kind] [--by]` | Lists items grouped by project and sorted by priority: the current project's inside a project root, and every project's outside one or with `--all`. The text ends by saying which, such as "XX only. `--all` for every project.", and the JSON names it in `project`: the key, or `null` for every project. Without `--status`, it shows open, in-progress and review items. `--status` shows exactly the states named, such as `--status done` or `--status open,shelved`. `--by auto\|human\|unchecked` keeps done items verified that way. The filters combine. |
 | `tracker show BM-12 [--diff]`                                                | Everything, including the verification record and history. `--diff` adds the item's commits (§2.1) and their combined diff, with the files that fired a trigger listed first, so I can review a hold without leaving the tool.                                                                                |
 | `tracker delete BM-12`                                                       | Any item, from an interactive terminal only, after a prompt that says what will be lost (§2.8).                                                                                                                                                                                                               |
 | `tracker audit`                                                              | Reports files that can't be read, status changes with no matching history, done items with no verification record, and IDs used twice.                                                                                                                                                                        |
@@ -436,7 +443,7 @@ The `criterion` commands work at any time, but after `start` any change to the c
 
 **Exit codes:** `0` success, which includes "held for review". The output says which state the item ended in. `1` bad input, not found, or the item changed while the command ran (§4.4). `2` refused by a gate. `3` the store, a file or git is unreadable.
 
-**Output for agents.** Every command takes `--json` and then prints one JSON object instead of text, with the same exit code. The text is for me and can change wording freely. The JSON fields are an interface, so renaming or removing one is a breaking change. For `gates` and `submit`, the object lists every gate and trigger with its id and result, and every judge question with its ref and answer. A held submit looks like this:
+**Output for agents.** Every command takes `--json` and then prints one JSON object instead of text, with the same exit code. The text is for me and can change wording freely. The JSON fields are an interface, so renaming or removing one is a breaking change. Each command's output is defined by a JSON Schema in [schemas/](schemas/), not in this doc, and the tests check every output against it, so an output can't change without its schema changing too. A command that returns an item wraps it, as `{"item": {…}}`, so fields about the command, such as a warning, never sit among the item's own. Every non-zero exit prints the same base shape, `{"error": "…", "exit_code": n}` ([error.schema.json](schemas/error.schema.json)), so an agent can always read `error`. For `gates` and `submit`, the object lists every gate and trigger with its id and result, and every judge question with its ref and answer. A held submit looks like this:
 
 ```json
 {
@@ -460,7 +467,7 @@ The `criterion` commands work at any time, but after `start` any change to the c
 }
 ```
 
-A refusal puts each failure in `failures`, with `ref`, `answer` and the model's `reason` for a judge question, so an agent can dispute it by ref without parsing text.
+A refusal is that base shape with `id`, `result: "refused"`, `gates` and `failures` added. Each failure in `failures` has `ref`, `answer` and the model's `reason` for a judge question, so an agent can dispute it by ref without parsing text.
 
 ## 4. Storage
 
@@ -542,11 +549,11 @@ What the less obvious settings mean:
   - `max_input_bytes` is per question (about 12k tokens). A larger excerpt is refused, never truncated.
   - `context_lines` is how much code is shown around each `each` match.
 
-Every value has a sensible default, so a project needs only `name` and `root` to start. The bookmark manager (`BM`) keeps `app.js` at the top level and the rest of its code in `src/`, so it sets `"source_paths": ["*.js", "src/**"]`.
+Every value has a sensible default, so a project needs only `name` and `root` to start. For example, a bookmark manager (`BM`) that keeps `app.js` at the top level and the rest of its code in `src/` sets `"source_paths": ["*.js", "src/**"]`.
 
 ### 4.3 Item file
 
-Each item is one JSON file, and serde maps it to Rust structs and back. The tool writes it pretty-printed with two-space indents, with the fields always in the same order, so a file reads the same way every time and a change shows up as a small diff.
+Each item is one JSON file, and serde maps it to Rust structs and back. The tool writes it pretty-printed with two-space indents, with the fields always in the same order, so a file reads the same way every time and a change shows up as a small diff. [item.schema.json](schemas/item.schema.json) defines its fields, and is the same schema the `--json` output uses for an item.
 
 ```json
 {
@@ -621,7 +628,7 @@ Each item is one JSON file, and serde maps it to Rust structs and back. The tool
 - Every command that writes takes an exclusive lock on `~/.tracker/lock` while it reads and writes files. It doesn't hold the lock while checks or judges run, so `submit` and `approve` re-read the item under the lock before writing their result. If the item changed while the gates ran, nothing is written and the command exits with code `1`, asking for a rerun. Two agents creating items at the same moment wait their turn and get different IDs. The operating system releases the lock if a command crashes, so there's never a stale lock to clear.
 - IDs come from `counters.json`, never from the files that happen to exist, so a deleted item's ID is never handed out again.
 - One item at a time per project. `start` refuses while another item in the same project is in progress or in review (G1). Every item works on the project's current branch, so one item's committed, still-failing tests would fail another's project checks (G4), and its uncommitted edits would fail G5. A held item therefore pauses its project until I approve or reject it. Shelving an in-progress item frees its project (§2.8).
-- Titles, labels, project keys, kinds and states are all validated.
+- Titles, labels, project names, project keys, roots, kinds and states are validated when a command takes them in. Files can be edited by hand, so some checks run again whenever a file is read: project keys and roots in the config, each item's kind and state, and whether an item file holds the item its name says (`BM-12.json` must hold `BM-12`, in project `BM`). Free text read from a file, such as a title, isn't refused. Instead, every output escapes control characters and the marks that reorder text, so no text can change what the terminal shows.
 - If the project root isn't inside a git working tree, G5 and the triggers can't run. The submit is refused with exit code 3 and a clear message. The root doesn't have to be the top of the repository (§2.1).
 
 ## 5. Working with agents
@@ -753,7 +760,7 @@ Links to my existing workflow:
 | Judges            | `claude-haiku-5-5` through the `claude` CLI, run by `tracker-judge`, a second binary in the same crate, as a subprocess | No server, no model download, no API key and no HTTP client: it reuses the login Claude Code already has, and runs `claude` the same way the tool runs `git`. `--json-schema` makes every reply an answer and a reason. Behind the judge-command contract, the tests use a fake judge and judge-eval runs the same binary. `serde_json` builds the request and reads the answers. |
 | Colour output     | `anstream` + `anstyle`                                                                                                  | Colour that turns itself off when output isn't a terminal.                                                                                                                                                                                                                                                                                                                        |
 | Interactive check | `std::io::IsTerminal`                                                                                                   | Built into the standard library.                                                                                                                                                                                                                                                                                                                                                  |
-| Tests             | `assert_cmd` + `tempfile`, and `trycmd` for transcript tests                                                            | Runs the real binary against a temporary `TRACKER_HOME` and throwaway git repos.                                                                                                                                                                                                                                                                                                  |
+| Tests             | `assert_cmd` + `tempfile`, `trycmd` for transcript tests, and `jsonschema` (without default features) | Runs the real binary against a temporary `TRACKER_HOME` and throwaway git repos. `jsonschema` checks every `--json` output against its schema (§3). Without default features it can't fetch a schema over the network, so the schemas refer to each other only through the local copies.                                                                                                                                                                                                                                                                                                  |
 
 The project lives at `guild-portfolio/tracker/`, a folder in the guild-portfolio git repository rather than a repository of its own, so `tracker` is itself a project inside a larger repo (§2.1). This design doc, [PLAN.md](PLAN.md), [walkthrough.html](walkthrough.html) and [judge-eval/](judge-eval/) move there with `git mv` in slice 1, so the relative links keep working, their history follows them, and T8 watches the real design.
 

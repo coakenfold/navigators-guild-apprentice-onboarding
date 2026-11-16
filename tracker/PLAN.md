@@ -30,7 +30,7 @@ The stack, where things live, the conventions and the test command are in `guild
 
 | #   | Slice                           | Outcome (I can…)                                                                                      | Depends on | Parallel with | Status |
 | --- | ------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------- | ------------- | ------ |
-| 1   | Create and list                 | create items in two projects and list them from one store                                             | —          | —             | todo   |
+| 1   | Create and list                 | create items in two projects and list them from one store                                             | —          | —             | done   |
 | 2   | States                          | start, submit, shelve and reopen items, with history kept                                             | 1          | —             | todo   |
 | 3   | Organise and filter             | set priority, kind and labels, edit items, filter a sorted list                                       | 2          | —             | todo   |
 | 4   | Show and delete                 | see an item's full record, and delete one from a real terminal                                        | 3          | —             | todo   |
@@ -80,7 +80,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 
 ### Slice 3: Organise and filter
 
-- **Prompt:** "Add `--kind`, `--priority` and repeatable `--label` to `create`, using §2.1's values and defaults; labels are lowercased and de-duplicated. Add an `edit` command for priority, labels (`--label` and `--unlabel`), title, kind, design and description; it adds one history entry and is refused for done items. `list` sorts by priority within each project, marks priority and kind, and gets the combinable filters `--project`, `--status` (comma-separated), `--priority`, `--label`, `--kind` and `--by`. Without `--status`, `list` shows only open, in-progress and review items."
+- **Prompt:** "Add `--kind`, `--priority` and repeatable `--label` to `create`, using §2.1's values and defaults; labels are lowercased and de-duplicated. Add an `edit` command for priority, labels (`--label` and `--unlabel`), title, kind, design and description; it adds one history entry and is refused for done items. `list` sorts by priority within each project, marks priority and kind, and gets the combinable filters `--project`, `--status` (comma-separated), `--priority`, `--label`, `--kind` and `--by`. Without `--status`, `list` shows only open, in-progress and review items. Inside a project root, `list` shows only that project unless `--project` or the new `--all` says otherwise, and both its text and its JSON (`project`: the key, or `null`) say which it covered, as §3 describes."
 - **Done when:**
   - `list` shows high before medium before low.
   - An unknown priority or kind exits 1 and names the allowed values. `--label Bug --label bug` is stored once, as `bug`.
@@ -88,6 +88,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - `list --status open --priority high --label bug` shows only items that match all three.
   - `--status done` shows only done items, and `--status open,shelved` shows exactly those two states.
   - Plain `list` hides shelved items.
+  - Inside XX's root, `list` shows only XX's items and its JSON has `"project": "XX"`. `--all` there, or plain `list` outside every root, shows every project with `"project": null`.
 
 ### Slice 4: Show and delete
 

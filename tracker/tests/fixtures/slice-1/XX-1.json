@@ -1,0 +1,11 @@
+{
+  "id": "XX-1",
+  "title": "Ünïcode “quotes”, a \\ backslash and emoji 😀",
+  "project": "XX",
+  "kind": "change",
+  "status": "open",
+  "priority": "medium",
+  "created": "2026-11-16T00:25:55Z",
+  "updated": "2026-11-16T00:25:55Z",
+  "description": "Markdown, with line breaks.\n\n- a \"quoted\" word\n- a\ttab, é and 😀"
+}

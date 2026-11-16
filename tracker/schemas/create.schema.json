@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracker.invalid/schemas/create.schema.json",
+  "title": "tracker create --json",
+  "type": "object",
+  "required": ["item"],
+  "properties": {
+    "item": {
+      "description": "The new item, exactly as its file holds it.",
+      "$ref": "item.schema.json"
+    }
+  },
+  "additionalProperties": false
+}

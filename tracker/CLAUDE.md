@@ -2,14 +2,14 @@
 
 A verification-gated work tracker: a Rust CLI for any project. Spec: [DESIGN.md](DESIGN.md), and every § below is a section of it. Build order, and each slice's prompt and _Done when_: [PLAN.md](PLAN.md).
 
-This folder is part of the guild-portfolio git repo, not a repo of its own. DESIGN.md, PLAN.md, walkthrough.html and `judge-eval/` sit here at the crate root; slice 1 moves them in from `../02-the-methodology/02-tracking-your-work/`.
+This folder is part of the guild-portfolio git repo, not a repo of its own. DESIGN.md, PLAN.md, walkthrough.html and `judge-eval/` sit here at the crate root; slice 1 moved them here with `git mv` from the repo's `chapters/02-the-methodology/02-tracking-your-work/`.
 
 ## Stack
 
 - Rust stable. 1.99 is installed, and `File::lock` needs 1.89 or later.
 - Use the crates from §8, each added in the slice that first needs it:
   - clap (derive), serde and serde_json, jiff, globset, sha2, regex, anstream and anstyle
-  - dev crates: assert_cmd, tempfile and trycmd
+  - dev crates: assert_cmd, tempfile, trycmd and jsonschema (with `default-features = false`, so it never fetches schemas over the network)
 - `git` and `claude` run as subprocesses.
 
 ## Where things live
@@ -22,6 +22,7 @@ This folder is part of the guild-portfolio git repo, not a repo of its own. DESI
 
 - Exit codes are `0`/`1`/`2`/`3` as in §3.
 - Every command a slice adds gets `--json` in that slice, and its tests read the JSON, not the text.
+- Every `--json` output has a JSON Schema in `schemas/` (§3). `Env::json` checks each output against its command's schema, and panics for a command without one, so a new command needs its schema first. A new item field goes into `schemas/item.schema.json` in the same slice. A command that returns an item wraps it as `{"item": …}`, and every error has `error` and `exit_code`.
 - Tests set `TRACKER_HOME` to a temporary folder and never touch `~/.tracker`.
 - Anything involving git is tested in throwaway repos made with tempfile. Where the folder rule matters (§2.1), put the project in a subfolder of the throwaway repo.
 - Item files are pretty-printed with two-space indents and a fixed field order (§4.3). Each new field gets a serde default and `skip_serializing_if`, so files written by earlier slices still load and come back byte-for-byte unchanged.
