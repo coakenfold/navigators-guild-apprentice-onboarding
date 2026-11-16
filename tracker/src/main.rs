@@ -613,10 +613,14 @@ fn status(store: &Store, id: &str, to: Status, reason: Option<String>) -> Result
     apply(store, item, step, reason)
 }
 
+/// The longest reason a move takes, in characters. A reason is printed on
+/// one line among others, so the details belong in the item's description.
+const MAX_REASON: usize = 500;
+
 /// The reason for a move that needs one, trimmed. Refuses a missing or
-/// blank reason, saying how to give one (`how`), and one that doesn't fit
-/// on a line, since it's printed among other lines. `None` for a move that
-/// needs no reason.
+/// blank reason, saying how to give one (`how`), one that doesn't fit on a
+/// line, since it's printed among other lines, and one longer than
+/// `MAX_REASON`. `None` for a move that needs no reason.
 fn check_reason(id: &str, via: Via, reason: Option<String>, how: &str) -> Result<Option<String>> {
     if !via.needs_reason() {
         return Ok(None);
@@ -632,6 +636,13 @@ fn check_reason(id: &str, via: Via, reason: Option<String>, how: &str) -> Result
         )));
     }
     check_printable(&reason, "A reason", "Say why in one line.")?;
+    let length = reason.chars().count();
+    if length > MAX_REASON {
+        return Err(Error::input(format!(
+            "A reason can be at most {MAX_REASON} characters, and this one has {length}. Say \
+             why in a sentence, and put the details in the item's description."
+        )));
+    }
     Ok(Some(reason))
 }
 

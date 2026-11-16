@@ -145,6 +145,7 @@ fn a_wrong_output_is_caught() {
         ("/history/0/interactive", json!("no")),
         ("/history/0/reason", json!("")),
         ("/history/0/reason", json!("two\nlines")),
+        ("/history/0/reason", json!("é".repeat(501))),
         ("/history/0/extra", json!(1)),
     ] {
         let mut bad = moved.clone();

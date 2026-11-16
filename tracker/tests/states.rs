@@ -244,6 +244,23 @@ fn a_reason_must_fit_on_one_line() {
 }
 
 #[test]
+fn a_reason_can_be_at_most_500_characters() {
+    // Counted in characters, not bytes, so a reason in any language gets
+    // the same room.
+    let env = env_with_item();
+    let too_long = "é".repeat(501);
+    let message = refused(&env, &["shelve", "XX-1", "--reason", &too_long]);
+    assert!(message.contains("500"), "{message}");
+    let message = refused(&env, &["status", "XX-1", "shelved", "--reason", &too_long]);
+    assert!(message.contains("500"), "{message}");
+
+    // Surrounding whitespace is trimmed before counting.
+    let longest = format!("  {}  ", "é".repeat(500));
+    let item = moved(&env, &["shelve", "XX-1", "--reason", &longest]);
+    check_last_move(&item, "open", "shelved", "shelve", Some(longest.trim()));
+}
+
+#[test]
 fn reopen_brings_a_shelved_item_back_to_open() {
     let env = env_with_item();
     env.json(&["shelve", "XX-1", "--reason", "not now"]);
