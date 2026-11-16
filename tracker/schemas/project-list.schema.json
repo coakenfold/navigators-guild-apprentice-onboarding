@@ -3,7 +3,7 @@
   "$id": "https://tracker.invalid/schemas/project-list.schema.json",
   "title": "tracker project list --json",
   "type": "object",
-  "required": ["projects"],
+  "required": ["projects", "unregistered"],
   "properties": {
     "projects": {
       "description": "Every registered project, sorted by key.",
@@ -16,19 +16,20 @@
           "name": { "type": "string", "minLength": 1 },
           "root": { "type": "string", "minLength": 1 },
           "design": { "type": ["string", "null"] },
-          "counts": {
-            "description": "The project's items in each state. All five states are always present.",
-            "type": "object",
-            "required": ["open", "in-progress", "review", "done", "shelved"],
-            "properties": {
-              "open": { "$ref": "#/$defs/count" },
-              "in-progress": { "$ref": "#/$defs/count" },
-              "review": { "$ref": "#/$defs/count" },
-              "done": { "$ref": "#/$defs/count" },
-              "shelved": { "$ref": "#/$defs/count" }
-            },
-            "additionalProperties": false
-          }
+          "counts": { "$ref": "#/$defs/counts" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "unregistered": {
+      "description": "Projects that have items but aren't in config.json, such as one removed from it by hand, sorted by key.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key", "counts"],
+        "properties": {
+          "key": { "$ref": "item.schema.json#/$defs/key" },
+          "counts": { "$ref": "#/$defs/counts" }
         },
         "additionalProperties": false
       }
@@ -36,6 +37,19 @@
   },
   "additionalProperties": false,
   "$defs": {
-    "count": { "type": "integer", "minimum": 0 }
+    "count": { "type": "integer", "minimum": 0 },
+    "counts": {
+      "description": "A project's items in each state. All five states are always present.",
+      "type": "object",
+      "required": ["open", "in-progress", "review", "done", "shelved"],
+      "properties": {
+        "open": { "$ref": "#/$defs/count" },
+        "in-progress": { "$ref": "#/$defs/count" },
+        "review": { "$ref": "#/$defs/count" },
+        "done": { "$ref": "#/$defs/count" },
+        "shelved": { "$ref": "#/$defs/count" }
+      },
+      "additionalProperties": false
+    }
   }
 }

@@ -299,19 +299,27 @@ fn project_list(store: &Store) -> Result<Output> {
     let config = config::load(store)?;
     let items = store.load_items()?;
 
-    let mut projects = Vec::new();
-    let mut rows = Vec::new();
-    for (key, project) in &config.projects {
+    // A project's item counts for all five states, as JSON and as cells.
+    let counts_for = |key: &str| {
         let mut counts = serde_json::Map::new();
-        let mut row = vec![key.clone(), project.name.clone()];
+        let mut cells = Vec::new();
         for status in Status::ALL {
             let count = items
                 .iter()
-                .filter(|item| &item.project == key && item.status == status)
+                .filter(|item| item.project == key && item.status == status)
                 .count();
             counts.insert(status.as_str().to_string(), json!(count));
-            row.push(count.to_string());
+            cells.push(count.to_string());
         }
+        (counts, cells)
+    };
+
+    let mut projects = Vec::new();
+    let mut rows = Vec::new();
+    for (key, project) in &config.projects {
+        let (counts, cells) = counts_for(key);
+        let mut row = vec![key.clone(), project.name.clone()];
+        row.extend(cells);
         row.push(project.root.clone());
         rows.push(row);
         projects.push(json!({
@@ -323,7 +331,24 @@ fn project_list(store: &Store) -> Result<Output> {
         }));
     }
 
-    let text = if rows.is_empty() {
+    // Items whose project isn't in config.json, such as one removed by
+    // hand, are still counted, so `list` and `project list` agree.
+    let mut unregistered_keys: Vec<&str> = items
+        .iter()
+        .map(|item| item.project.as_str())
+        .filter(|key| !config.projects.contains_key(*key))
+        .collect();
+    unregistered_keys.dedup();
+    let mut unregistered = Vec::new();
+    for key in &unregistered_keys {
+        let (counts, cells) = counts_for(key);
+        let mut row = vec![key.to_string(), "(not in config.json)".to_string()];
+        row.extend(cells);
+        rows.push(row);
+        unregistered.push(json!({ "key": key, "counts": counts }));
+    }
+
+    let mut text = if rows.is_empty() {
         "No projects yet. Register one with `tracker project add KEY --name NAME --root PATH`.\n"
             .to_string()
     } else {
@@ -335,10 +360,22 @@ fn project_list(store: &Store) -> Result<Output> {
         rows.insert(0, header);
         table(&rows)
     };
+    if !unregistered_keys.is_empty() {
+        let (them, have) = if unregistered_keys.len() == 1 {
+            ("it", "has")
+        } else {
+            ("them", "have")
+        };
+        text.push_str(&format!(
+            "\n{} {have} items but no project in config.json. Register {them} again with \
+             `tracker project add`.\n",
+            unregistered_keys.join(", ")
+        ));
+    }
 
     Ok(Output {
         text,
-        json: json!({ "projects": projects }),
+        json: json!({ "projects": projects, "unregistered": unregistered }),
     })
 }
 

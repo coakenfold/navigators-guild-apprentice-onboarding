@@ -968,3 +968,34 @@ fn a_counter_below_1_or_at_its_largest_is_refused() {
         0
     );
 }
+
+#[test]
+fn project_list_counts_items_whose_project_isnt_registered() {
+    let env = Env::new();
+    let xx = env.add_project("XX", "xx");
+    env.add_project("YY", "yy");
+    env.create("XX", "a");
+    env.create("YY", "b");
+    env.create("YY", "c");
+    assert_eq!(env.json(&["project", "list"])["unregistered"], json!([]));
+
+    // YY is removed from config.json by hand. Its items still list.
+    let config = json!({ "projects": { "XX": { "name": "x", "root": xx } } });
+    fs::write(env.home.path().join("config.json"), config.to_string()).unwrap();
+    assert_eq!(ids(&env.json(&["list"])), ["XX-1", "YY-1", "YY-2"]);
+
+    let projects = env.json(&["project", "list"]);
+    assert_eq!(projects["projects"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        projects["unregistered"],
+        json!([{ "key": "YY", "counts": open_counts(2) }])
+    );
+    let output = env.cmd().args(["project", "list"]).assert().success();
+    let text = String::from_utf8_lossy(&output.get_output().stdout).to_string();
+    assert!(text.contains("YY has items but no project"), "{text}");
+
+    // With no projects registered at all, the items are still counted.
+    fs::write(env.home.path().join("config.json"), "{\"projects\": {}}").unwrap();
+    let projects = env.json(&["project", "list"]);
+    assert_eq!(projects["unregistered"].as_array().unwrap().len(), 2);
+}
