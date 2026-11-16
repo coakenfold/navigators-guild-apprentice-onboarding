@@ -92,12 +92,13 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 
 ### Slice 4: Show and delete
 
-- **Prompt:** "Add `show <id>`: every field, the verification record, and history with timestamps. Add `delete <id>` as §2.8 describes. Build one shared helper for interactive-only commands: it refuses unless stdin is a terminal, prints what will be lost, and requires the ID typed back. Later slices reuse it for `criterion accept`, `approve`, `reject` and `digest ack`."
+- **Prompt:** "Add `show <id>`: every field, the verification record, and history with timestamps. Add `delete <id>` as §2.8 describes, including its line in `deleted.json`. Build one shared helper for interactive-only commands: it refuses unless stdin is a terminal, prints what will be lost, and requires the ID typed back. Later slices reuse it for `criterion accept`, `approve`, `reject` and `digest ack`."
 - **Done when:**
   - `show` of a missing ID exits 1.
   - `echo XX-1 | tracker delete XX-1` is refused and the file remains.
   - By hand in a terminal, for an item in each state: the prompt names the state and what will be lost, typing the ID deletes it, and a wrong ID cancels.
   - Deleting `XX-2` and then creating an item gives `XX-3`.
+  - A delete leaves one line in `deleted.json` with the ID, title, state, time and `interactive`, and nothing else of the item.
 
 ### Slice 5: Bad data and polish
 
@@ -283,14 +284,15 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 ### Slice 16: Digest, audit, judge report
 
 - **Prompt:** "Add per-project digests as §2.6 describes:
-  - `digest [--project]` lists auto-verified items, judge-passed ones first with refs, answers and reasons, plus items an agent shelved.
+  - `digest [--project]` lists auto-verified items, judge-passed ones first with refs, answers and reasons. It also lists every shelve and every human action (`approve`, `reject`, `delete`, `criterion accept`), mine included, each marked by whether it came from an interactive terminal, and says when the digest was last acknowledged.
   - `digest ack` records what was seen in `digests.json`.
   - `review` flags a digest older than `every_days` as overdue.
 
   Add `audit` and `judges` (§3), and bring `--help` text and empty states up to slice 5's standard for every command added since."
 
 - **Done when:**
-  - `digest` lists every item auto-verified since that project's last ack, judge-passed first, plus agent-shelved items. `digest ack --project XX` empties only XX's digest.
+  - `digest` lists every item auto-verified since that project's last ack, judge-passed first. `digest ack --project XX` empties only XX's digest.
+  - A shelve from piped stdin and one run under `script` (skipped where `script` isn't installed) are both listed, marked not from a terminal and from a terminal. So are a delete and an approve made since the last ack.
   - `audit` reports a hand-edited status, a done item with no verification record, and an ID used twice.
   - `judges` shows the approve and reject counts for each question.
 

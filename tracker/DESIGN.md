@@ -10,7 +10,7 @@ A personal command-line tracker, written in Rust, for work done with coding agen
 - When an agent submits an item, the tool runs **gates**: rules such as "every check passes now" or "the work is committed". If any gate fails, the submit is refused and every reason is listed.
 - If the gates pass, the tool applies **review triggers**: rules that spot risk, such as a new capability, a new dependency or an edited test. If nothing fires, the item is **auto-verified** and moves to done with no human involved. If something fires, the item is **held** for me, with the reasons.
 - Judges can be wrong. An agent that believes a judge failed good work can **dispute** the answer, which sends the item to me instead of past the judge. I decide by approving or rejecting it.
-- A periodic **digest** for each project lists auto-verified items and items an agent shelved, so I can audit the machine's decisions without blocking any single item.
+- A periodic **digest** for each project lists auto-verified items, every shelve, and every action only I am meant to take, so I can audit the machine's decisions without blocking any single item, and spot an action I didn't make.
 
 ### Goals
 
@@ -118,7 +118,7 @@ An item is one piece of verifiable work, usually a vertical slice from a `/decom
 - **in-progress**: someone, usually an agent, is working on it.
 - **review**: held for a human, with the reasons in `holds`.
 - **done**: verified, either automatically or by me.
-- **shelved**: back in the backlog. Nobody is working on it now, and `reopen` brings it back to open. A reason is required. Open and in-progress items can be shelved. A held item is mine to decide, so I reject it first if it should be shelved. Plain `list` hides shelved items, and items an agent shelves are listed in the next digest (§2.6, §2.8).
+- **shelved**: back in the backlog. Nobody is working on it now, and `reopen` brings it back to open. A reason is required. Open and in-progress items can be shelved. A held item is mine to decide, so I reject it first if it should be shelved. Plain `list` hides shelved items, and every shelve is listed in the next digest (§2.6, §2.8).
 
 Agents never move an item to done. They **submit**, and the tool decides. Any move that isn't drawn above is refused, and the tool lists the moves that are allowed.
 
@@ -344,7 +344,9 @@ $ tracker submit BM-14
 
 The digest is how I check the checker. It never blocks an individual item.
 
-Each project has its own digest. It lists every item auto-verified since I last acknowledged that project's digest: titles, criteria, the checks that ran, the commits, and each judge's questions with their refs, answers and reasons. Items that passed on a judge, rather than only on scripts, are listed first. It also lists items an agent shelved, with the reason. `tracker digest` shows the current project's digest inside a project root, or every project's outside one or with `--all`, and `tracker digest ack` records that I've seen the current project's (or `--project <KEY>`'s). Outside every root, `digest ack` needs `--project`, so one command can't acknowledge every project at once (§3). If something looks wrong, `tracker reopen BM-12 --reason "…"` sends it back. If it comes back with unchanged code, T13 holds it, because its checks already pass at start. A project's digest older than its `review.digest.every_days` shows as overdue in `tracker review`.
+Each project has its own digest. It lists every item auto-verified since I last acknowledged that project's digest: titles, criteria, the checks that ran, the commits, and each judge's questions with their refs, answers and reasons. Items that passed on a judge, rather than only on scripts, are listed first. `tracker digest` shows the current project's digest inside a project root, or every project's outside one or with `--all`, and `tracker digest ack` records that I've seen the current project's (or `--project <KEY>`'s). Outside every root, `digest ack` needs `--project`, so one command can't acknowledge every project at once (§3). If something looks wrong, `tracker reopen BM-12 --reason "…"` sends it back. If it comes back with unchanged code, T13 holds it, because its checks already pass at start. A project's digest older than its `review.digest.every_days` shows as overdue in `tracker review`.
+
+The digest also lists, since that same ack, every shelve with its reason and every human action from §2.7: each `approve`, `reject`, `delete` and `criterion accept`. Each line says whether it came from an interactive terminal, and the digest starts by saying when it was last acknowledged. My own actions are listed too, rather than left out because they look like mine. The terminal check can be got around on purpose (§7), and an action that gets round it looks exactly like one of mine, so leaving mine out would hide it. Instead, I check that I made each one. There are few of them, so this is quick. The `interactive` flag only marks which lines need a closer look: a shelve not from a terminal was an agent's, but one from a terminal may still not be mine.
 
 ### 2.7 Human actions
 
@@ -356,6 +358,8 @@ These must come from an interactive terminal, and I confirm each one by typing t
 - `tracker criterion accept BM-12`: after I edit a criterion by hand, records its new text in `written`, so T5 doesn't fire.
 - `tracker digest ack`.
 
+Each one is recorded so the digest can list it (§2.6): `approve` and `reject` as moves in the item's history, `criterion accept` as a history entry, `delete` in `deleted.json` (§2.8), and `digest ack` in `digests.json`.
+
 When an item reaches done, its `verification` record stores: `by` (auto or human), the commit SHA, each check with its result, duration and last 20 lines of output (§2.3), each judge question's answer and reason with the model that answered and the request fingerprint, any held judge questions I accepted on approve, and the triggers that fired, if any.
 
 At the same moment, the tool creates the git ref `refs/tracker/BM-12` in the project's repository, pointing at that commit. A commit that no branch points to is eventually deleted by git, which would happen after a rebase, a squash or an amend. The ref keeps the verified commit, and so the tests exactly as they ran, for as long as the ref exists. If the item is reopened and verified again, the ref moves to the new commit. Deleting the item removes the ref (§2.8). The ref lives in my local clone and isn't pushed unless I push it.
@@ -364,17 +368,17 @@ When I approve or reject an item that a judge held under T10 or T12, the tool re
 
 ### 2.8 Shelve vs. delete
 
-**Shelving** puts an item back in the backlog: nobody is working on it now, but it might be picked up later. A reason is required, and the record is kept. Plain `list` hides shelved items, `list --status shelved` shows them, and `reopen` brings one back to open. Open and in-progress items can be shelved. A held item is mine to decide, so I reject it first. Items an agent shelves are listed in the next digest (§2.6).
+**Shelving** puts an item back in the backlog: nobody is working on it now, but it might be picked up later. A reason is required, and the record is kept. Plain `list` hides shelved items, `list --status shelved` shows them, and `reopen` brings one back to open. Open and in-progress items can be shelved. A held item is mine to decide, so I reject it first. Every shelve is listed in the next digest, marked by whether it came from an interactive terminal (§2.6).
 
 Shelving an in-progress item frees its project for the next item (§4.4), so it has to leave the branch in a state the next item can build on: the working tree must be clean (as in G5) and every project check must pass (G4). The item's tests were committed before `start` and still fail, so the agent first reverts its unfinished work in a commit scoped to the item, such as `revert(BM-7): remove the favicon test`. If either rule fails, the shelve is refused with exit code `2` and nothing changes. When the item is reopened and started again, `start` records a new `HEAD` and fingerprint and runs its checks again, which should fail again before the work exists.
 
-**Deleting** removes an item for good: its file, its history and its verification record. It works on an item in any state, but only from an interactive terminal (§2.7), so agents can't delete. Before asking me to type the ID, the prompt says what will be lost:
+**Deleting** removes an item for good: its file, its history and its verification record. One line stays in `deleted.json` so the next digest can list the delete (§2.6): the ID, title, state, when it was deleted and whether that came from an interactive terminal. It works on an item in any state, but only from an interactive terminal (§2.7), so agents can't delete. Before asking me to type the ID, the prompt says what will be lost:
 
 ```
 $ tracker delete BM-12
 BM-12 is done, verified at a41be07.
 Deleting it removes its file, its history (6 entries), its verification record and refs/tracker/BM-12.
-Its commits stay in git, and the ID won't be used again.
+Its commits stay in git, the ID won't be used again, and the next digest lists the delete.
 Type BM-12 to delete:
 ```
 
@@ -486,6 +490,7 @@ One central store at `~/.tracker/`, or wherever the `TRACKER_HOME` environment v
 ~/.tracker/
 ├── config.json          # projects, their checks and review policy
 ├── counters.json        # the next item number for each project, so IDs are never reused
+├── deleted.json         # one line per deleted item, so the digest can list deletes (§2.8)
 ├── digests.json         # when each project's digest was acknowledged, and what it covered
 ├── lock                 # locked while a command reads and writes the store (§4.4)
 ├── judge/
@@ -718,14 +723,15 @@ Links to my existing workflow:
 | edits tests or checks to make them pass                    | T4 and T5 hold the item for me                                                                                                                                                                                                                                                                                  |
 | mislabels a capability as a `change` to avoid review       | T1 still fires if a new file or module appears                                                                                                                                                                                                                                                                  |
 | edits the item file by hand                                | Claude Code's deny rule blocks its edit tools there (§5). For anything that gets past it, `audit` flags status and verification fields that don't match history                                                                                                                                                 |
-| shelves an item instead of finishing it                    | nothing reaches done. The digest lists every item an agent shelved, with its reason                                                                                                                                                                                                                             |
+| shelves an item instead of finishing it                    | nothing reaches done. The digest lists every shelve, with its reason and whether it came from a terminal                                                                                                                                                                                                        |
+| gets past the interactive-terminal check, such as with `script` | the digest lists every human action and shelve, mine included, so I'd see one I didn't make (§2.6, §7)                                                                                                                                                                                                     |
 
 ## 7. Honest limits
 
 - **Weak checks are the soft spot.** A check like `true`, or a test that asserts nothing, passes every gate. Running checks at start (T13) catches the ones that exist before the work, but only if the agent really writes its tests first. A test written during the work that asserts nothing fails at start, because it doesn't exist yet, and passes at submit. The digest is where I catch those. Future idea: mutation testing, which deliberately breaks the code to see whether the tests notice.
 - **The files are plain text.** An agent could hand-edit a status. Agents have no reason to open the files, since every change goes through a `tracker` command, and a deny rule blocks Claude Code's edit tools there (§5). A shell command such as `sed -i` can still write there, though. `audit` detects that afterwards but doesn't prevent it.
-- **The interactive-terminal requirement for human actions is a convention, not security.** It stops an agent's normal shell calls, because those aren't interactive terminals, but it can be got around on purpose.
-- **Deleting can't be undone.** A deleted item leaves nothing in the store, only its scoped commits in git. Only I can delete, and the prompt says what will be lost, but a mistaken delete can only be recovered from a backup of `~/.tracker`.
+- **The interactive-terminal requirement for human actions is a convention, not security.** It stops an agent's normal shell calls, because those aren't interactive terminals, but it can be got around on purpose, for example by running a command under `script`. The same goes for the `interactive` flag in history, so a shelve made that way looks like mine. The digest lists my actions as well as the agent's, so I can spot one I didn't make (§2.6), but that relies on my reading it. It also can't catch an agent that edits the store to cover its tracks, such as by moving the digest's ack time forward or writing a history that agrees with itself, which `audit` doesn't flag either. Making this hold against a determined agent would take signing my actions with a key that needs my touch.
+- **Deleting can't be undone.** A deleted item leaves only a line in `deleted.json` and its scoped commits in git. Only I can delete, and the prompt says what will be lost, but a mistaken delete can only be recovered from a backup of `~/.tracker`.
 - **Check commands are run as shell commands.** Anyone who can write an item file or the config can make `tracker` run a command. This is acceptable for a single-user tool on my own machine. The tool prints each command before running it, runs it only inside a registered project root, and applies a timeout.
 - **Judges are not proof the way tests are.** Any single answer can be wrong, and the CLI gives no probability to show how close a call was. That's why scripts come first, judge-passed items lead the digest, and T10 holds unsure answers. Judges give evidence, not certainty, and how much evidence is something I measure against my own decisions (§2.3.2), not assume.
 
