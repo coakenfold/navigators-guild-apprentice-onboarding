@@ -94,6 +94,32 @@ impl Env {
         self.json_in(&self.outside(), args)
     }
 
+    /// Runs `tracker <args> --json` from `dir`, expects it to fail with
+    /// `code`, checks the output against the error schema, and returns the
+    /// error message.
+    pub fn error_in(&self, dir: &Path, args: &[&str], code: i32) -> String {
+        let output = self
+            .cmd()
+            .current_dir(dir)
+            .args(args)
+            .arg("--json")
+            .assert()
+            .code(code)
+            .get_output()
+            .stdout
+            .clone();
+        let error = parse(&output);
+        check_schema("error", &error);
+        assert_eq!(error["exit_code"], code, "{error}");
+        error["error"].as_str().unwrap().to_string()
+    }
+
+    /// Runs `tracker <args> --json` from outside every project root and
+    /// expects it to fail with `code`. Returns the error message.
+    pub fn error(&self, args: &[&str], code: i32) -> String {
+        self.error_in(&self.outside(), args, code)
+    }
+
     /// Registers project `key` with the root `<work>/<root>`, and returns
     /// that root.
     pub fn add_project(&self, key: &str, root: &str) -> PathBuf {

@@ -217,6 +217,17 @@ impl Store {
         write_file(&self.item_path(&item.id)?, &item::to_json(item))
     }
 
+    /// Reads one item by its ID. Fails with exit 1 if there's no such item.
+    pub fn load_item(&self, id: &str) -> Result<Item> {
+        let path = self.item_path(id)?;
+        match fs::metadata(&path) {
+            Err(e) if e.kind() == ErrorKind::NotFound => {
+                Err(Error::input(format!("There's no item {id}.")))
+            }
+            _ => read_item(&path),
+        }
+    }
+
     /// Reads every item file, sorted by project and then by number.
     pub fn load_items(&self) -> Result<Vec<Item>> {
         let dir = self.items_dir();
@@ -232,14 +243,51 @@ impl Store {
             if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
                 continue;
             }
-            let text = read_file(&path)?;
-            let item = item::from_json(&text)
-                .map_err(|e| Error::store(format!("Can't parse {}: {e}", path.display())))?;
-            items.push(item);
+            items.push(read_item(&path)?);
         }
-        items.sort_by_key(|item| (item.project.clone(), item.number()));
+        items.sort_by(|a, b| (&a.project, a.number()).cmp(&(&b.project, b.number())));
         Ok(items)
     }
+}
+
+/// Reads an item file and checks that it is the item its name says: the
+/// file `XX-1.json` must hold `"id": "XX-1"` in project `XX`. A file copied
+/// or renamed by hand would otherwise list one ID twice, and a later write
+/// to `item_path(&item.id)` would overwrite the other item's file.
+fn read_item(path: &Path) -> Result<Item> {
+    let text = read_file(path)?;
+    let item = item::from_json(&text)
+        .map_err(|e| Error::store(format!("Can't parse {}: {e}", path.display())))?;
+    let named = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or_default();
+    if !item::is_valid_id(named) {
+        return Err(Error::store(format!(
+            "{} isn't named after an item ID, such as BM-12.json. Move it out of items/.",
+            path.display()
+        )));
+    }
+    if item.id != named {
+        return Err(Error::store(format!(
+            "{} holds the item \"{}\", but its name says {named}. Rename the file or fix its \
+             \"id\", and check that no other file holds the same ID.",
+            path.display(),
+            item.id
+        )));
+    }
+    let key = named
+        .split_once('-')
+        .map(|(key, _)| key)
+        .unwrap_or_default();
+    if item.project != key {
+        return Err(Error::store(format!(
+            "{} is in project \"{}\", but its ID {named} says {key}. Fix its \"project\".",
+            path.display(),
+            item.project
+        )));
+    }
+    Ok(item)
 }
 
 /// Creates `path`, and any missing folders above it, readable only by me
