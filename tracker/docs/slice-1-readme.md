@@ -442,7 +442,7 @@ A few consequences:
 - **A hand-edited item with a tab in its title now lists**, with the tab shown as `\u{9}`.
 - **One mismatched item file stops `list` and `project list` with exit 3**, as an unparseable one does. Slice 5 makes both report the file and skip it.
 
-Still open from review 2: a non-UTF-8 `TRACKER_HOME` under `--json` (untested on macOS), the symlinked `.tmp` file, checking hand-written project names and `design`, DESIGN.md §4.4's "all validated" wording, and its two commit-message points.
+Still open from review 2: a non-UTF-8 `TRACKER_HOME` under `--json` (untested on macOS), the symlinked `.tmp` file, checking hand-written project names and `design`, and its two commit-message points. DESIGN.md §4.4's "all validated" sentence now says what is checked on input, what is checked again when a file is read, and that free text from a file is escaped on output instead.
 
 ## Limits, and what later slices change
 

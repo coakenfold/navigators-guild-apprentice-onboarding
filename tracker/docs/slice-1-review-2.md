@@ -25,7 +25,7 @@ Added after the fixes. The findings below are left as written, so their line lin
 | Low severity: bad counter values                          | `8142f0f`                                                                                       |
 | Low severity: `project list` hides unregistered projects  | `0873bcd`                                                                                       |
 | Low severity: non-UTF-8 `TRACKER_HOME`, symlinked `.tmp`, hand-written names and `design` | Still open                                       |
-| Code and DESIGN.md, item 1                                | Still open, though findings 1 and 3 narrow the gap                                              |
+| Code and DESIGN.md, item 1                                | DESIGN.md §4.4 now says what is checked on input, what again on reading, and that the rest is escaped on output |
 | Code and DESIGN.md, item 2                                | `1254541`                                                                                       |
 | Test gaps 1 and 4                                         | `64d5dc2` and `b04dcb3`                                                                         |
 | Test gaps 2 and 3                                         | Done with the fixes they test                                                                   |
