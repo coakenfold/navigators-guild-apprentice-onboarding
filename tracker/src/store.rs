@@ -212,9 +212,46 @@ impl Store {
         Ok(highest)
     }
 
-    /// Writes a new item's file. Call this only while holding the lock.
+    /// Writes a new item's file, refusing one that already exists. Call
+    /// this only while holding the lock.
     pub fn save_item(&self, item: &Item) -> Result<()> {
-        write_file(&self.item_path(&item.id)?, &item::to_json(item))
+        let path = self.item_path(&item.id)?;
+        if fs::symlink_metadata(&path).is_ok() {
+            return Err(Error::store(format!(
+                "{} already exists, so {} can't be created. Nothing was written.",
+                path.display(),
+                item.id
+            )));
+        }
+        write_file(&path, &item::to_json(item))
+    }
+
+    /// Replaces an existing item's file with `item`. Call this only while
+    /// holding the lock, after reading the item under it.
+    ///
+    /// Refuses, with exit 3, when the file on disk holds something this
+    /// version would lose or change by rewriting it, such as a field a newer
+    /// tracker added. Writing it back would drop that field without a word.
+    pub fn update_item(&self, item: &Item) -> Result<()> {
+        let path = self.item_path(&item.id)?;
+        if let Err(e) = fs::metadata(&path)
+            && e.kind() == ErrorKind::NotFound
+        {
+            return Err(Error::input(format!("There's no item {}.", item.id)));
+        }
+        let text = read_file(&path)?;
+        let lost = item::lost_on_rewrite(&text)
+            .map_err(|e| Error::store(format!("Can't parse {}: {e}", path.display())))?;
+        if !lost.is_empty() {
+            return Err(Error::store(format!(
+                "{} has fields this version of tracker would lose or change by rewriting it: \
+                 {}. It was probably written by a newer tracker, so use that one. Nothing was \
+                 written.",
+                path.display(),
+                lost.join(", ")
+            )));
+        }
+        write_file(&path, &item::to_json(item))
     }
 
     /// Reads one item by its ID. Fails with exit 1 if there's no such item.

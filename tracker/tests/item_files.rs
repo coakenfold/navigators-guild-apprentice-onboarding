@@ -76,3 +76,78 @@ fn load_item_reads_one_item_and_says_when_there_is_none() {
     assert_eq!(error.code, 1);
     assert!(error.message.contains("no item XX-2"), "{}", error.message);
 }
+
+#[test]
+fn update_item_rewrites_a_file_this_version_understands() {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "before");
+    let store = store(&env);
+
+    let mut item = store.load_item("XX-1").unwrap();
+    item.title = "after".to_string();
+    store.update_item(&item).unwrap();
+    assert_eq!(store.load_item("XX-1").unwrap().title, "after");
+    assert_eq!(
+        fs::read_to_string(env.item_path("XX-1")).unwrap(),
+        tracker::item::to_json(&item)
+    );
+}
+
+#[test]
+fn update_item_refuses_a_file_it_would_lose_fields_from() {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    let store = store(&env);
+    let path = env.item_path("XX-1");
+    let item = store.load_item("XX-1").unwrap();
+    let original = fs::read_to_string(&path).unwrap();
+
+    // A field from a newer tracker, and a time written by hand that this
+    // version would write back as `Z` instead of `+00:00`.
+    for (field, edited) in [
+        (
+            "labels",
+            original.replace("  \"created\"", "  \"labels\": [\"bug\"],\n  \"created\""),
+        ),
+        ("created", original.replacen("Z\",", "+00:00\",", 1)),
+    ] {
+        assert_ne!(edited, original);
+        fs::write(&path, &edited).unwrap();
+        // Still listed: only rewriting it would lose something.
+        assert_eq!(store.load_items().unwrap().len(), 1);
+
+        let error = store.update_item(&item).unwrap_err();
+        assert_eq!(error.code, 3, "{field}");
+        assert!(error.message.contains(field), "{field}: {}", error.message);
+        assert_eq!(fs::read_to_string(&path).unwrap(), edited, "{field}");
+    }
+}
+
+#[test]
+fn update_item_of_a_missing_item_exits_1() {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    let store = store(&env);
+    let mut item = store.load_item("XX-1").unwrap();
+    item.id = "XX-2".to_string();
+
+    assert_eq!(store.update_item(&item).unwrap_err().code, 1);
+    assert!(!env.item_path("XX-2").exists());
+}
+
+#[test]
+fn save_item_never_overwrites_a_file() {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    let store = store(&env);
+    let mut item = store.load_item("XX-1").unwrap();
+    let original = fs::read_to_string(env.item_path("XX-1")).unwrap();
+    item.title = "replacement".to_string();
+
+    assert_eq!(store.save_item(&item).unwrap_err().code, 3);
+    assert_eq!(fs::read_to_string(env.item_path("XX-1")).unwrap(), original);
+}

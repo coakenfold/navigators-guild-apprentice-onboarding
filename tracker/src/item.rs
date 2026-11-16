@@ -108,3 +108,21 @@ pub fn to_json(item: &Item) -> String {
 pub fn from_json(text: &str) -> Result<Item, serde_json::Error> {
     serde_json::from_str(text)
 }
+
+/// The top-level fields of an item file that this version would lose or
+/// change if it read the file and wrote it back: fields it doesn't know,
+/// such as ones a newer tracker added, and values it would write
+/// differently. Empty when a rewrite keeps everything.
+pub fn lost_on_rewrite(text: &str) -> Result<Vec<String>, serde_json::Error> {
+    let on_disk: serde_json::Value = serde_json::from_str(text)?;
+    let rewritten = serde_json::to_value(from_json(text)?).expect("items always serialize");
+    let mut lost = Vec::new();
+    if let Some(fields) = on_disk.as_object() {
+        for (name, value) in fields {
+            if rewritten.get(name) != Some(value) {
+                lost.push(name.clone());
+            }
+        }
+    }
+    Ok(lost)
+}
