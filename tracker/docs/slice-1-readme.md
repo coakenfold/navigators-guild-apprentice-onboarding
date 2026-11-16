@@ -9,7 +9,7 @@ After slice 1 you can **register projects, create items in them, and list everyt
 | Status | Done. Every _Done when_ check passes, and bugs 1–8 from [review 1](slice-1-review-1.md) are fixed ([below](#fixes-after-review-1)). |
 | Branch | `feat/tracker/slice-1` |
 | Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/` |
-| Tests | 32: 28 in `tests/create_and_list.rs`, 2 in `tests/docs_links.rs` and 2 in `tests/store_writes.rs` |
+| Tests | 40: 31 in `tests/create_and_list.rs`, 3 in `tests/schemas.rs`, and 2 each in `tests/docs_links.rs`, `tests/item_ids.rs` and `tests/store_writes.rs` |
 
 ## Contents
 
@@ -238,14 +238,20 @@ When `create` has no `--project` flag, it canonicalizes the current folder and e
 
 With `--json`, every command prints exactly one JSON object on stdout, pretty-printed, and keeps the same exit code. Agents rely on these field names (§3), so renaming or removing one is a breaking change.
 
-| Command | Prints |
-| --- | --- |
-| `init` | `{"home": "<path>", "created": true}`, where `created` is false if the store already existed |
-| `project add` | `{"key", "name", "root", "design"}`, where `design` is `null` if it wasn't given |
-| `project list` | `{"projects": [{"key", "name", "root", "design", "counts": {"open", "in-progress", "review", "done", "shelved"}}]}`, with all five states always present and sorted by key |
-| `create` | The new item, with exactly the fields of its item file |
-| `list` | `{"items": [<item>, …]}`, sorted by project and then by number |
-| any failure | `{"error": "<message>", "exit_code": <n>}` |
+Each output is defined by a JSON Schema in [schemas/](../schemas/), which is the reference. In short:
+
+| Command | Prints | Schema |
+| --- | --- | --- |
+| `init` | `{"home": "<path>", "created": true}`, where `created` is false if the store already existed | [init](../schemas/init.schema.json) |
+| `project add` | `{"key", "name", "root", "design"}`, where `design` is `null` if it wasn't given | [project-add](../schemas/project-add.schema.json) |
+| `project list` | `{"projects": [{"key", "name", "root", "design", "counts": {"open", "in-progress", "review", "done", "shelved"}}]}`, with all five states always present and sorted by key | [project-list](../schemas/project-list.schema.json) |
+| `create` | `{"item": <item>}`: the new item, exactly as its file holds it | [create](../schemas/create.schema.json) |
+| `list` | `{"items": [<item>, …]}`, sorted by project and then by number | [list](../schemas/list.schema.json) |
+| any failure | `{"error": "<message>", "exit_code": <n>}`, the base shape that slice 6's gate refusals add fields to | [error](../schemas/error.schema.json) |
+
+An item, in an item file or in `create` and `list`, matches [item.schema.json](../schemas/item.schema.json). Its schema allows no field it doesn't name, so a slice that adds an item field adds it there too.
+
+`create` wraps its item in `item` (since review 1), so that fields about the command, such as the warnings `start` will print, never sit among the item's own.
 
 Without `--json`, success text goes to stdout and errors go to stderr as `error: <message>`. The text is for people and its wording can change freely.
 
@@ -294,6 +300,8 @@ cargo fmt --check && cargo clippy -- -D warnings && cargo test
 | `parse(stdout)` | Parses stdout as JSON, showing the output if it doesn't parse |
 
 The binary is found with `env!("CARGO_BIN_EXE_tracker")`, which Cargo sets for integration tests. Tests assert on the `--json` output, not on the text, because the text can change.
+
+`env.json` and `env.json_in` also check every output against its command's schema with `check_schema`, and `schema_for` panics for a command that has no schema yet. `check_schema` loads `schemas/` into a `jsonschema` registry under each schema's `$id` (`https://tracker.invalid/schemas/…`, a domain that can never resolve), so a `$ref` from one schema to another resolves from the local files. [tests/schemas.rs](../tests/schemas.rs) checks that each schema is valid and named after its file, that every item file the tool writes matches `item.schema.json`, and that wrong output is caught, including through a `$ref`. A schema check that never fires would otherwise look the same as one that passes.
 
 ### Coverage of the _Done when_ checks
 

@@ -443,7 +443,7 @@ The `criterion` commands work at any time, but after `start` any change to the c
 
 **Exit codes:** `0` success, which includes "held for review". The output says which state the item ended in. `1` bad input, not found, or the item changed while the command ran (§4.4). `2` refused by a gate. `3` the store, a file or git is unreadable.
 
-**Output for agents.** Every command takes `--json` and then prints one JSON object instead of text, with the same exit code. The text is for me and can change wording freely. The JSON fields are an interface, so renaming or removing one is a breaking change. For `gates` and `submit`, the object lists every gate and trigger with its id and result, and every judge question with its ref and answer. A held submit looks like this:
+**Output for agents.** Every command takes `--json` and then prints one JSON object instead of text, with the same exit code. The text is for me and can change wording freely. The JSON fields are an interface, so renaming or removing one is a breaking change. Each command's output is defined by a JSON Schema in [schemas/](schemas/), not in this doc, and the tests check every output against it, so an output can't change without its schema changing too. A command that returns an item wraps it, as `{"item": {…}}`, so fields about the command, such as a warning, never sit among the item's own. Every non-zero exit prints the same base shape, `{"error": "…", "exit_code": n}` ([error.schema.json](schemas/error.schema.json)), so an agent can always read `error`. For `gates` and `submit`, the object lists every gate and trigger with its id and result, and every judge question with its ref and answer. A held submit looks like this:
 
 ```json
 {
@@ -467,7 +467,7 @@ The `criterion` commands work at any time, but after `start` any change to the c
 }
 ```
 
-A refusal puts each failure in `failures`, with `ref`, `answer` and the model's `reason` for a judge question, so an agent can dispute it by ref without parsing text.
+A refusal is that base shape with `id`, `result: "refused"`, `gates` and `failures` added. Each failure in `failures` has `ref`, `answer` and the model's `reason` for a judge question, so an agent can dispute it by ref without parsing text.
 
 ## 4. Storage
 
@@ -553,7 +553,7 @@ Every value has a sensible default, so a project needs only `name` and `root` to
 
 ### 4.3 Item file
 
-Each item is one JSON file, and serde maps it to Rust structs and back. The tool writes it pretty-printed with two-space indents, with the fields always in the same order, so a file reads the same way every time and a change shows up as a small diff.
+Each item is one JSON file, and serde maps it to Rust structs and back. The tool writes it pretty-printed with two-space indents, with the fields always in the same order, so a file reads the same way every time and a change shows up as a small diff. [item.schema.json](schemas/item.schema.json) defines its fields, and is the same schema the `--json` output uses for an item.
 
 ```json
 {
@@ -760,7 +760,7 @@ Links to my existing workflow:
 | Judges            | `claude-haiku-5-5` through the `claude` CLI, run by `tracker-judge`, a second binary in the same crate, as a subprocess | No server, no model download, no API key and no HTTP client: it reuses the login Claude Code already has, and runs `claude` the same way the tool runs `git`. `--json-schema` makes every reply an answer and a reason. Behind the judge-command contract, the tests use a fake judge and judge-eval runs the same binary. `serde_json` builds the request and reads the answers. |
 | Colour output     | `anstream` + `anstyle`                                                                                                  | Colour that turns itself off when output isn't a terminal.                                                                                                                                                                                                                                                                                                                        |
 | Interactive check | `std::io::IsTerminal`                                                                                                   | Built into the standard library.                                                                                                                                                                                                                                                                                                                                                  |
-| Tests             | `assert_cmd` + `tempfile`, and `trycmd` for transcript tests                                                            | Runs the real binary against a temporary `TRACKER_HOME` and throwaway git repos.                                                                                                                                                                                                                                                                                                  |
+| Tests             | `assert_cmd` + `tempfile`, `trycmd` for transcript tests, and `jsonschema` (without default features) | Runs the real binary against a temporary `TRACKER_HOME` and throwaway git repos. `jsonschema` checks every `--json` output against its schema (§3). Without default features it can't fetch a schema over the network, so the schemas refer to each other only through the local copies.                                                                                                                                                                                                                                                                                                  |
 
 The project lives at `guild-portfolio/tracker/`, a folder in the guild-portfolio git repository rather than a repository of its own, so `tracker` is itself a project inside a larger repo (§2.1). This design doc, [PLAN.md](PLAN.md), [walkthrough.html](walkthrough.html) and [judge-eval/](judge-eval/) move there with `git mv` in slice 1, so the relative links keep working, their history follows them, and T8 watches the real design.
 
