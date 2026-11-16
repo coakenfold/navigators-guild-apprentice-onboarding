@@ -6,7 +6,7 @@ After slice 1 you can **register projects, create items in them, and list everyt
 
 | | |
 | --- | --- |
-| Status | Done. Every _Done when_ check passes, and bugs 1–8 from [review 1](slice-1-review-1.md) are fixed ([below](#fixes-after-review-1)). |
+| Status | Done. Every _Done when_ check passes. Bugs 1–8 and security items S1–S3 from [review 1](slice-1-review-1.md) are fixed, and its design questions are settled ([below](#fixes-after-review-1)). |
 | Branch | `feat/tracker/slice-1` |
 | Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/` |
 | Tests | 40: 31 in `tests/create_and_list.rs`, 3 in `tests/schemas.rs`, and 2 each in `tests/docs_links.rs`, `tests/item_ids.rs` and `tests/store_writes.rs` |
@@ -100,10 +100,10 @@ BM   bookmarks  2     0            0       0     0        $DEMO/bookmarks
 
 **Input rules** (§2.1, §4.4):
 
-- **Title:** surrounding whitespace is trimmed. An empty or whitespace-only title exits 1, and so does a title with a line break.
+- **Title:** surrounding whitespace is trimmed. An empty or whitespace-only title exits 1. So does a title with a line break of any kind, a control character such as a tab or the escape that starts a terminal colour code, or a mark that reorders text (U+200E/F, U+202A–202E, U+2066–2069).
 - **Description:** stored as given. An empty or whitespace-only one is left out.
-- **Project key:** up to 10 ASCII letters and digits, starting with a letter. A dash isn't allowed, since the dash separates the key from the number in `BM-12`. `--project` is also uppercased before lookup.
-- **Project name:** can't be empty.
+- **Project key:** up to 10 ASCII letters and digits, starting with a letter. A dash isn't allowed, since the dash separates the key from the number in `BM-12`. `--project` is also uppercased before lookup. Keys in `config.json` are checked too, including ones written by hand: they must already be in capitals.
+- **Project name:** can't be empty, and follows the title's rules for line breaks and control characters, since `list` and `project list` print it.
 - **Root:** must exist and be a folder. A relative path is resolved against the current folder. Two projects can't share a root, even when it's spelled differently (`xx/../xx`), but one root can be nested inside another.
 - **`TRACKER_HOME`:** must be absolute. A relative path would name a different store in every folder, so it's refused with exit 1.
 
@@ -114,13 +114,13 @@ BM   bookmarks  2     0            0       0     0        $DEMO/bookmarks
 | `0` | Success, including `init` on an existing store, and output cut short because its reader stopped early (`tracker list \| head -1`). |
 | `1` | Bad input: a bad title, key, name or root, a root another project already uses, an unknown project, no project for this folder, a duplicate key, a relative `TRACKER_HOME`, or a bad argument, including one that isn't valid UTF-8 (see below). Also a store that doesn't exist yet, or is missing `counters.json` or `items/`: both say "Run `tracker init`." |
 | `2` | Not used yet. It's reserved for "refused by a gate" (slice 6). |
-| `3` | The store can't be read or written: one that exists but can't be read (such as `chmod 000`), an unparseable `config.json`, `counters.json` or item file, a lock that can't be taken, a counter at or below a number already on disk, or output that can't be written. |
+| `3` | The store can't be read or written: one that exists but can't be read (such as `chmod 000`), an unparseable `config.json`, `counters.json` or item file, a project key in `config.json` that isn't valid, a lock that can't be taken, a counter at or below a number already on disk, or output that can't be written. |
 
 clap normally exits with 2 when it can't parse the arguments. Here 2 means a gate refused, so bad arguments exit 1 instead. `--help` and `--version` exit 0.
 
 ## The store
 
-The store is `$TRACKER_HOME`, which must be an absolute path, or `~/.tracker` when that's unset or empty (§4.1). `init` creates:
+The store is `$TRACKER_HOME`, which must be an absolute path, or `~/.tracker` when that's unset or empty (§4.1). When `init` creates the store's folder, it makes it readable only by you (0700), along with any missing folders above it. A folder that already exists keeps its permissions, since `TRACKER_HOME` might name a folder with other uses. `init` creates:
 
 ```
 $TRACKER_HOME/
@@ -343,6 +343,7 @@ ls -a | grep -x .git                        # prints nothing: no nested repo
 - **An unparseable item file stops `list` and `project list` with exit 3**, naming the file and the parser's line and column. Slice 5 changes this to report the file and skip it (§4.4).
 - **Times are kept to the second**, to match §4.3's example and keep files easy to read.
 - **Titles must be one line**, since `list` prints one item per line. Details go in `--description`.
+- **Only an item ID can become a file path.** `Store::item_path` refuses anything that isn't `KEY-n`, with no leading zeros, so an ID typed later, as in slice 4's `show` and `delete`, can't name a file outside `items/`.
 - **The design path isn't checked** by `project add`. G6, in slice 6, is what reads it.
 - **Plain Rust, as CLAUDE.md asks:** the code uses the standard library and plain functions. The only generics are serde's derives and the `Result<T>` alias.
 - **A relative `TRACKER_HOME` is refused rather than made absolute**, because making it absolute would still give a different store in each folder. A relative `HOME` has the same problem for the `~/.tracker` fallback, and isn't checked.
@@ -364,7 +365,33 @@ ls -a | grep -x .git                        # prints nothing: no nested repo
 
 Bug 8's tests would have passed before the fix too. A crash or a half-finished write can't be reproduced in a test, so they only guard that a write, successful or failed, leaves no `.tmp` file behind.
 
-Still open from the review: security items S1–S3, the design questions, and the test gaps.
+### Security items
+
+Each is fixed in its own commit, and each test was seen failing with the fix taken out.
+
+| Item | Commit | Fix | Test |
+| --- | --- | --- | --- |
+| S1. Control characters in titles reach the terminal | `f5b121c` | `check_printable` in `main.rs` refuses control characters, line breaks of every kind, and the marks that reorder text, naming the character, such as `U+001B`. It covers titles and project names, since both are printed. | `titles_and_project_names_cant_hold_terminal_control_characters` |
+| S2. Project keys and item IDs can name files outside the store | `2d4a474` | `config::load` refuses a key that isn't valid, with exit 3. `Store::item_path` refuses anything that isn't an item ID. The rules are `config::is_valid_key` and `item::is_valid_id`. | `a_bad_project_key_in_config_json_is_refused`, and `tests/item_ids.rs` |
+| S3. A new store is readable by other users | `ce8fb99` | `init` creates the store's folder with mode 0700, and leaves a folder that already exists alone. | `a_new_store_is_readable_only_by_its_owner` (Unix only) |
+
+A few consequences:
+
+- An existing `~/.tracker` keeps its permissions. Run `chmod 700 ~/.tracker` to tighten it.
+- Tabs are now refused in titles. An item that already has one still loads, because the check runs only on input.
+- Descriptions aren't checked, since they can have several lines and nothing prints them yet. Slice 4's `show` should escape their control characters.
+- One bad key in `config.json` stops every command that reads it, until the key is renamed there.
+
+### Design decisions
+
+The review found two places where the code and DESIGN.md disagreed, settled after discussion.
+
+| Question | Decision | Commits |
+| --- | --- | --- |
+| Which project does a command cover? | DESIGN.md §3 now states the rule per kind of command. A one-project command such as `create` uses the current folder's project or `--project <KEY>`, and exits 1 outside every root. A listing command, `list` or `digest`, shows the current project inside a root and every project outside one, with `--all` for every project and its output naming what it covered. `review`, `judges` and `audit` always cover every project. `list` doesn't do this yet: slice 3's prompt and _Done when_ now include it. The same commit fixed sentences that read as if BM were the tool's own project, and added a note that the examples use BM and TR. | `d9c0327` |
+| Where are the `--json` shapes defined, and how do errors relate to gate refusals? | JSON Schemas in [schemas/](../schemas/), checked against every output by the tests (see [JSON output](#json-output) and [The harness](#the-harness)). Every non-zero exit has `error` and `exit_code`, and slice 6's refusals add `id`, `result`, `gates` and `failures` to that. A command that returns an item wraps it, so `create --json` now prints `{"item": …}`. | `315b84d`, `8d5e49f`, `542d7a4` |
+
+Still open from the review: the test gaps.
 
 ## Limits, and what later slices change
 
