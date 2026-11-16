@@ -6,10 +6,10 @@ After slice 1 you can **register projects, create items in them, and list everyt
 
 | | |
 | --- | --- |
-| Status | Done. Every _Done when_ check passes. Bugs 1–8 and security items S1–S3 from [review 1](slice-1-review-1.md) are fixed, and its design questions are settled ([below](#fixes-after-review-1)). |
+| Status | Done. Every _Done when_ check passes. From [review 1](slice-1-review-1.md), bugs 1–8 and security items S1–S3 are fixed, its design questions are settled, and its test gaps are closed ([below](#fixes-after-review-1)). |
 | Branch | `feat/tracker/slice-1` |
 | Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/` |
-| Tests | 40: 31 in `tests/create_and_list.rs`, 3 in `tests/schemas.rs`, and 2 each in `tests/docs_links.rs`, `tests/item_ids.rs` and `tests/store_writes.rs` |
+| Tests | 46: 33 in `tests/create_and_list.rs`, 3 each in `tests/docs_links.rs`, `tests/fixtures.rs` and `tests/schemas.rs`, and 2 each in `tests/item_ids.rs` and `tests/store_writes.rs` |
 
 ## Contents
 
@@ -34,7 +34,7 @@ After slice 1 you can **register projects, create items in them, and list everyt
 - Five commands: `init`, `project add`, `project list`, `create` and `list`. Every one takes `--json`.
 - A central store, with one JSON file per item and IDs handed out from `counters.json` under an exclusive file lock.
 - A default project: `create` picks the project whose root contains the current folder.
-- An integration test harness (assert_cmd and tempfile) in which every test gets its own temporary `TRACKER_HOME`.
+- An integration test harness (assert_cmd and tempfile) in which every test gets its own temporary `TRACKER_HOME` and `HOME`.
 
 **Not built yet:** states and moves (slice 2), kind, priority, labels, `edit` and filters (slice 3), `show` and `delete` (slice 4), skipping corrupt files, colour and help polish (slice 5), and everything about criteria, gates, triggers and judges (slice 6 on).
 
@@ -149,7 +149,7 @@ Every other command checks for `config.json`, `counters.json` and `items/` befor
 }
 ```
 
-So far the tool reads only `name`, `root` and `design`. Any other setting from §4.2 (`checks`, `review`, `judge`, …) is ignored when reading, and **kept** when `project add` rewrites the file. A root written by hand can start with `~/`, as in §4.2's example, and the tool expands it.
+So far the tool reads only `name`, `root` and `design`. Any other setting from §4.2 (`checks`, `review`, `judge`, …) is ignored when reading, and **kept** when `project add` rewrites the file. A root written by hand can start with `~/`, as in §4.2's example, and the tool expands it (tested by `a_root_written_by_hand_with_a_tilde_is_inside_home`).
 
 ### `counters.json`
 
@@ -286,20 +286,25 @@ cargo fmt --check && cargo clippy -- -D warnings && cargo test
 [tests/common/mod.rs](../tests/common/mod.rs) gives each test an `Env` with two temporary folders that are deleted when the test ends:
 
 - `home`: the store. Every command gets `TRACKER_HOME` pointing here, so no test touches `~/.tracker` or sees another test's items.
-- `work`: project roots, plus `work/outside`, a folder inside no root. Commands run from `outside` unless a test picks another folder.
+- `work`: project roots, plus two folders inside no root. Commands run from `work/outside` unless a test picks another folder, and `HOME` points at `work/home`. So a test that unsets `TRACKER_HOME`, or forgets it, gets `work/home/.tracker` rather than the real store, and a root written as `~/…` can be tested.
+
+Every command a test runs is built in one place, `Env::std_cmd()`, which sets both variables and the folder. Tests that spawn the binary themselves, such as the concurrency and closed-pipe tests, use it too.
 
 | Helper | Use |
 | --- | --- |
 | `Env::new()` | A store that `tracker init` has already set up |
 | `Env::without_store()` | An empty `TRACKER_HOME`, for testing `init` and "Run `tracker init`." |
-| `env.cmd()` | An `assert_cmd::Command` for the built binary, with the store and folder set |
-| `env.json(args)` / `env.json_in(dir, args)` | Runs with `--json`, expects exit 0, returns the parsed `serde_json::Value` |
+| `env.cmd()` | An `assert_cmd::Command` for the built binary, with `TRACKER_HOME`, `HOME` and the folder set |
+| `env.std_cmd()` | The same as a `std::process::Command`, for tests that spawn the process themselves |
+| `env.user_home()` | The folder `HOME` points at |
+| `env.json(args)` / `env.json_in(dir, args)` | Runs with `--json`, expects exit 0, checks the output against its schema, and returns the parsed `serde_json::Value` |
 | `env.add_project(key, root)` | Registers a project with its root at `work/<root>` and returns that path |
 | `env.create(project, title)` | Creates an item and returns its ID |
 | `env.dir(rel)`, `env.item_path(id)`, `env.read_store_file(name)` | Paths and raw store files |
 | `parse(stdout)` | Parses stdout as JSON, showing the output if it doesn't parse |
+| `check_schema(name, value)` | Checks a value against `schemas/<name>.schema.json` |
 
-The binary is found with `env!("CARGO_BIN_EXE_tracker")`, which Cargo sets for integration tests. Tests assert on the `--json` output, not on the text, because the text can change.
+`std_cmd` finds the binary with `env!("CARGO_BIN_EXE_tracker")`, which Cargo sets for integration tests. Tests assert on the `--json` output, not on the text, because the text can change.
 
 `env.json` and `env.json_in` also check every output against its command's schema with `check_schema`, and `schema_for` panics for a command that has no schema yet. `check_schema` loads `schemas/` into a `jsonschema` registry under each schema's `$id` (`https://tracker.invalid/schemas/…`, a domain that can never resolve), so a `$ref` from one schema to another resolves from the local files. [tests/schemas.rs](../tests/schemas.rs) checks that each schema is valid and named after its file, that every item file the tool writes matches `item.schema.json`, and that wrong output is caught, including through a `$ref`. A schema check that never fires would otherwise look the same as one that passes.
 
@@ -310,10 +315,10 @@ The binary is found with `env!("CARGO_BIN_EXE_tracker")`, which Cargo sets for i
 | Three creates in two projects get `XX-1`, `XX-2` and `YY-1`. `list` shows all three, and `project list` shows the counts. | `ids_count_up_per_project_and_list_shows_every_item`, `project_list_counts_every_state` |
 | Inside XX's root, `create` needs no `--project`. Outside every project root, without it, `create` exits 1. | `create_inside_a_project_root_needs_no_project_flag`, `create_outside_every_root_without_project_exits_1`, `nested_roots_pick_the_deepest`, `project_flag_overrides_the_current_folder` |
 | An empty or whitespace-only title exits 1. A description is stored in `description`. | `empty_or_whitespace_title_exits_1`, `description_is_stored_in_the_description_field` |
-| An item file read back and written again is byte-for-byte unchanged. | `item_file_read_back_and_written_again_is_unchanged`, `item_file_has_two_space_indents_and_a_fixed_field_order` |
+| An item file read back and written again is byte-for-byte unchanged. | `item_file_read_back_and_written_again_is_unchanged`, `item_file_has_two_space_indents_and_a_fixed_field_order`, and `tests/fixtures.rs` for files an earlier binary wrote |
 | Ten `create` commands started at once get ten different IDs. | `ten_creates_at_once_get_ten_different_ids` |
 | Every command's `--json` output parses. | `every_command_prints_json_that_parses` |
-| DESIGN.md's links to `judge-eval/`, PLAN.md and walkthrough.html still work. | `tests/docs_links.rs`: `design_doc_still_links_to_the_files_moved_with_it`, `relative_links_in_the_docs_resolve` |
+| DESIGN.md's links to `judge-eval/`, PLAN.md and walkthrough.html still work. | `tests/docs_links.rs`: `design_doc_still_links_to_the_files_moved_with_it`, `relative_links_in_the_docs_resolve`, and `the_docs_folder_is_checked`, since the links in `docs/` are checked too |
 | After `cargo build`, `git status -- tracker` shows nothing from `target/`. | Checked by hand (below) |
 
 Further tests cover the edges: `create_makes_an_open_medium_change`, `unknown_project_exits_1_and_names_the_known_ones`, `ids_come_from_counters_json_not_from_the_files`, `commands_without_a_store_say_run_tracker_init`, `init_again_keeps_the_store`, `project_add_refuses_bad_input`, `project_keys_are_upper_case_and_roots_absolute`, `project_add_keeps_settings_written_by_hand` and `bad_arguments_exit_1_and_help_exits_0`.
@@ -322,7 +327,9 @@ The fixes after review 1 each brought a regression test, listed with its bug [be
 
 **The lock test really tests the lock.** With `store.lock()` removed from `create`, `ten_creates_at_once_get_ten_different_ids` failed in 5 out of 5 runs, with duplicate IDs. With the lock in place it passes. That test spawns ten real processes at once with `std::process::Command`. It also checks that `counters.json` ends at 11 and that `items/` holds exactly ten files, so no `.tmp` file is left over.
 
-**The round-trip test** creates items through the binary, including a title and description with unicode, quotes, a backslash, tabs and line breaks. It then parses each file with `tracker::item::from_json`, writes it again with `tracker::item::to_json`, and compares the text. Keep this test as fields are added: PLAN.md's integration risks rely on it.
+**The round-trip test** creates items through the binary, with a title and description holding unicode, quotes, a backslash and line breaks. It then parses each file with `tracker::item::from_json`, writes it again with `tracker::item::to_json`, and compares the text. That shows the current code is consistent with itself, but it can't catch a change that stops older files loading, because it writes the files with the same code that reads them.
+
+**The fixtures are what PLAN.md's integration risks rely on.** `tests/fixtures/slice-1/` holds two item files that the slice 1 binary wrote: one with unicode, quotes, a backslash, tabs and line breaks, and one with no description. [tests/fixtures.rs](../tests/fixtures.rs) checks that every fixture loads, comes back byte for byte, matches `item.schema.json`, and lists exactly as it is on disk. Storing `kind` in capitals, for example, fails it with "XX-1.json no longer loads". **Never edit a fixture.** A slice that changes the item file adds its own `tests/fixtures/slice-<n>/` folder, written by its binary, and every folder stays tested.
 
 ### Checks done by hand
 
@@ -391,11 +398,23 @@ The review found two places where the code and DESIGN.md disagreed, settled afte
 | Which project does a command cover? | DESIGN.md §3 now states the rule per kind of command. A one-project command such as `create` uses the current folder's project or `--project <KEY>`, and exits 1 outside every root. A listing command, `list` or `digest`, shows the current project inside a root and every project outside one, with `--all` for every project and its output naming what it covered. `review`, `judges` and `audit` always cover every project. `list` doesn't do this yet: slice 3's prompt and _Done when_ now include it. The same commit fixed sentences that read as if BM were the tool's own project, and added a note that the examples use BM and TR. | `d9c0327` |
 | Where are the `--json` shapes defined, and how do errors relate to gate refusals? | JSON Schemas in [schemas/](../schemas/), checked against every output by the tests (see [JSON output](#json-output) and [The harness](#the-harness)). Every non-zero exit has `error` and `exit_code`, and slice 6's refusals add `id`, `result`, `gates` and `failures` to that. A command that returns an item wraps it, so `create --json` now prints `{"item": …}`. | `315b84d`, `8d5e49f`, `542d7a4` |
 
-Still open from the review: the test gaps.
+### Test gaps
+
+| Gap | Commit | What it adds | Test |
+| --- | --- | --- | --- |
+| 1. The round-trip test can't catch older files that stop loading | `0bf580b` | Item files written by the slice 1 binary, in `tests/fixtures/slice-1/`. | `tests/fixtures.rs` |
+| 2. `HOME` isn't isolated | `b9f4a5b` | `HOME` points at a temporary folder, and `Env::std_cmd()` is the one place a test command is built. | `without_tracker_home_the_store_is_in_home_not_the_real_one` |
+| 3. The `~/` expansion of roots has no test | `e5bca0b` | A root written as `~/proj` in `config.json` is found from inside it, and counts as the same root as its full path. | `a_root_written_by_hand_with_a_tilde_is_inside_home` |
+| 4. `docs_links.rs` doesn't check `docs/` | `7816399` | Every `.md` file in `docs/` has its links checked, without being listed. | `the_docs_folder_is_checked`, `relative_links_in_the_docs_resolve` |
+| 5. The bugs have no regression tests | none | Already done: each fix above brought its own test. | |
+
+For gaps 1, 3 and 4, the new test was seen failing with what it guards broken. The link check only checks that a file exists, not that a `#L…` line anchor still points at the right line.
+
+Still open from the review: its four nits, which are small cleanups ([slice-1-review-1.md](slice-1-review-1.md#nits)).
 
 ## Limits, and what later slices change
 
-- **Item files change shape in later slices.** Each new field needs `#[serde(default, skip_serializing_if = …)]` so that files written by this slice still load and still round-trip byte for byte. Put each field where §4.3 places it: for example, `labels` between `priority` and `created`, and `history` before `description`.
+- **Item files change shape in later slices.** Each new field needs `#[serde(default, skip_serializing_if = …)]` so that files written by this slice still load and still round-trip byte for byte, which `tests/fixtures.rs` checks. Put each field where §4.3 places it: for example, `labels` between `priority` and `created`, and `history` before `description`. Add it to `schemas/item.schema.json` in the same slice, and add a `tests/fixtures/slice-<n>/` folder of files written by that slice's binary.
 - **This version drops fields it doesn't know** if it rewrites an item. It never rewrites an existing item, so nothing is lost now. From slice 2 on, commands rewrite items, so install a newer binary only between items (PLAN.md, integration risks).
 - **`Status` already has all five states**, but no command moves between them. Slice 2 adds the moves and `history`.
 - **Slice 5's store checks are partly here already.** A store with `chmod 000` exits 3 (`an_unreadable_store_exits_3_and_isnt_reported_as_missing`), and `commands_without_a_store_say_run_tracker_init` covers the "Run `tracker init`." wording for all four commands that need a store. Slice 5 still has to skip unparseable item files and test that no temporary files are left after every command.

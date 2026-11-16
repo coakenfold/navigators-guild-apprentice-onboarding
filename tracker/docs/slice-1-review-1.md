@@ -25,6 +25,23 @@ The problems are edge cases, two security issues worth fixing before slice 4, on
 | Every command's `--json` output parses                                                                               | ✅ Errors included                                                                                                 |
 | DESIGN.md's links still work; after `cargo build`, `git status -- tracker` shows nothing from `target/`              | ✅ A test covers the links. Checked by hand that `target/` shows only as ignored and that there's no nested `.git` |
 
+## Outcome
+
+Added after the fixes. The findings below are left as written on 2026-11-15, so their line links point at the code as it was then, not at the fixed code. [slice-1-readme.md](slice-1-readme.md#fixes-after-review-1) describes each fix and its test.
+
+| Finding                      | Resolved by                                                                                                                                         |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bugs 1–8                     | One commit each: `beaf786`, `f7f0be9`, `2b05305`, `21e42d6`, `f0d6da1`, `439ff19`, `96be208` and `e79f279`, each with a regression test             |
+| S1–S3                        | One commit each: `f5b121c`, `2d4a474` and `ce8fb99`, each with a regression test                                                                   |
+| Code and DESIGN.md, item 1   | `d9c0327`: DESIGN.md §3 now says which project each kind of command covers, and slice 3 will build it for `list`                                   |
+| Code and DESIGN.md, item 2   | `315b84d`, `8d5e49f` and `542d7a4`: JSON Schemas in `schemas/` that the tests check every output against, one error shape, and items wrapped as `{"item": …}` |
+| Code and DESIGN.md, item 3   | No action needed                                                                                                                                    |
+| Test gaps 1–4                | One commit each: `0bf580b`, `b9f4a5b`, `e5bca0b` and `7816399`                                                                                      |
+| Test gap 5                   | Done as each fix landed                                                                                                                             |
+| Commit status                | `d05d77b` committed slice 1. The renames went in with the crate rather than first, but git detected all 15 (14 at 100%, PLAN.md at 99%), and `git log --follow` finds their history |
+| Before slice 2, steps 1–4    | All done                                                                                                                                            |
+| Nits                         | Still open                                                                                                                                          |
+
 ## Bugs
 
 Each of these was reproduced.
