@@ -261,6 +261,31 @@ fn a_reason_can_be_at_most_500_characters() {
 }
 
 #[test]
+fn help_shows_that_shelve_and_reopen_need_a_reason() {
+    // `--reason` is optional to clap, so that a missing one gets tracker's
+    // own message, but the usage line shows it as needed.
+    let env = Env::new();
+    for (command, usage) in [
+        (
+            "shelve",
+            "Usage: tracker shelve [OPTIONS] <ID> --reason <REASON>\n",
+        ),
+        (
+            "reopen",
+            "Usage: tracker reopen [OPTIONS] <ID> --reason <REASON>\n",
+        ),
+        (
+            "status",
+            "Usage: tracker status [OPTIONS] <ID> <STATE> [--reason <REASON>]\n",
+        ),
+    ] {
+        let output = env.cmd().args([command, "--help"]).assert().success();
+        let stdout = String::from_utf8_lossy(&output.get_output().stdout).to_string();
+        assert!(stdout.contains(usage), "{command}: {stdout}");
+    }
+}
+
+#[test]
 fn reopen_brings_a_shelved_item_back_to_open() {
     let env = env_with_item();
     env.json(&["shelve", "XX-1", "--reason", "not now"]);

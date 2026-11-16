@@ -64,19 +64,23 @@ enum Command {
         /// The item's ID, such as BM-12
         id: String,
     },
+    // `reason` is optional to clap, so that a missing one gets tracker's
+    // own message saying how to give it. The usage line shows it as needed.
     /// Put an open or in-progress item back in the backlog: → shelved
+    #[command(override_usage = "tracker shelve [OPTIONS] <ID> --reason <REASON>")]
     Shelve {
         /// The item's ID, such as BM-12
         id: String,
-        /// Why, kept in the item's history. Required
+        /// Why, kept in the item's history. Required: one line, at most 500 characters
         #[arg(long)]
         reason: Option<String>,
     },
     /// Bring a done or shelved item back: → open
+    #[command(override_usage = "tracker reopen [OPTIONS] <ID> --reason <REASON>")]
     Reopen {
         /// The item's ID, such as BM-12
         id: String,
-        /// Why, kept in the item's history. Required
+        /// Why, kept in the item's history. Required: one line, at most 500 characters
         #[arg(long)]
         reason: Option<String>,
     },
@@ -84,13 +88,15 @@ enum Command {
     ///
     /// in-progress runs start, done runs submit, shelved runs shelve and
     /// open runs reopen. An item in review can't be moved this way
+    #[command(override_usage = "tracker status [OPTIONS] <ID> <STATE> [--reason <REASON>]")]
     Status {
         /// The item's ID, such as BM-12
         id: String,
         /// The state to move it to
         #[arg(value_parser = PossibleValuesParser::new(Status::ALL.map(Status::as_str)))]
         state: String,
-        /// Why, for a move to open or shelved, which needs one
+        /// Why, for a move to open or shelved, which needs one: one line, at
+        /// most 500 characters
         #[arg(long)]
         reason: Option<String>,
     },
