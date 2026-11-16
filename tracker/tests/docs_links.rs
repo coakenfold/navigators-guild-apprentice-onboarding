@@ -38,11 +38,43 @@ fn design_doc_still_links_to_the_files_moved_with_it() {
     }
 }
 
+/// The docs whose links are checked: the ones at the crate root, judge-eval's
+/// README, and every markdown file in `docs/`, so a new doc there is checked
+/// without being listed here.
+fn docs() -> Vec<String> {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut docs: Vec<String> = ["DESIGN.md", "PLAN.md", "CLAUDE.md", "judge-eval/README.md"]
+        .map(String::from)
+        .to_vec();
+    let mut in_docs: Vec<String> = fs::read_dir(crate_root.join("docs"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .filter(|name| name.ends_with(".md"))
+        .map(|name| format!("docs/{name}"))
+        .collect();
+    in_docs.sort();
+    docs.extend(in_docs);
+    docs
+}
+
+#[test]
+fn the_docs_folder_is_checked() {
+    let docs = docs();
+    assert!(
+        docs.contains(&"docs/slice-1-readme.md".to_string()),
+        "{docs:?}"
+    );
+    assert!(
+        docs.contains(&"docs/slice-1-review-1.md".to_string()),
+        "{docs:?}"
+    );
+}
+
 #[test]
 fn relative_links_in_the_docs_resolve() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    for doc in ["DESIGN.md", "PLAN.md", "CLAUDE.md", "judge-eval/README.md"] {
-        let path = crate_root.join(doc);
+    for doc in docs() {
+        let path = crate_root.join(&doc);
         let text = fs::read_to_string(&path).unwrap();
         let folder = path.parent().unwrap();
         for link in relative_links(&text) {
