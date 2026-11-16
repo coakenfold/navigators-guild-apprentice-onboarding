@@ -57,6 +57,21 @@ pub fn load(store: &Store) -> Result<Config> {
             )));
         }
     }
+    // A relative root would be read from the current folder, so it would
+    // name a different folder wherever a command runs: `.` would put every
+    // folder inside that project. `project add` stores absolute roots, so
+    // only a root written by hand can be relative.
+    for (key, project) in &config.projects {
+        if !project.root_path().is_absolute() {
+            return Err(Error::store(format!(
+                "{} gives {key} the root \"{}\", which isn't an absolute path, so it would \
+                 mean a different folder wherever tracker runs. Write the full path there, or \
+                 start it with ~/.",
+                path.display(),
+                project.root
+            )));
+        }
+    }
     Ok(config)
 }
 

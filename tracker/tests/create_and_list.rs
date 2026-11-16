@@ -866,3 +866,28 @@ fn a_root_written_by_hand_with_a_tilde_is_inside_home() {
     let projects = env.json(&["project", "list"]);
     assert_eq!(projects["projects"][0]["root"], "~/proj");
 }
+
+#[test]
+fn a_relative_root_in_config_json_is_refused() {
+    let env = Env::new();
+    let proj = env.dir("proj");
+    let config_path = env.home.path().join("config.json");
+
+    // `.` would put every folder inside the project, and `proj` would mean
+    // a different folder wherever a command runs.
+    for root in [".", "proj", "~", "../proj"] {
+        let config = json!({ "projects": { "PK": { "name": "p", "root": root } } });
+        fs::write(&config_path, config.to_string()).unwrap();
+
+        for args in [&["list"][..], &["project", "list"], &["create", "t"]] {
+            for dir in [env.outside(), env.work.path().to_path_buf(), proj.clone()] {
+                let message = env.error_in(&dir, args, 3);
+                assert!(message.contains("absolute"), "{root} {args:?}: {message}");
+            }
+        }
+    }
+    assert_eq!(
+        fs::read_dir(env.home.path().join("items")).unwrap().count(),
+        0
+    );
+}
