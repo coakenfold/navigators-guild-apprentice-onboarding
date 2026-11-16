@@ -11,6 +11,7 @@ use tracker::config::{self, Project};
 use tracker::error::{Error, Result};
 use tracker::item::{self, Item, Kind, Priority, Status};
 use tracker::store::Store;
+use tracker::text::{self, check_printable};
 
 #[derive(Parser)]
 #[command(name = "tracker", version, about = "A verification-gated work tracker")]
@@ -88,7 +89,10 @@ fn main() -> ExitCode {
             // valid UTF-8, which is one of the errors being reported here.
             let wants_json = std::env::args_os().any(|arg| arg == "--json");
             if !wants_json {
-                let _ = err.print();
+                // clap's message repeats the bad argument, so it's escaped
+                // like every other output.
+                let message = text::for_terminal(&err.to_string(), true);
+                let _ = write!(std::io::stderr(), "{message}");
                 return ExitCode::from(1);
             }
             // clap's message without its usage and help hints, on one line.
@@ -127,9 +131,9 @@ fn main() -> ExitCode {
     match result {
         Ok(output) => {
             let text = if cli.json {
-                format!("{}\n", pretty(&output.json))
+                json_text(&output.json)
             } else {
-                output.text
+                text::for_terminal(&output.text, true)
             };
             print_out(&text, ExitCode::SUCCESS)
         }
@@ -160,16 +164,22 @@ fn fail(err: &Error, json: bool) -> ExitCode {
     let code = ExitCode::from(err.code);
     if json {
         let object = json!({ "error": err.message, "exit_code": err.code });
-        print_out(&format!("{}\n", pretty(&object)), code)
+        print_out(&json_text(&object), code)
     } else {
         // Ignored if stderr is closed: there's nowhere left to report it.
-        let _ = writeln!(std::io::stderr(), "error: {}", err.message);
+        // Messages can repeat input, such as an unknown project key, so
+        // they're escaped like every other output.
+        let message = text::for_terminal(&err.message, false);
+        let _ = writeln!(std::io::stderr(), "error: {message}");
         code
     }
 }
 
-fn pretty(value: &Value) -> String {
-    serde_json::to_string_pretty(value).expect("JSON values always serialize")
+/// `value` as pretty-printed JSON with a final newline, with every
+/// character that would change the terminal's display escaped.
+fn json_text(value: &Value) -> String {
+    let text = serde_json::to_string_pretty(value).expect("JSON values always serialize");
+    format!("{}\n", text::for_json(&text))
 }
 
 fn init(store: &Store) -> Result<Output> {
@@ -221,6 +231,12 @@ fn project_add(
             root.display()
         )));
     };
+    // `project list` prints the root, so it follows the title's rules.
+    check_printable(
+        root,
+        "A project's root",
+        "Rename the folder, or register one without such characters in its path.",
+    )?;
 
     let project = Project {
         name: name.to_string(),
@@ -360,33 +376,6 @@ fn create(
     })
 }
 
-/// Refuses text that's printed on one line, such as a title, if it holds a
-/// line break or a character that changes what the terminal shows: control
-/// characters, such as the escape that starts a colour code or moves the
-/// cursor, and the Unicode marks that reorder text. Otherwise an agent's
-/// title could rewrite the lines I read before deciding on its work.
-/// `what` names the text, and `fix` says what to do instead.
-fn check_printable(text: &str, what: &str, fix: &str) -> Result<()> {
-    for c in text.chars() {
-        let line_break = matches!(
-            c,
-            '\n' | '\r' | '\u{0b}' | '\u{0c}' | '\u{85}' | '\u{2028}' | '\u{2029}'
-        );
-        if line_break {
-            return Err(Error::input(format!("{what} must fit on one line. {fix}")));
-        }
-        let reorders = matches!(c, '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}');
-        if c.is_control() || reorders {
-            return Err(Error::input(format!(
-                "{what} can't contain the control character U+{:04X}, which would change \
-                 what the terminal shows. {fix}",
-                c as u32
-            )));
-        }
-    }
-    Ok(())
-}
-
 fn unknown_project(config: &config::Config, key: &str) -> String {
     if config.projects.is_empty() {
         format!(
@@ -431,10 +420,12 @@ fn list(store: &Store) -> Result<Output> {
                 .take_while(|item| &item.project == project)
                 .count();
 
-        match config.projects.get(project) {
-            Some(p) => text.push_str(&format!("{project}  {}\n", p.name)),
-            None => text.push_str(&format!("{project}\n")),
-        }
+        let heading = match config.projects.get(project) {
+            Some(p) => format!("{project}  {}", p.name),
+            None => project.clone(),
+        };
+        text.push_str(&text::for_terminal(&heading, false));
+        text.push('\n');
         let rows: Vec<Vec<String>> = items[start..end]
             .iter()
             .map(|item| {
@@ -456,8 +447,18 @@ fn list(store: &Store) -> Result<Output> {
 }
 
 /// Lines up rows of cells into columns two spaces apart. The last column
-/// isn't padded.
+/// isn't padded. Each cell is escaped first, so a title or name edited by
+/// hand can't break its line or change what the terminal shows.
 fn table(rows: &[Vec<String>]) -> String {
+    let rows: Vec<Vec<String>> = rows
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|cell| text::for_terminal(cell, false))
+                .collect()
+        })
+        .collect();
+    let rows = &rows;
     let columns = rows.iter().map(|row| row.len()).max().unwrap_or(0);
     let mut widths = vec![0; columns];
     for row in rows {
