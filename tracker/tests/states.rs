@@ -1,0 +1,419 @@
+//! Slice 2: start, submit, shelve and reopen items, with history kept
+//! (DESIGN.md §2.2).
+
+mod common;
+
+use std::fs;
+
+use common::Env;
+use serde_json::{Value, json};
+
+/// A store with project XX and one open item, XX-1.
+fn env_with_item() -> Env {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    env
+}
+
+/// Runs a move with `--json` and returns the item it prints, after checking
+/// that the file on disk holds the same item.
+fn moved(env: &Env, args: &[&str]) -> Value {
+    let item = env.json(args)["item"].clone();
+    let id = item["id"].as_str().unwrap();
+    assert_eq!(env.item(id), item, "{args:?}");
+    item
+}
+
+fn history(item: &Value) -> &Vec<Value> {
+    item["history"].as_array().unwrap()
+}
+
+fn history_len(item: &Value) -> usize {
+    item.get("history")
+        .map(|h| h.as_array().unwrap().len())
+        .unwrap_or(0)
+}
+
+/// Checks that the item is now in `to` and that its last history entry
+/// records the move.
+fn check_last_move(item: &Value, from: &str, to: &str, via: &str, reason: Option<&str>) {
+    assert_eq!(item["status"], to);
+    let entry = history(item).last().unwrap();
+    let mut expected = json!({
+        "at": entry["at"],
+        "from": from,
+        "to": to,
+        "via": via,
+        // The tests' stdin isn't a terminal, as an agent's isn't.
+        "interactive": false,
+    });
+    if let Some(reason) = reason {
+        expected["reason"] = json!(reason);
+    }
+    assert_eq!(entry, &expected);
+    assert_eq!(item["updated"], entry["at"]);
+}
+
+/// Checks that the item's verification record is the unchecked one that a
+/// submit without gates writes, made by its last move.
+fn check_unchecked(item: &Value) {
+    let verification = &item["verification"];
+    assert_eq!(verification["by"], "unchecked");
+    assert_eq!(verification["at"], history(item).last().unwrap()["at"]);
+    let note = verification["note"].as_str().unwrap();
+    assert!(note.contains("No gates ran"), "{note}");
+}
+
+/// Runs a move that must be refused with exit 1, checks that the item file
+/// is byte-for-byte unchanged, and returns the error message.
+fn refused(env: &Env, args: &[&str]) -> String {
+    let path = env.item_path("XX-1");
+    let before = fs::read(&path).unwrap();
+    let message = env.error(args, 1);
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        before,
+        "{args:?} changed the file"
+    );
+    message
+}
+
+/// Sets XX-1's status by hand, for states no command can reach yet.
+fn set_status(env: &Env, status: &str) {
+    let path = env.item_path("XX-1");
+    let text = fs::read_to_string(&path).unwrap();
+    let mut item: Value = serde_json::from_str(&text).unwrap();
+    item["status"] = json!(status);
+    fs::write(&path, serde_json::to_string_pretty(&item).unwrap() + "\n").unwrap();
+}
+
+#[test]
+fn an_item_goes_open_in_progress_done_open_through_the_commands() {
+    let env = env_with_item();
+    assert_eq!(history_len(&env.item("XX-1")), 0);
+
+    let item = moved(&env, &["start", "XX-1"]);
+    check_last_move(&item, "open", "in-progress", "start", None);
+    assert!(item.get("verification").is_none());
+
+    let item = moved(&env, &["submit", "XX-1"]);
+    check_last_move(&item, "in-progress", "done", "submit", None);
+    check_unchecked(&item);
+
+    let item = moved(&env, &["reopen", "XX-1", "--reason", "  found a bug  "]);
+    check_last_move(&item, "done", "open", "reopen", Some("found a bug"));
+    assert_eq!(history(&item).len(), 3);
+    // The last verification record stays until the item reaches done again.
+    assert_eq!(item["verification"]["by"], "unchecked");
+}
+
+#[test]
+fn an_item_goes_open_in_progress_done_open_through_status() {
+    let env = env_with_item();
+
+    let item = moved(&env, &["status", "XX-1", "in-progress"]);
+    check_last_move(&item, "open", "in-progress", "start", None);
+
+    let item = moved(&env, &["status", "XX-1", "done"]);
+    check_last_move(&item, "in-progress", "done", "submit", None);
+    check_unchecked(&item);
+
+    let item = moved(&env, &["status", "XX-1", "open", "--reason", "found a bug"]);
+    check_last_move(&item, "done", "open", "reopen", Some("found a bug"));
+    assert_eq!(history(&item).len(), 3);
+}
+
+#[test]
+fn status_open_and_status_shelved_need_a_reason() {
+    let env = env_with_item();
+    env.json(&["start", "XX-1"]);
+    env.json(&["submit", "XX-1"]);
+
+    for reason in [None, Some(""), Some("   ")] {
+        let mut args = vec!["status", "XX-1", "open"];
+        if let Some(reason) = reason {
+            args.extend(["--reason", reason]);
+        }
+        let message = refused(&env, &args);
+        assert!(message.contains("needs a reason"), "{message}");
+        assert!(message.contains("--reason"), "{message}");
+    }
+
+    env.json(&["status", "XX-1", "open", "--reason", "again"]);
+    let message = refused(&env, &["status", "XX-1", "shelved"]);
+    assert!(message.contains("needs a reason"), "{message}");
+}
+
+#[test]
+fn status_refuses_a_reason_for_a_move_that_takes_none() {
+    let env = env_with_item();
+    let message = refused(&env, &["status", "XX-1", "in-progress", "--reason", "why"]);
+    assert!(message.contains("--reason"), "{message}");
+}
+
+#[test]
+fn shelve_works_from_open_and_from_in_progress() {
+    let env = env_with_item();
+    env.create("XX", "b");
+
+    let item = moved(&env, &["shelve", "XX-1", "--reason", "not now"]);
+    check_last_move(&item, "open", "shelved", "shelve", Some("not now"));
+
+    env.json(&["start", "XX-2"]);
+    let item = moved(&env, &["shelve", "XX-2", "--reason", "blocked"]);
+    check_last_move(&item, "in-progress", "shelved", "shelve", Some("blocked"));
+    assert_eq!(history(&item).len(), 2);
+}
+
+#[test]
+fn shelve_without_a_reason_exits_1() {
+    let env = env_with_item();
+    for args in [
+        &["shelve", "XX-1"][..],
+        &["shelve", "XX-1", "--reason", ""],
+        &["shelve", "XX-1", "--reason", " \t "],
+    ] {
+        let message = refused(&env, args);
+        assert!(message.contains("needs a reason"), "{args:?}: {message}");
+    }
+    assert_eq!(env.item("XX-1")["status"], "open");
+}
+
+#[test]
+fn a_reason_must_fit_on_one_line() {
+    let env = env_with_item();
+    for reason in ["two\nlines", "esc\u{1b}[2K", "rtl \u{202e}txt"] {
+        refused(&env, &["shelve", "XX-1", "--reason", reason]);
+    }
+}
+
+#[test]
+fn reopen_brings_a_shelved_item_back_to_open() {
+    let env = env_with_item();
+    env.json(&["shelve", "XX-1", "--reason", "not now"]);
+
+    let message = refused(&env, &["reopen", "XX-1"]);
+    assert!(message.contains("needs a reason"), "{message}");
+
+    let item = moved(&env, &["reopen", "XX-1", "--reason", "now"]);
+    check_last_move(&item, "shelved", "open", "reopen", Some("now"));
+    assert!(item.get("verification").is_none());
+
+    // And through `status`.
+    env.json(&["status", "XX-1", "shelved", "--reason", "not now"]);
+    let item = moved(&env, &["status", "XX-1", "open", "--reason", "now"]);
+    check_last_move(&item, "shelved", "open", "reopen", Some("now"));
+    assert_eq!(history(&item).len(), 4);
+}
+
+#[test]
+fn open_to_done_exits_1_and_lists_the_allowed_moves() {
+    let env = env_with_item();
+    for args in [&["submit", "XX-1"][..], &["status", "XX-1", "done"]] {
+        let message = refused(&env, args);
+        assert!(message.contains("XX-1 is open"), "{args:?}: {message}");
+        assert!(
+            message.contains("`tracker start XX-1`"),
+            "{args:?}: {message}"
+        );
+        assert!(
+            message.contains("`tracker shelve XX-1 --reason \"…\"`"),
+            "{args:?}: {message}"
+        );
+        assert!(!message.contains("reopen"), "{args:?}: {message}");
+    }
+}
+
+#[test]
+fn every_move_the_diagram_doesnt_draw_is_refused() {
+    let env = env_with_item();
+    // From open: only start and shelve.
+    refused(&env, &["reopen", "XX-1", "--reason", "r"]);
+    refused(&env, &["status", "XX-1", "open", "--reason", "r"]);
+
+    // From in-progress: only submit and shelve.
+    env.json(&["start", "XX-1"]);
+    let message = refused(&env, &["start", "XX-1"]);
+    assert!(message.contains("`tracker submit XX-1`"), "{message}");
+    refused(&env, &["status", "XX-1", "in-progress"]);
+    refused(&env, &["reopen", "XX-1", "--reason", "r"]);
+    refused(&env, &["status", "XX-1", "open", "--reason", "r"]);
+
+    // From done: only reopen.
+    env.json(&["submit", "XX-1"]);
+    for args in [
+        &["start", "XX-1"][..],
+        &["submit", "XX-1"],
+        &["shelve", "XX-1", "--reason", "r"],
+        &["status", "XX-1", "shelved", "--reason", "r"],
+        &["status", "XX-1", "in-progress"],
+    ] {
+        let message = refused(&env, args);
+        assert!(message.contains("XX-1 is done"), "{args:?}: {message}");
+        assert!(message.contains("the only move is"), "{args:?}: {message}");
+        assert!(
+            message.contains("`tracker reopen XX-1"),
+            "{args:?}: {message}"
+        );
+    }
+
+    // From shelved: only reopen.
+    env.json(&["reopen", "XX-1", "--reason", "r"]);
+    env.json(&["shelve", "XX-1", "--reason", "r"]);
+    for args in [
+        &["start", "XX-1"][..],
+        &["submit", "XX-1"],
+        &["shelve", "XX-1", "--reason", "r"],
+        &["status", "XX-1", "done"],
+    ] {
+        let message = refused(&env, args);
+        assert!(
+            message.contains("`tracker reopen XX-1"),
+            "{args:?}: {message}"
+        );
+    }
+}
+
+#[test]
+fn nothing_moves_an_item_to_review_by_hand() {
+    let env = env_with_item();
+    env.json(&["start", "XX-1"]);
+    let message = refused(&env, &["status", "XX-1", "review"]);
+    assert!(message.contains("review"), "{message}");
+    assert!(message.contains("`tracker submit XX-1`"), "{message}");
+}
+
+#[test]
+fn an_item_in_review_is_refused_by_every_move() {
+    let env = env_with_item();
+    set_status(&env, "review");
+    for args in [
+        &["start", "XX-1"][..],
+        &["submit", "XX-1"],
+        &["shelve", "XX-1", "--reason", "r"],
+        &["reopen", "XX-1", "--reason", "r"],
+        &["status", "XX-1", "done"],
+        &["status", "XX-1", "open", "--reason", "r"],
+        &["status", "XX-1", "in-progress"],
+    ] {
+        let message = refused(&env, args);
+        assert!(message.contains("XX-1 is in review"), "{args:?}: {message}");
+        assert!(message.contains("approve or reject"), "{args:?}: {message}");
+    }
+}
+
+#[test]
+fn every_move_adds_exactly_one_history_entry() {
+    let env = env_with_item();
+    let moves: [&[&str]; 8] = [
+        &["start", "XX-1"],
+        &["shelve", "XX-1", "--reason", "r"],
+        &["reopen", "XX-1", "--reason", "r"],
+        &["status", "XX-1", "in-progress"],
+        &["submit", "XX-1"],
+        &["status", "XX-1", "open", "--reason", "r"],
+        &["status", "XX-1", "shelved", "--reason", "r"],
+        &["status", "XX-1", "open", "--reason", "r"],
+    ];
+    for (i, args) in moves.iter().enumerate() {
+        let before = env.item("XX-1");
+        let after = moved(&env, args);
+        assert_eq!(history_len(&after), i + 1, "{args:?}");
+        // The entries already there are left exactly as they were.
+        if i > 0 {
+            assert_eq!(history(&after)[..i], history(&before)[..], "{args:?}");
+        }
+        // Every entry's `to` is where the next one starts.
+        let entry = history(&after).last().unwrap();
+        assert_eq!(entry["from"], before["status"], "{args:?}");
+        assert_eq!(entry["to"], after["status"], "{args:?}");
+    }
+}
+
+#[test]
+fn a_refused_move_adds_no_history_entry() {
+    let env = env_with_item();
+    env.json(&["start", "XX-1"]);
+    refused(&env, &["start", "XX-1"]);
+    refused(&env, &["shelve", "XX-1"]);
+    refused(&env, &["status", "XX-1", "review"]);
+    assert_eq!(history_len(&env.item("XX-1")), 1);
+}
+
+#[test]
+fn a_move_on_a_missing_or_malformed_id_exits_1() {
+    let env = env_with_item();
+    for args in [
+        &["start", "XX-9"][..],
+        &["submit", "YY-1"],
+        &["shelve", "XX-9", "--reason", "r"],
+        &["status", "XX-9", "done"],
+        &["start", "../config"],
+        &["start", "XX-01"],
+    ] {
+        env.error(args, 1);
+    }
+    // An unknown state is bad input too, and names the states.
+    let message = refused(&env, &["status", "XX-1", "closed"]);
+    assert!(message.contains("in-progress"), "{message}");
+}
+
+#[test]
+fn a_move_finds_an_id_typed_in_lower_case() {
+    let env = env_with_item();
+    let item = moved(&env, &["start", " xx-1 "]);
+    assert_eq!(item["id"], "XX-1");
+    assert_eq!(item["status"], "in-progress");
+}
+
+#[test]
+fn a_move_needs_a_store() {
+    let env = Env::without_store();
+    let message = env.error(&["start", "XX-1"], 1);
+    assert!(message.contains("Run `tracker init`"), "{message}");
+}
+
+#[test]
+fn list_and_project_list_show_the_new_states() {
+    let env = env_with_item();
+    env.create("XX", "b");
+    env.create("XX", "c");
+    env.json(&["start", "XX-1"]);
+    env.json(&["submit", "XX-1"]);
+    env.json(&["start", "XX-2"]);
+    env.json(&["shelve", "XX-3", "--reason", "r"]);
+
+    let list = env.json(&["list"]);
+    let states: Vec<&str> = list["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["status"].as_str().unwrap())
+        .collect();
+    assert_eq!(states, ["done", "in-progress", "shelved"]);
+
+    let projects = env.json(&["project", "list"]);
+    assert_eq!(
+        projects["projects"][0]["counts"],
+        json!({ "open": 0, "in-progress": 1, "review": 0, "done": 1, "shelved": 1 })
+    );
+}
+
+#[test]
+fn the_text_output_names_the_move() {
+    let env = env_with_item();
+    let output = env.cmd().args(["start", "XX-1"]).assert().success();
+    let stdout = String::from_utf8_lossy(&output.get_output().stdout).to_string();
+    assert_eq!(stdout, "XX-1: open → in-progress\n");
+
+    let output = env.cmd().args(["submit", "XX-1"]).assert().success();
+    let stdout = String::from_utf8_lossy(&output.get_output().stdout).to_string();
+    assert!(stdout.starts_with("XX-1: in-progress → done\n"), "{stdout}");
+    assert!(stdout.contains("No gates ran"), "{stdout}");
+
+    // A refusal goes to stderr, with exit 1.
+    let output = env.cmd().args(["submit", "XX-1"]).assert().code(1);
+    let stderr = String::from_utf8_lossy(&output.get_output().stderr).to_string();
+    assert!(stderr.starts_with("error: XX-1 is done"), "{stderr}");
+}

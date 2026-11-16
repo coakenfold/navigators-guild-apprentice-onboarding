@@ -120,6 +120,47 @@ fn a_wrong_output_is_caught() {
     // create's item is wrapped, never bare.
     fails("create", item());
 
+    // A moved item: its verification record and history (§2.2, §4.3).
+    let mut moved = item();
+    moved["status"] = json!("done");
+    moved["verification"] = json!({
+        "by": "unchecked",
+        "at": "2026-11-15T22:02:00Z",
+        "note": "No gates ran."
+    });
+    moved["history"] = json!([
+        { "at": "2026-11-15T22:01:58Z", "from": "open", "to": "in-progress", "via": "start", "interactive": false },
+        { "at": "2026-11-15T22:02:00Z", "from": "in-progress", "to": "done", "via": "submit", "interactive": true }
+    ]);
+    check_schema("item", &moved);
+    check_schema("move", &json!({ "item": moved.clone() }));
+    fails("move", moved.clone());
+    for (pointer, value) in [
+        ("/verification/by", json!("agent")),
+        ("/verification/at", json!("yesterday")),
+        ("/verification/note", json!("")),
+        ("/verification/extra", json!(1)),
+        ("/history/0/via", json!("status")),
+        ("/history/0/from", json!("closed")),
+        ("/history/0/interactive", json!("no")),
+        ("/history/0/reason", json!("")),
+        ("/history/0/reason", json!("two\nlines")),
+        ("/history/0/extra", json!(1)),
+    ] {
+        let mut bad = moved.clone();
+        let (parent, field) = pointer.rsplit_once('/').unwrap();
+        bad.pointer_mut(parent).unwrap()[field] = value;
+        fails("item", bad);
+    }
+    for field in ["at", "from", "to", "via", "interactive"] {
+        let mut bad = moved.clone();
+        bad["history"][0].as_object_mut().unwrap().remove(field);
+        fails("item", bad);
+    }
+    let mut bad = moved.clone();
+    bad["history"] = json!([]);
+    fails("item", bad);
+
     // The error shape.
     check_schema("error", &json!({ "error": "x", "exit_code": 1 }));
     fails("error", json!({ "error": "x", "exit_code": 0 }));

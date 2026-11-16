@@ -1,15 +1,19 @@
 //! The `tracker` command line (§3).
 
-use std::io::{ErrorKind, Write};
+use std::io::{ErrorKind, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use clap::builder::PossibleValuesParser;
 use clap::{Parser, Subcommand};
 use serde_json::{Value, json};
 
 use tracker::config::{self, Project};
 use tracker::error::{Error, Result};
-use tracker::item::{self, Item, Kind, Priority, Status};
+use tracker::item::{
+    self, HistoryEntry, Item, Kind, Priority, Status, Verification, VerifiedBy, Via,
+};
+use tracker::states;
 use tracker::store::Store;
 use tracker::text::{self, check_printable};
 
@@ -46,6 +50,49 @@ enum Command {
     },
     /// List items, grouped by project
     List,
+    /// Start work on an open item: open → in-progress
+    Start {
+        /// The item's ID, such as BM-12
+        id: String,
+    },
+    /// Submit an in-progress item: → done
+    ///
+    /// Until the gates exist, it goes straight to done, with a verification
+    /// record that says it's unchecked
+    Submit {
+        /// The item's ID, such as BM-12
+        id: String,
+    },
+    /// Put an open or in-progress item back in the backlog: → shelved
+    Shelve {
+        /// The item's ID, such as BM-12
+        id: String,
+        /// Why, kept in the item's history. Required
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Bring a done or shelved item back: → open
+    Reopen {
+        /// The item's ID, such as BM-12
+        id: String,
+        /// Why, kept in the item's history. Required
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Move an item to a state, through the command that makes the move
+    ///
+    /// in-progress runs start, done runs submit, shelved runs shelve and
+    /// open runs reopen. An item in review can't be moved this way
+    Status {
+        /// The item's ID, such as BM-12
+        id: String,
+        /// The state to move it to
+        #[arg(value_parser = PossibleValuesParser::new(Status::ALL.map(Status::as_str)))]
+        state: String,
+        /// Why, for a move to open or shelved, which needs one
+        #[arg(long)]
+        reason: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -126,6 +173,14 @@ fn main() -> ExitCode {
             project,
         } => create(&store, &title, description, project),
         Command::List => list(&store),
+        Command::Start { id } => move_item(&store, &id, Via::Start, None),
+        Command::Submit { id } => move_item(&store, &id, Via::Submit, None),
+        Command::Shelve { id, reason } => move_item(&store, &id, Via::Shelve, reason),
+        Command::Reopen { id, reason } => move_item(&store, &id, Via::Reopen, reason),
+        Command::Status { id, state, reason } => {
+            let state = Status::parse(&state).expect("clap only accepts state names");
+            status(&store, &id, state, reason)
+        }
     });
 
     match result {
@@ -428,6 +483,8 @@ fn create(
         priority: Priority::Medium,
         created: now,
         updated: now,
+        verification: None,
+        history: Vec::new(),
         description,
     };
     store.save_item(&item)?;
@@ -506,6 +563,118 @@ fn list(store: &Store) -> Result<Output> {
         text,
         json: json!({ "items": items }),
     })
+}
+
+/// Runs one of the commands that move an item between states (§2.2):
+/// `start`, `submit`, `shelve` or `reopen`.
+fn move_item(store: &Store, id: &str, via: Via, reason: Option<String>) -> Result<Output> {
+    store.require_exists()?;
+    let id = normalize_id(id);
+    let _lock = store.lock()?;
+    let item = store.load_item(&id)?;
+    let Some(step) = states::find(via, item.status) else {
+        return Err(Error::input(states::not_from(&id, item.status, via)));
+    };
+    let reason = check_reason(&id, via, reason, &states::command(&id, via))?;
+    apply(store, item, step, reason)
+}
+
+/// `status <id> <state>`: the alias that maps a state onto the command that
+/// moves an item there (§3).
+fn status(store: &Store, id: &str, to: Status, reason: Option<String>) -> Result<Output> {
+    store.require_exists()?;
+    let id = normalize_id(id);
+    let _lock = store.lock()?;
+    let item = store.load_item(&id)?;
+    let step = match states::via_to(to) {
+        // A held item is mine to decide, with approve or reject (§2.7).
+        Some(_) if item.status == Status::Review => None,
+        Some(via) => states::find(via, item.status),
+        None => None,
+    };
+    let Some(step) = step else {
+        return Err(Error::input(states::not_to(&id, item.status, to)));
+    };
+
+    let state = to.as_str();
+    if reason.is_some() && !step.via.needs_reason() {
+        return Err(Error::input(format!(
+            "`status {id} {state}` runs `{}`, which takes no reason. Only a move to open or \
+             shelved does. Run it without --reason.",
+            step.via.as_str()
+        )));
+    }
+    let how = format!("tracker status {id} {state} --reason \"…\"");
+    let reason = check_reason(&id, step.via, reason, &how)?;
+    apply(store, item, step, reason)
+}
+
+/// The reason for a move that needs one, trimmed. Refuses a missing or
+/// blank reason, saying how to give one (`how`), and one that doesn't fit
+/// on a line, since it's printed among other lines. `None` for a move that
+/// needs no reason.
+fn check_reason(id: &str, via: Via, reason: Option<String>, how: &str) -> Result<Option<String>> {
+    if !via.needs_reason() {
+        return Ok(None);
+    }
+    let reason = reason.map(|r| r.trim().to_string()).unwrap_or_default();
+    if reason.is_empty() {
+        let doing = match via {
+            Via::Shelve => "Shelving",
+            _ => "Reopening",
+        };
+        return Err(Error::input(format!(
+            "{doing} {id} needs a reason, which is kept in its history: `{how}`."
+        )));
+    }
+    check_printable(&reason, "A reason", "Say why in one line.")?;
+    Ok(Some(reason))
+}
+
+/// Makes `step` on `item`, which was read under the lock, adds its history
+/// entry, and writes the item.
+fn apply(
+    store: &Store,
+    mut item: Item,
+    step: states::Move,
+    reason: Option<String>,
+) -> Result<Output> {
+    let now = item::now();
+    item.status = step.to;
+    item.updated = now;
+    let mut text = format!(
+        "{}: {} → {}\n",
+        item.id,
+        step.from.as_str(),
+        step.to.as_str()
+    );
+    if step.via == Via::Submit {
+        item.verification = Some(Verification {
+            by: VerifiedBy::Unchecked,
+            at: now,
+            note: Some(states::UNCHECKED_NOTE.to_string()),
+        });
+        text.push_str(&format!("Unchecked. {}\n", states::UNCHECKED_NOTE));
+    }
+    item.history.push(HistoryEntry {
+        at: now,
+        from: step.from,
+        to: step.to,
+        via: step.via,
+        // Only my own moves come from a terminal (§2.7).
+        interactive: std::io::stdin().is_terminal(),
+        reason,
+    });
+    store.update_item(&item)?;
+    Ok(Output {
+        text,
+        json: json!({ "item": item }),
+    })
+}
+
+/// An ID as typed, with its key in capitals, so `xx-1` finds XX-1.
+fn normalize_id(id: &str) -> String {
+    id.trim().to_ascii_uppercase()
 }
 
 /// Lines up rows of cells into columns two spaces apart. The last column

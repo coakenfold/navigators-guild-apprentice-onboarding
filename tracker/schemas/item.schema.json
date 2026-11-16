@@ -19,10 +19,34 @@
     },
     "project": { "$ref": "#/$defs/key" },
     "kind": { "enum": ["fix", "change", "capability", "chore"] },
-    "status": { "enum": ["open", "in-progress", "review", "done", "shelved"] },
+    "status": { "$ref": "#/$defs/state" },
     "priority": { "enum": ["low", "medium", "high"] },
     "created": { "$ref": "#/$defs/time" },
     "updated": { "$ref": "#/$defs/time" },
+    "verification": {
+      "description": "How the item reached done (DESIGN.md §2.7). Left out until it first does. Kept when the item is reopened, and replaced when it reaches done again.",
+      "type": "object",
+      "required": ["by", "at"],
+      "properties": {
+        "by": {
+          "description": "auto: the gates passed and no trigger fired. human: approved from the inbox. unchecked: done before the gates existed, so nothing checked it.",
+          "enum": ["auto", "human", "unchecked"]
+        },
+        "at": { "$ref": "#/$defs/time" },
+        "note": {
+          "description": "Why the record says what it does, such as that no gates ran.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "history": {
+      "description": "One entry per move between states, oldest first. Left out while there are none.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/move" }
+    },
     "description": {
       "description": "Free markdown. Left out when there isn't one.",
       "type": "string",
@@ -41,6 +65,32 @@
       "type": "string",
       "format": "date-time",
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "state": { "enum": ["open", "in-progress", "review", "done", "shelved"] },
+    "move": {
+      "description": "One move between states (DESIGN.md §2.2, §4.3).",
+      "type": "object",
+      "required": ["at", "from", "to", "via", "interactive"],
+      "properties": {
+        "at": { "$ref": "#/$defs/time" },
+        "from": { "$ref": "#/$defs/state" },
+        "to": { "$ref": "#/$defs/state" },
+        "via": {
+          "description": "The command that made the move. `status <id> <state>` records the command it maps onto.",
+          "enum": ["start", "submit", "shelve", "reopen"]
+        },
+        "interactive": {
+          "description": "Whether stdin was a terminal: true for my own moves, false for an agent's (DESIGN.md §2.6).",
+          "type": "boolean"
+        },
+        "reason": {
+          "description": "Why. Present for shelve and reopen, which need one, and left out otherwise. One line.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]+$"
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

@@ -143,6 +143,12 @@ impl Env {
         output["item"]["id"].as_str().unwrap().to_string()
     }
 
+    /// Reads an item's file as JSON.
+    pub fn item(&self, id: &str) -> Value {
+        let text = fs::read_to_string(self.item_path(id)).unwrap();
+        serde_json::from_str(&text).unwrap()
+    }
+
     pub fn item_path(&self, id: &str) -> PathBuf {
         self.home.path().join("items").join(format!("{id}.json"))
     }
@@ -171,6 +177,7 @@ pub fn schema_for(args: &[&str]) -> &'static str {
         ["project", "list", ..] => "project-list",
         ["create", ..] => "create",
         ["list", ..] => "list",
+        ["start" | "submit" | "shelve" | "reopen" | "status", ..] => "move",
         _ => panic!(
             "No schema for `tracker {}`. Add one to schemas/.",
             args.join(" ")

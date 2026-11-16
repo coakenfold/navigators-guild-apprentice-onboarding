@@ -4,5 +4,6 @@
 pub mod config;
 pub mod error;
 pub mod item;
+pub mod states;
 pub mod store;
 pub mod text;
