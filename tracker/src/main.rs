@@ -183,16 +183,41 @@ fn json_text(value: &Value) -> String {
 }
 
 fn init(store: &Store) -> Result<Output> {
-    let created = store.init()?;
+    let init = store.init()?;
     let home = store.home.display();
-    let text = if created {
+    let mut text = if init.created {
         format!("Created the store at {home}.\n")
-    } else {
+    } else if init.repaired.is_empty() {
         format!("The store at {home} already exists. Nothing changed.\n")
+    } else {
+        let back = if init.repaired.len() == 1 {
+            "it's"
+        } else {
+            "they're"
+        };
+        format!(
+            "The store at {home} was missing {}, so {back} back.\n",
+            init.repaired.join(" and ")
+        )
     };
+    for part in &init.repaired {
+        text.push_str(match *part {
+            "config.json" => {
+                "- config.json has no projects now. Register them again with \
+                 `tracker project add`.\n"
+            }
+            "counters.json" => {
+                "- counters.json is empty, so every project's IDs start again at 1. Set the \
+                 counter of each project that has used IDs above the highest one, so no \
+                 deleted item's ID is handed out again. `create` refuses while a counter is at \
+                 or below a number still in items/.\n"
+            }
+            _ => "- items/ is empty. Any items that were in it are gone.\n",
+        });
+    }
     Ok(Output {
         text,
-        json: json!({ "home": store.home, "created": created }),
+        json: json!({ "home": store.home, "created": init.created, "repaired": init.repaired }),
     })
 }
 

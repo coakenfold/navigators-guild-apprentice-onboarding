@@ -3,7 +3,7 @@
   "$id": "https://tracker.invalid/schemas/init.schema.json",
   "title": "tracker init --json",
   "type": "object",
-  "required": ["home", "created"],
+  "required": ["home", "created", "repaired"],
   "properties": {
     "home": {
       "description": "The store's folder.",
@@ -13,6 +13,12 @@
     "created": {
       "description": "False if the store already existed.",
       "type": "boolean"
+    },
+    "repaired": {
+      "description": "The parts of an existing store that were missing and have been put back. Empty for a new store, and for a store that was complete.",
+      "type": "array",
+      "items": { "enum": ["config.json", "counters.json", "items/"] },
+      "uniqueItems": true
     }
   },
   "additionalProperties": false

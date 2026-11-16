@@ -13,6 +13,15 @@ pub struct Store {
     pub home: PathBuf,
 }
 
+/// What `init` did.
+pub struct Init {
+    /// True when there was no store here before.
+    pub created: bool,
+    /// The parts of an existing store that were missing and have been put
+    /// back, such as `counters.json`. Empty for a new store.
+    pub repaired: Vec<&'static str>,
+}
+
 impl Store {
     /// The store's folder: `TRACKER_HOME` if it's set, otherwise `~/.tracker`.
     /// A relative `TRACKER_HOME` is refused, because it would name a
@@ -73,22 +82,45 @@ impl Store {
     }
 
     /// Creates whatever parts of the store are missing and leaves the rest
-    /// alone. Returns true if the store is new.
-    pub fn init(&self) -> Result<bool> {
+    /// alone, and says which parts it put back. The files that are already
+    /// there are checked first, so a store that can't be used isn't
+    /// reported as fine, and nothing is written to it.
+    pub fn init(&self) -> Result<Init> {
         create_private_dir(&self.home)
             .map_err(|e| Error::store(format!("Can't create {}: {e}", self.home.display())))?;
-        let items = self.items_dir();
-        fs::create_dir_all(&items)
-            .map_err(|e| Error::store(format!("Can't create {}: {e}", items.display())))?;
         let _lock = self.lock()?;
-        let created = !self.config_path().exists();
-        if created {
+
+        let config_missing = is_missing(&self.config_path())?;
+        let counters_missing = is_missing(&self.counters_path())?;
+        let items_missing = is_missing(&self.items_dir())?;
+        if !config_missing {
+            crate::config::load(self)?;
+        }
+        if !counters_missing {
+            self.read_counters()?;
+        }
+
+        let mut put_back = Vec::new();
+        if config_missing {
             write_file(&self.config_path(), "{\n  \"projects\": {}\n}\n")?;
+            put_back.push("config.json");
         }
-        if !self.counters_path().exists() {
+        if counters_missing {
             write_file(&self.counters_path(), "{}\n")?;
+            put_back.push("counters.json");
         }
-        Ok(created)
+        if items_missing {
+            let items = self.items_dir();
+            fs::create_dir(&items)
+                .map_err(|e| Error::store(format!("Can't create {}: {e}", items.display())))?;
+            put_back.push("items/");
+        }
+
+        let created = config_missing && counters_missing && items_missing;
+        Ok(Init {
+            created,
+            repaired: if created { Vec::new() } else { put_back },
+        })
     }
 
     /// Fails with "Run `tracker init`." (exit 1) until the store has been
@@ -165,9 +197,7 @@ impl Store {
     /// commits would then count as the new item's work (§2.8).
     pub fn next_id(&self, project: &str) -> Result<String> {
         let path = self.counters_path();
-        let text = read_file(&path)?;
-        let mut counters: BTreeMap<String, u64> = serde_json::from_str(&text)
-            .map_err(|e| Error::store(format!("Can't parse {}: {e}", path.display())))?;
+        let mut counters = self.read_counters()?;
 
         let number = counters.get(project).copied().unwrap_or(1);
         if let Some(highest) = self.highest_number_on_disk(project)?
@@ -186,6 +216,14 @@ impl Store {
         let text = serde_json::to_string_pretty(&counters).expect("counters always serialize");
         write_file(&path, &format!("{text}\n"))?;
         Ok(format!("{project}-{number}"))
+    }
+
+    /// Reads `counters.json`: the next number for each project.
+    fn read_counters(&self) -> Result<BTreeMap<String, u64>> {
+        let path = self.counters_path();
+        let text = read_file(&path)?;
+        serde_json::from_str(&text)
+            .map_err(|e| Error::store(format!("Can't parse {}: {e}", path.display())))
     }
 
     /// The highest number among `project`'s item files, such as 7 when
@@ -343,6 +381,16 @@ fn create_private_dir(path: &Path) -> std::io::Result<()> {
     #[cfg(not(unix))]
     {
         fs::create_dir_all(path)
+    }
+}
+
+/// Whether `path` doesn't exist. Any error other than "not found", such as
+/// a folder that can't be read, exits 3 rather than counting as missing.
+fn is_missing(path: &Path) -> Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(false),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(true),
+        Err(e) => Err(Error::store(format!("Can't read {}: {e}", path.display()))),
     }
 }
 

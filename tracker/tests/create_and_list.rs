@@ -891,3 +891,54 @@ fn a_relative_root_in_config_json_is_refused() {
         0
     );
 }
+
+#[test]
+fn init_says_which_parts_it_put_back() {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    assert_eq!(env.json(&["init"])["repaired"], json!([]));
+
+    fs::remove_file(env.home.path().join("counters.json")).unwrap();
+    let init = env.json(&["init"]);
+    assert_eq!(init["created"], false);
+    assert_eq!(init["repaired"], json!(["counters.json"]));
+    let output = env.cmd().arg("init").assert().success();
+    let text = String::from_utf8_lossy(&output.get_output().stdout).to_string();
+    assert!(text.contains("Nothing changed"), "{text}");
+
+    fs::remove_file(env.home.path().join("counters.json")).unwrap();
+    fs::remove_dir_all(env.home.path().join("items")).unwrap();
+    let output = env.cmd().arg("init").assert().success();
+    let text = String::from_utf8_lossy(&output.get_output().stdout).to_string();
+    assert!(!text.contains("Nothing changed"), "{text}");
+    assert!(text.contains("counters.json and items/"), "{text}");
+    // What to do about the lost counters.
+    assert!(text.contains("highest"), "{text}");
+
+    // Without config.json, but with the rest, it's still a repair.
+    fs::remove_file(env.home.path().join("config.json")).unwrap();
+    let init = env.json(&["init"]);
+    assert_eq!(init["created"], false);
+    assert_eq!(init["repaired"], json!(["config.json"]));
+}
+
+#[test]
+fn init_refuses_a_store_whose_files_cant_be_read() {
+    let env = Env::new();
+    let config = env.home.path().join("config.json");
+    let counters = env.home.path().join("counters.json");
+
+    fs::write(&config, "garbage").unwrap();
+    fs::remove_file(&counters).unwrap();
+    let message = env.error(&["init"], 3);
+    assert!(message.contains("config.json"), "{message}");
+    // Nothing was written, not even the missing counters.json.
+    assert_eq!(fs::read_to_string(&config).unwrap(), "garbage");
+    assert!(!counters.exists());
+
+    fs::write(&config, "{\"projects\": {}}").unwrap();
+    fs::write(&counters, "[1, 2]").unwrap();
+    let message = env.error(&["init"], 3);
+    assert!(message.contains("counters.json"), "{message}");
+}
