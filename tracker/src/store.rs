@@ -208,22 +208,39 @@ impl Store {
                  already exists, so the counter was probably lost or reset. Set \"{project}\" in \
                  counters.json above the highest {project} number ever used: at least {}.",
                 path.display(),
-                highest + 1
+                highest.saturating_add(1)
             )));
         }
 
-        counters.insert(project.to_string(), number + 1);
+        let Some(after) = number.checked_add(1) else {
+            return Err(Error::store(format!(
+                "{} gives {project} the counter {number}, the largest number tracker can count \
+                 to, so there's no number left after it. Set it to the highest {project} \
+                 number ever used, plus 1.",
+                path.display()
+            )));
+        };
+        counters.insert(project.to_string(), after);
         let text = serde_json::to_string_pretty(&counters).expect("counters always serialize");
         write_file(&path, &format!("{text}\n"))?;
         Ok(format!("{project}-{number}"))
     }
 
-    /// Reads `counters.json`: the next number for each project.
+    /// Reads `counters.json`: the next number for each project. A counter
+    /// below 1 is refused, since IDs start at 1 and `XX-0` isn't an ID.
     fn read_counters(&self) -> Result<BTreeMap<String, u64>> {
         let path = self.counters_path();
         let text = read_file(&path)?;
-        serde_json::from_str(&text)
-            .map_err(|e| Error::store(format!("Can't parse {}: {e}", path.display())))
+        let counters: BTreeMap<String, u64> = serde_json::from_str(&text)
+            .map_err(|e| Error::store(format!("Can't parse {}: {e}", path.display())))?;
+        if let Some((key, _)) = counters.iter().find(|(_, next)| **next == 0) {
+            return Err(Error::store(format!(
+                "{} gives {key} the counter 0, but IDs start at 1. Set it above the highest \
+                 {key} number ever used, or to 1 if there's never been one.",
+                path.display()
+            )));
+        }
+        Ok(counters)
     }
 
     /// The highest number among `project`'s item files, such as 7 when

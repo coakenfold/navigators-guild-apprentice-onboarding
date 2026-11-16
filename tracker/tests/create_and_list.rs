@@ -942,3 +942,29 @@ fn init_refuses_a_store_whose_files_cant_be_read() {
     let message = env.error(&["init"], 3);
     assert!(message.contains("counters.json"), "{message}");
 }
+
+#[test]
+fn a_counter_below_1_or_at_its_largest_is_refused() {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    let counters = env.home.path().join("counters.json");
+
+    // 0 isn't a number IDs use: XX-0 isn't an ID.
+    fs::write(&counters, "{\"XX\": 0}\n").unwrap();
+    let message = env.error(&["create", "t", "--project", "XX"], 3);
+    assert!(message.contains("counter 0"), "{message}");
+    // Nothing was written, not even the counter.
+    assert_eq!(fs::read_to_string(&counters).unwrap(), "{\"XX\": 0}\n");
+    env.error(&["init"], 3);
+
+    // The largest u64 can't be followed by another number.
+    let largest = format!("{{\"XX\": {}}}\n", u64::MAX);
+    fs::write(&counters, &largest).unwrap();
+    let message = env.error(&["create", "t", "--project", "XX"], 3);
+    assert!(message.contains("largest"), "{message}");
+    assert_eq!(fs::read_to_string(&counters).unwrap(), largest);
+    assert_eq!(
+        fs::read_dir(env.home.path().join("items")).unwrap().count(),
+        0
+    );
+}
