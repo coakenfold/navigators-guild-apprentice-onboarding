@@ -92,7 +92,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 
 ### Slice 4: Show and delete
 
-- **Prompt:** "Add `show <id>`: every field, the verification record, and history with timestamps. Add `delete <id>` as §2.8 describes, including its line in `deleted.json`. Build one shared helper for interactive-only commands: it refuses unless stdin is a terminal, prints what will be lost, and requires the ID typed back. Later slices reuse it for `criterion accept`, `approve`, `reject` and `digest ack`."
+- **Prompt:** "Add `show <id>`: every field, the verification record, and history with timestamps. Add `delete <id>` as §2.8 describes, including its line in `deleted.json`. Build one shared helper for interactive-only commands: it refuses unless `tty::is_interactive()` (the check that already sets history's `interactive`), prints what will be lost, and requires the ID typed back. Later slices reuse it for `criterion accept`, `approve`, `reject` and `digest ack`."
 - **Done when:**
   - `show` of a missing ID exits 1.
   - `echo XX-1 | tracker delete XX-1` is refused and the file remains.

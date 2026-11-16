@@ -1,6 +1,6 @@
 //! The `tracker` command line (§3).
 
-use std::io::{ErrorKind, IsTerminal, Write};
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -16,6 +16,7 @@ use tracker::item::{
 use tracker::states;
 use tracker::store::Store;
 use tracker::text::{self, check_printable};
+use tracker::tty;
 
 #[derive(Parser)]
 #[command(name = "tracker", version, about = "A verification-gated work tracker")]
@@ -664,8 +665,7 @@ fn apply(
         from: step.from,
         to: step.to,
         via: step.via,
-        // Only my own moves come from a terminal (§2.7).
-        interactive: std::io::stdin().is_terminal(),
+        interactive: tty::is_interactive(),
         reason,
     });
     store.update_item(&item)?;
