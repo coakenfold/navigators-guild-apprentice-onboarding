@@ -356,7 +356,7 @@ fn create(
 
     Ok(Output {
         text: format!("Created {}: {}\n", item.id, item.title),
-        json: serde_json::to_value(&item).expect("items always serialize"),
+        json: json!({ "item": item }),
     })
 }
 

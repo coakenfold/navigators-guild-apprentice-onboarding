@@ -60,7 +60,7 @@ fn ids_count_up_per_project_and_list_shows_every_item() {
 fn create_makes_an_open_medium_change() {
     let env = Env::new();
     env.add_project("XX", "xx");
-    let item = env.json(&["create", "  padded title  ", "--project", "XX"]);
+    let item = &env.json(&["create", "  padded title  ", "--project", "XX"])["item"];
 
     assert_eq!(item["title"], "padded title");
     assert_eq!(item["project"], "XX");
@@ -100,10 +100,13 @@ fn create_inside_a_project_root_needs_no_project_flag() {
     let xx = env.add_project("XX", "xx");
     env.add_project("YY", "yy");
 
-    assert_eq!(env.json_in(&xx, &["create", "from the root"])["id"], "XX-1");
+    assert_eq!(
+        env.json_in(&xx, &["create", "from the root"])["item"]["id"],
+        "XX-1"
+    );
     let deeper = env.dir("xx/src/deep");
     assert_eq!(
-        env.json_in(&deeper, &["create", "from below"])["id"],
+        env.json_in(&deeper, &["create", "from below"])["item"]["id"],
         "XX-2"
     );
 }
@@ -114,7 +117,7 @@ fn project_flag_overrides_the_current_folder() {
     let xx = env.add_project("XX", "xx");
     env.add_project("YY", "yy");
 
-    let item = env.json_in(&xx, &["create", "for YY", "--project", "YY"]);
+    let item = &env.json_in(&xx, &["create", "for YY", "--project", "YY"])["item"];
     assert_eq!(item["id"], "YY-1");
 }
 
@@ -124,10 +127,10 @@ fn nested_roots_pick_the_deepest() {
     env.add_project("MONO", "mono");
     let package = env.add_project("PKG", "mono/packages/pkg");
 
-    let item = env.json_in(&package, &["create", "in the package"]);
+    let item = &env.json_in(&package, &["create", "in the package"])["item"];
     assert_eq!(item["project"], "PKG");
     let other = env.dir("mono/packages/other");
-    let item = env.json_in(&other, &["create", "elsewhere in the repo"]);
+    let item = &env.json_in(&other, &["create", "elsewhere in the repo"])["item"];
     assert_eq!(item["project"], "MONO");
 }
 
@@ -182,7 +185,7 @@ fn description_is_stored_in_the_description_field() {
     env.add_project("XX", "xx");
     let description = "Tag chips filter the list.\n\n- one\n- \"two\"";
 
-    let item = env.json(&[
+    let output = env.json(&[
         "create",
         "with notes",
         "--project",
@@ -190,10 +193,12 @@ fn description_is_stored_in_the_description_field() {
         "--description",
         description,
     ]);
-    assert_eq!(item["description"], description);
+    assert_eq!(output["item"]["description"], description);
     let file: Value =
         serde_json::from_str(&fs::read_to_string(env.item_path("XX-1")).unwrap()).unwrap();
     assert_eq!(file["description"], description);
+    // `create --json` prints the item exactly as its file holds it, inside `item`.
+    assert_eq!(output, json!({ "item": file }));
 
     // An item without a description has no `description` field.
     env.create("XX", "no notes");
@@ -276,7 +281,10 @@ fn ten_creates_at_once_get_ten_different_ids() {
         let output = child.wait_with_output().unwrap();
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(output.status.success(), "{stderr}");
-        let id = parse(&output.stdout)["id"].as_str().unwrap().to_string();
+        let id = parse(&output.stdout)["item"]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
         ids.insert(id);
     }
 
@@ -309,7 +317,10 @@ fn every_command_prints_json_that_parses() {
     let added = env.json(&["project", "add", "XX", "--name", "alpha", "--root", root]);
     assert_eq!(added["key"], "XX");
     assert_eq!(added["name"], "alpha");
-    assert_eq!(env.json(&["create", "t", "--project", "XX"])["id"], "XX-1");
+    assert_eq!(
+        env.json(&["create", "t", "--project", "XX"])["item"]["id"],
+        "XX-1"
+    );
     assert_eq!(ids(&env.json(&["list"])), ["XX-1"]);
     assert_eq!(env.json(&["project", "list"])["projects"][0]["key"], "XX");
 
@@ -604,7 +615,7 @@ fn two_projects_cant_share_a_root() {
 
     let projects = env.json(&["project", "list"]);
     assert_eq!(projects["projects"].as_array().unwrap().len(), 1);
-    assert_eq!(env.json_in(&xx, &["create", "here"])["id"], "XX-1");
+    assert_eq!(env.json_in(&xx, &["create", "here"])["item"]["id"], "XX-1");
 }
 
 #[test]

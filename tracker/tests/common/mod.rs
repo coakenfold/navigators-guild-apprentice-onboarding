@@ -97,8 +97,8 @@ impl Env {
 
     /// Creates an item in `project` and returns its ID.
     pub fn create(&self, project: &str, title: &str) -> String {
-        let item = self.json(&["create", title, "--project", project]);
-        item["id"].as_str().unwrap().to_string()
+        let output = self.json(&["create", title, "--project", project]);
+        output["item"]["id"].as_str().unwrap().to_string()
     }
 
     pub fn item_path(&self, id: &str) -> PathBuf {
