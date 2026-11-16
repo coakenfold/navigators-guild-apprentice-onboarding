@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracker.invalid/schemas/init.schema.json",
+  "title": "tracker init --json",
+  "type": "object",
+  "required": ["home", "created"],
+  "properties": {
+    "home": {
+      "description": "The store's folder.",
+      "type": "string",
+      "minLength": 1
+    },
+    "created": {
+      "description": "False if the store already existed.",
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

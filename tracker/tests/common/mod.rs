@@ -57,8 +57,8 @@ impl Env {
         cmd
     }
 
-    /// Runs `tracker <args> --json` from `dir`, expects exit 0, and returns
-    /// the parsed output.
+    /// Runs `tracker <args> --json` from `dir`, expects exit 0, checks the
+    /// output against its command's schema, and returns it.
     pub fn json_in(&self, dir: &Path, args: &[&str]) -> Value {
         let output = self
             .cmd()
@@ -70,7 +70,9 @@ impl Env {
             .get_output()
             .stdout
             .clone();
-        parse(&output)
+        let value = parse(&output);
+        check_schema(schema_for(args), &value);
+        value
     }
 
     /// Runs `tracker <args> --json` from outside every project root.
@@ -118,4 +120,74 @@ pub fn parse(stdout: &[u8]) -> Value {
         Ok(value) => value,
         Err(e) => panic!("stdout isn't JSON ({e}):\n{text}"),
     }
+}
+
+/// The schema in `schemas/` that a command's `--json` output must match.
+/// A new command needs a schema before its tests can run.
+pub fn schema_for(args: &[&str]) -> &'static str {
+    match args {
+        ["init", ..] => "init",
+        ["project", "add", ..] => "project-add",
+        ["project", "list", ..] => "project-list",
+        ["create", ..] => "create",
+        ["list", ..] => "list",
+        _ => panic!(
+            "No schema for `tracker {}`. Add one to schemas/.",
+            args.join(" ")
+        ),
+    }
+}
+
+/// Every schema in `schemas/`, by file name without `.schema.json`.
+pub fn schemas() -> Vec<(String, Value)> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("schemas");
+    let mut schemas = Vec::new();
+    for entry in fs::read_dir(&dir).unwrap() {
+        let path = entry.unwrap().path();
+        let file = path.file_name().unwrap().to_str().unwrap().to_string();
+        let Some(name) = file.strip_suffix(".schema.json") else {
+            panic!("{} isn't a schema file", path.display());
+        };
+        let text = fs::read_to_string(&path).unwrap();
+        let schema: Value =
+            serde_json::from_str(&text).unwrap_or_else(|e| panic!("{file} isn't valid JSON: {e}"));
+        schemas.push((name.to_string(), schema));
+    }
+    schemas.sort_by(|a, b| a.0.cmp(&b.0));
+    schemas
+}
+
+/// Checks `value` against `schemas/<name>.schema.json`, and panics listing
+/// every way it doesn't match. The schemas are loaded into a registry under
+/// their `$id`s, so a `$ref` to another schema file resolves without any
+/// network access.
+pub fn check_schema(name: &str, value: &Value) {
+    let schemas = schemas();
+    let mut registry = jsonschema::Registry::new();
+    for (_, schema) in &schemas {
+        let id = schema["$id"].as_str().unwrap();
+        registry = registry
+            .add(id, jsonschema::Resource::from_contents(schema.clone()))
+            .unwrap();
+    }
+    let registry = registry.prepare().unwrap();
+
+    let Some((_, schema)) = schemas.iter().find(|(n, _)| n == name) else {
+        panic!("There's no schemas/{name}.schema.json");
+    };
+    let validator = jsonschema::options()
+        .with_registry(&registry)
+        .should_validate_formats(true)
+        .build(schema)
+        .unwrap_or_else(|e| panic!("schemas/{name}.schema.json can't be used: {e}"));
+    let errors: Vec<String> = validator
+        .iter_errors(value)
+        .map(|e| format!("  at {}: {e}", e.instance_path()))
+        .collect();
+    assert!(
+        errors.is_empty(),
+        "This doesn't match schemas/{name}.schema.json:\n{}\n{}",
+        errors.join("\n"),
+        serde_json::to_string_pretty(value).unwrap()
+    );
 }

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracker.invalid/schemas/error.schema.json",
+  "title": "Error",
+  "description": "The base shape of every non-zero exit under --json (DESIGN.md §3). A gate refusal (slice 6) adds id, result, gates and failures to it.",
+  "type": "object",
+  "required": ["error", "exit_code"],
+  "properties": {
+    "error": {
+      "description": "One line saying what went wrong and how to fix it.",
+      "type": "string",
+      "minLength": 1
+    },
+    "exit_code": {
+      "description": "The same as the process's exit code: 1 bad input, 2 refused by a gate, 3 the store, a file or git can't be read.",
+      "enum": [1, 2, 3]
+    }
+  },
+  "additionalProperties": false
+}

@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::process::{Command, Stdio};
 
-use common::{Env, parse};
+use common::{Env, check_schema, parse};
 use serde_json::{Value, json};
 
 fn ids(list: &Value) -> Vec<&str> {
@@ -33,6 +33,7 @@ fn open_counts(open: u64) -> Value {
 fn error_message(env: &Env, args: &[&str]) -> String {
     let output = env.cmd().args(args).arg("--json").assert().code(1);
     let error = parse(&output.get_output().stdout);
+    check_schema("error", &error);
     assert_eq!(error["exit_code"], 1);
     error["error"].as_str().unwrap().to_string()
 }
@@ -326,7 +327,9 @@ fn every_command_prints_json_that_parses() {
 
     // `--json` also works before the command.
     let output = env.cmd().args(["--json", "list"]).assert().success();
-    assert_eq!(ids(&parse(&output.get_output().stdout)), ["XX-1"]);
+    let list = parse(&output.get_output().stdout);
+    check_schema("list", &list);
+    assert_eq!(ids(&list), ["XX-1"]);
 
     // Failures print one JSON object too, with the same exit code.
     error_message(&env, &["create", " ", "--project", "XX"]);
