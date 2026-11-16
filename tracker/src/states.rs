@@ -1,6 +1,9 @@
 //! The states and the moves between them (§2.2): which command moves an
 //! item from which state to which, and what to say when a move isn't drawn.
 
+use serde_json::{Value, json};
+
+use crate::error::Error;
 use crate::item::{Status, Via};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,6 +62,24 @@ pub fn command(id: &str, via: Via) -> String {
     }
 }
 
+/// The moves allowed from `from`, for the `allowed` field of a refusal:
+/// each with its command, the state it leads to, and how to run it on `id`.
+/// Empty for review, which only approve and reject leave (slice 9).
+pub fn allowed_json(id: &str, from: Status) -> Value {
+    let moves: Vec<Value> = MOVES
+        .iter()
+        .filter(|step| step.from == from)
+        .map(|step| {
+            json!({
+                "via": step.via.as_str(),
+                "to": step.to.as_str(),
+                "command": command(id, step.via),
+            })
+        })
+        .collect();
+    Value::Array(moves)
+}
+
 /// One sentence listing the moves allowed from `from`, as commands for `id`.
 pub fn allowed(id: &str, from: Status) -> String {
     let moves: Vec<String> = MOVES
@@ -82,26 +103,35 @@ pub fn allowed(id: &str, from: Status) -> String {
     )
 }
 
+/// The refusal for a move the diagram doesn't draw: exit 1, with
+/// `message` and the moves allowed from `from`.
+fn refusal(id: &str, from: Status, message: String) -> Error {
+    let mut error = Error::input(message);
+    error.allowed = Some(allowed_json(id, from));
+    error
+}
+
 /// The refusal for running `via` on an item in `from`, where the diagram
 /// draws no such move.
-pub fn not_from(id: &str, from: Status, via: Via) -> String {
+pub fn not_from(id: &str, from: Status, via: Via) -> Error {
     let starts: Vec<String> = MOVES
         .iter()
         .filter(|step| step.via == via)
         .map(|step| step.from.phrase().to_string())
         .collect();
-    format!(
+    let message = format!(
         "{id} is {}, and `{}` only moves an item that is {}. {}",
         from.phrase(),
         via.as_str(),
         join(&starts, "or"),
         allowed(id, from)
-    )
+    );
+    refusal(id, from, message)
 }
 
 /// The refusal for `status <id> <to>` on an item in `from`, where the
 /// diagram draws no such move.
-pub fn not_to(id: &str, from: Status, to: Status) -> String {
+pub fn not_to(id: &str, from: Status, to: Status) -> Error {
     let what = if from == Status::Review {
         format!("{id} is in review, so `status` can't move it.")
     } else if from == to {
@@ -118,7 +148,7 @@ pub fn not_to(id: &str, from: Status, to: Status) -> String {
             to.as_str()
         )
     };
-    format!("{what} {}", allowed(id, from))
+    refusal(id, from, format!("{what} {}", allowed(id, from)))
 }
 
 /// "a", "a or b", "a, b or c", with `word` as "or" or "and".

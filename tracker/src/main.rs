@@ -218,7 +218,10 @@ fn print_out(text: &str, code: ExitCode) -> ExitCode {
 fn fail(err: &Error, json: bool) -> ExitCode {
     let code = ExitCode::from(err.code);
     if json {
-        let object = json!({ "error": err.message, "exit_code": err.code });
+        let mut object = json!({ "error": err.message, "exit_code": err.code });
+        if let Some(allowed) = &err.allowed {
+            object["allowed"] = allowed.clone();
+        }
         print_out(&json_text(&object), code)
     } else {
         // Ignored if stderr is closed: there's nowhere left to report it.
@@ -573,7 +576,7 @@ fn move_item(store: &Store, id: &str, via: Via, reason: Option<String>) -> Resul
     let _lock = store.lock()?;
     let item = store.load_item(&id)?;
     let Some(step) = states::find(via, item.status) else {
-        return Err(Error::input(states::not_from(&id, item.status, via)));
+        return Err(states::not_from(&id, item.status, via));
     };
     let reason = check_reason(&id, via, reason, &states::command(&id, via))?;
     apply(store, item, step, reason)
@@ -593,7 +596,7 @@ fn status(store: &Store, id: &str, to: Status, reason: Option<String>) -> Result
         None => None,
     };
     let Some(step) = step else {
-        return Err(Error::input(states::not_to(&id, item.status, to)));
+        return Err(states::not_to(&id, item.status, to));
     };
 
     let state = to.as_str();

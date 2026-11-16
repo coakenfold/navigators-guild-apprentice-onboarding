@@ -66,18 +66,44 @@ fn check_unchecked(item: &Value) {
 }
 
 /// Runs a move that must be refused with exit 1, checks that the item file
-/// is byte-for-byte unchanged, and returns the error message.
-fn refused(env: &Env, args: &[&str]) -> String {
+/// is byte-for-byte unchanged, and returns the error object.
+fn refused_json(env: &Env, args: &[&str]) -> Value {
     let path = env.item_path("XX-1");
     let before = fs::read(&path).unwrap();
-    let message = env.error(args, 1);
+    let error = env.error_json_in(&env.outside(), args, 1);
     assert_eq!(
         fs::read(&path).unwrap(),
         before,
         "{args:?} changed the file"
     );
-    message
+    error
 }
+
+/// The same as `refused_json`, returning only the error message.
+fn refused(env: &Env, args: &[&str]) -> String {
+    refused_json(env, args)["error"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+/// Runs a move that the diagram doesn't draw, and returns the commands
+/// that its `allowed` field lists, in order.
+fn allowed(env: &Env, args: &[&str]) -> Vec<String> {
+    let error = refused_json(env, args);
+    let Some(allowed) = error["allowed"].as_array() else {
+        panic!("{args:?} has no allowed moves: {error}");
+    };
+    allowed
+        .iter()
+        .map(|step| step["command"].as_str().unwrap().to_string())
+        .collect()
+}
+
+const START: &str = "tracker start XX-1";
+const SUBMIT: &str = "tracker submit XX-1";
+const SHELVE: &str = "tracker shelve XX-1 --reason \"…\"";
+const REOPEN: &str = "tracker reopen XX-1 --reason \"…\"";
 
 /// Sets XX-1's status by hand, for states no command can reach yet.
 fn set_status(env: &Env, status: &str) {
@@ -200,8 +226,11 @@ fn shelve_without_a_reason_exits_1() {
         &["shelve", "XX-1", "--reason", ""],
         &["shelve", "XX-1", "--reason", " \t "],
     ] {
-        let message = refused(&env, args);
+        let error = refused_json(&env, args);
+        let message = error["error"].as_str().unwrap();
         assert!(message.contains("needs a reason"), "{args:?}: {message}");
+        // The move is drawn, so there's no list of other moves.
+        assert!(error.get("allowed").is_none(), "{args:?}: {error}");
     }
     assert_eq!(env.item("XX-1")["status"], "open");
 }
@@ -237,17 +266,15 @@ fn reopen_brings_a_shelved_item_back_to_open() {
 fn open_to_done_exits_1_and_lists_the_allowed_moves() {
     let env = env_with_item();
     for args in [&["submit", "XX-1"][..], &["status", "XX-1", "done"]] {
-        let message = refused(&env, args);
-        assert!(message.contains("XX-1 is open"), "{args:?}: {message}");
-        assert!(
-            message.contains("`tracker start XX-1`"),
-            "{args:?}: {message}"
+        let error = refused_json(&env, args);
+        assert_eq!(
+            error["allowed"],
+            json!([
+                { "via": "start", "to": "in-progress", "command": START },
+                { "via": "shelve", "to": "shelved", "command": SHELVE },
+            ]),
+            "{args:?}"
         );
-        assert!(
-            message.contains("`tracker shelve XX-1 --reason \"…\"`"),
-            "{args:?}: {message}"
-        );
-        assert!(!message.contains("reopen"), "{args:?}: {message}");
     }
 }
 
@@ -255,16 +282,23 @@ fn open_to_done_exits_1_and_lists_the_allowed_moves() {
 fn every_move_the_diagram_doesnt_draw_is_refused() {
     let env = env_with_item();
     // From open: only start and shelve.
-    refused(&env, &["reopen", "XX-1", "--reason", "r"]);
-    refused(&env, &["status", "XX-1", "open", "--reason", "r"]);
+    for args in [
+        &["reopen", "XX-1", "--reason", "r"][..],
+        &["status", "XX-1", "open", "--reason", "r"],
+    ] {
+        assert_eq!(allowed(&env, args), [START, SHELVE], "{args:?}");
+    }
 
     // From in-progress: only submit and shelve.
     env.json(&["start", "XX-1"]);
-    let message = refused(&env, &["start", "XX-1"]);
-    assert!(message.contains("`tracker submit XX-1`"), "{message}");
-    refused(&env, &["status", "XX-1", "in-progress"]);
-    refused(&env, &["reopen", "XX-1", "--reason", "r"]);
-    refused(&env, &["status", "XX-1", "open", "--reason", "r"]);
+    for args in [
+        &["start", "XX-1"][..],
+        &["status", "XX-1", "in-progress"],
+        &["reopen", "XX-1", "--reason", "r"],
+        &["status", "XX-1", "open", "--reason", "r"],
+    ] {
+        assert_eq!(allowed(&env, args), [SUBMIT, SHELVE], "{args:?}");
+    }
 
     // From done: only reopen.
     env.json(&["submit", "XX-1"]);
@@ -275,13 +309,7 @@ fn every_move_the_diagram_doesnt_draw_is_refused() {
         &["status", "XX-1", "shelved", "--reason", "r"],
         &["status", "XX-1", "in-progress"],
     ] {
-        let message = refused(&env, args);
-        assert!(message.contains("XX-1 is done"), "{args:?}: {message}");
-        assert!(message.contains("the only move is"), "{args:?}: {message}");
-        assert!(
-            message.contains("`tracker reopen XX-1"),
-            "{args:?}: {message}"
-        );
+        assert_eq!(allowed(&env, args), [REOPEN], "{args:?}");
     }
 
     // From shelved: only reopen.
@@ -293,11 +321,7 @@ fn every_move_the_diagram_doesnt_draw_is_refused() {
         &["shelve", "XX-1", "--reason", "r"],
         &["status", "XX-1", "done"],
     ] {
-        let message = refused(&env, args);
-        assert!(
-            message.contains("`tracker reopen XX-1"),
-            "{args:?}: {message}"
-        );
+        assert_eq!(allowed(&env, args), [REOPEN], "{args:?}");
     }
 }
 
@@ -305,9 +329,10 @@ fn every_move_the_diagram_doesnt_draw_is_refused() {
 fn nothing_moves_an_item_to_review_by_hand() {
     let env = env_with_item();
     env.json(&["start", "XX-1"]);
-    let message = refused(&env, &["status", "XX-1", "review"]);
-    assert!(message.contains("review"), "{message}");
-    assert!(message.contains("`tracker submit XX-1`"), "{message}");
+    assert_eq!(
+        allowed(&env, &["status", "XX-1", "review"]),
+        [SUBMIT, SHELVE]
+    );
 }
 
 #[test]
@@ -323,9 +348,8 @@ fn an_item_in_review_is_refused_by_every_move() {
         &["status", "XX-1", "open", "--reason", "r"],
         &["status", "XX-1", "in-progress"],
     ] {
-        let message = refused(&env, args);
-        assert!(message.contains("XX-1 is in review"), "{args:?}: {message}");
-        assert!(message.contains("approve or reject"), "{args:?}: {message}");
+        // Only approve and reject (slice 9) move a held item.
+        assert!(allowed(&env, args).is_empty(), "{args:?}");
     }
 }
 

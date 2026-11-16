@@ -98,6 +98,13 @@ impl Env {
     /// `code`, checks the output against the error schema, and returns the
     /// error message.
     pub fn error_in(&self, dir: &Path, args: &[&str], code: i32) -> String {
+        let error = self.error_json_in(dir, args, code);
+        error["error"].as_str().unwrap().to_string()
+    }
+
+    /// The same as `error_in`, returning the whole error object, for the
+    /// fields some errors add, such as `allowed`.
+    pub fn error_json_in(&self, dir: &Path, args: &[&str], code: i32) -> Value {
         let output = self
             .cmd()
             .current_dir(dir)
@@ -111,7 +118,7 @@ impl Env {
         let error = parse(&output);
         check_schema("error", &error);
         assert_eq!(error["exit_code"], code, "{error}");
-        error["error"].as_str().unwrap().to_string()
+        error
     }
 
     /// Runs `tracker <args> --json` from outside every project root and

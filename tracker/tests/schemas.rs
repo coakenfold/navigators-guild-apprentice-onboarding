@@ -166,4 +166,18 @@ fn a_wrong_output_is_caught() {
     fails("error", json!({ "error": "x", "exit_code": 0 }));
     fails("error", json!({ "error": "x" }));
     fails("error", json!({ "message": "x", "exit_code": 1 }));
+    // A refused move lists the moves allowed instead.
+    let step = json!({ "via": "start", "to": "in-progress", "command": "tracker start XX-1" });
+    check_schema(
+        "error",
+        &json!({ "error": "x", "exit_code": 1, "allowed": [step] }),
+    );
+    check_schema(
+        "error",
+        &json!({ "error": "x", "exit_code": 1, "allowed": [] }),
+    );
+    fails(
+        "error",
+        json!({ "error": "x", "exit_code": 1, "allowed": [{ "via": "start" }] }),
+    );
 }
