@@ -833,3 +833,36 @@ fn without_tracker_home_the_store_is_in_home_not_the_real_one() {
         .success();
     assert_eq!(parse(&output.get_output().stdout)["created"], false);
 }
+
+#[test]
+fn a_root_written_by_hand_with_a_tilde_is_inside_home() {
+    let env = Env::new();
+    let root = env.dir("home/proj");
+    let deeper = env.dir("home/proj/src");
+    // §4.2's example writes roots as `~/…`.
+    let config = json!({ "projects": { "PK": { "name": "tilde", "root": "~/proj" } } });
+    fs::write(env.home.path().join("config.json"), config.to_string()).unwrap();
+
+    // The current folder picks the project through the expanded root.
+    let item = env.json_in(&deeper, &["create", "found through ~"]);
+    assert_eq!(item["item"]["project"], "PK");
+
+    // The same folder, spelled out, counts as the same root.
+    let message = error_message(
+        &env,
+        &[
+            "project",
+            "add",
+            "YY",
+            "--name",
+            "y",
+            "--root",
+            root.to_str().unwrap(),
+        ],
+    );
+    assert!(message.contains("PK"), "{message}");
+
+    // The root is kept as written.
+    let projects = env.json(&["project", "list"]);
+    assert_eq!(projects["projects"][0]["root"], "~/proj");
+}
