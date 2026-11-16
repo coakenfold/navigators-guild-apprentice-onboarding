@@ -76,6 +76,9 @@ fn fails(name: &str, value: Value) {
 fn a_wrong_output_is_caught() {
     check_schema("item", &item());
     check_schema("create", &json!({ "item": item() }));
+    let mut unicode = item();
+    unicode["title"] = json!("Ünïcode “quotes” — and emoji 😀");
+    check_schema("item", &unicode);
 
     // A field the schema doesn't name, or a missing one.
     let mut extra = item();
@@ -94,6 +97,15 @@ fn a_wrong_output_is_caught() {
         ("created", json!("2026-11-15T22:01:56.123Z")),
         ("created", json!("not a time")),
         ("title", json!("")),
+        // One line with no control characters (§2.1), as `create` checks.
+        ("title", json!("two\nlines")),
+        ("title", json!("tab\there")),
+        ("title", json!("esc\u{1b}[2K")),
+        ("title", json!("c1\u{9b}31m")),
+        ("title", json!("del\u{7f}")),
+        ("title", json!("ls\u{2028}ps")),
+        ("title", json!("rtl \u{202e}txt")),
+        ("title", json!("lri \u{2066}x")),
     ] {
         let mut bad = item();
         bad[field] = value;

@@ -12,9 +12,10 @@
       "pattern": "^[A-Z][A-Z0-9]{0,9}-[1-9][0-9]*$"
     },
     "title": {
-      "description": "One line, with no control characters.",
+      "description": "One line, with no control characters, line breaks or marks that reorder text (DESIGN.md §2.1).",
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]+$"
     },
     "project": { "$ref": "#/$defs/key" },
     "kind": { "enum": ["fix", "change", "capability", "chore"] },
