@@ -666,10 +666,21 @@ fn apply(
         reason,
     });
     store.update_item(&item)?;
-    Ok(Output {
-        text,
-        json: json!({ "item": item }),
-    })
+    let json = if step.via == Via::Submit {
+        // §3's shape for a submit. The gates (slice 6) and triggers (slice 9)
+        // fill in `gates` and `holds`, and can make the result `held`.
+        json!({
+            "id": item.id,
+            "result": "done",
+            "status": item.status.as_str(),
+            "gates": [],
+            "holds": [],
+            "item": item,
+        })
+    } else {
+        json!({ "item": item })
+    };
+    Ok(Output { text, json })
 }
 
 /// An ID as typed, with its key in capitals, so `xx-1` finds XX-1.

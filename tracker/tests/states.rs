@@ -125,6 +125,32 @@ fn an_item_goes_open_in_progress_done_open_through_status() {
 }
 
 #[test]
+fn submit_prints_the_shape_section_3_gives_it() {
+    // The gates and triggers (slices 6 and 9) only fill in these fields, so
+    // agents parsing `submit` now won't break when they arrive.
+    let env = env_with_item();
+    for args in [&["submit", "XX-1"][..], &["status", "XX-1", "done"]] {
+        env.json(&["start", "XX-1"]);
+        let output = env.json(args);
+        let item = output["item"].clone();
+        assert_eq!(
+            output,
+            json!({
+                "id": "XX-1",
+                "result": "done",
+                "status": "done",
+                "gates": [],
+                "holds": [],
+                "item": item,
+            }),
+            "{args:?}"
+        );
+        assert_eq!(env.item("XX-1"), item, "{args:?}");
+        env.json(&["reopen", "XX-1", "--reason", "again"]);
+    }
+}
+
+#[test]
 fn status_open_and_status_shelved_need_a_reason() {
     let env = env_with_item();
     env.json(&["start", "XX-1"]);

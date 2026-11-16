@@ -177,7 +177,8 @@ pub fn schema_for(args: &[&str]) -> &'static str {
         ["project", "list", ..] => "project-list",
         ["create", ..] => "create",
         ["list", ..] => "list",
-        ["start" | "submit" | "shelve" | "reopen" | "status", ..] => "move",
+        ["submit", ..] | ["status", _, "done", ..] => "submit",
+        ["start" | "shelve" | "reopen" | "status", ..] => "move",
         _ => panic!(
             "No schema for `tracker {}`. Add one to schemas/.",
             args.join(" ")
