@@ -4,7 +4,7 @@ mod common;
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use common::{Env, check_schema, parse};
 use serde_json::{Value, json};
@@ -266,9 +266,7 @@ fn ten_creates_at_once_get_ten_different_ids() {
 
     let children: Vec<_> = (0..10)
         .map(|i| {
-            Command::new(env!("CARGO_BIN_EXE_tracker"))
-                .env("TRACKER_HOME", env.home.path())
-                .current_dir(env.outside())
+            env.std_cmd()
                 .args(["create", &format!("item {i}"), "--project", "XX", "--json"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -571,9 +569,8 @@ fn a_reader_that_stops_early_doesnt_make_list_panic() {
         fs::write(env.item_path(&format!("XX-{n}")), text).unwrap();
     }
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_tracker"))
-        .env("TRACKER_HOME", env.home.path())
-        .current_dir(env.outside())
+    let mut child = env
+        .std_cmd()
         .arg("list")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -811,4 +808,28 @@ fn a_new_store_is_readable_only_by_its_owner() {
     fs::set_permissions(&existing, fs::Permissions::from_mode(0o755)).unwrap();
     run(&existing);
     assert_eq!(mode(&existing), 0o755);
+}
+
+#[test]
+fn without_tracker_home_the_store_is_in_home_not_the_real_one() {
+    let env = Env::without_store();
+    let output = env
+        .cmd()
+        .env_remove("TRACKER_HOME")
+        .args(["init", "--json"])
+        .assert()
+        .success();
+    let init = parse(&output.get_output().stdout);
+
+    let expected = env.user_home().join(".tracker");
+    assert_eq!(init["home"], expected.to_str().unwrap());
+    assert!(expected.join("config.json").is_file());
+    // An empty TRACKER_HOME counts as unset.
+    let output = env
+        .cmd()
+        .env("TRACKER_HOME", "")
+        .args(["init", "--json"])
+        .assert()
+        .success();
+    assert_eq!(parse(&output.get_output().stdout)["created"], false);
 }

@@ -14,7 +14,7 @@ use tempfile::TempDir;
 pub struct Env {
     /// The store, which `TRACKER_HOME` points to.
     pub home: TempDir,
-    /// Project roots, and a folder outside all of them.
+    /// Project roots, a folder outside all of them, and `HOME`.
     pub work: TempDir,
 }
 
@@ -33,7 +33,14 @@ impl Env {
             work: TempDir::new().unwrap(),
         };
         fs::create_dir_all(env.outside()).unwrap();
+        fs::create_dir_all(env.user_home()).unwrap();
         env
+    }
+
+    /// What `HOME` points to, so that a test which unsets `TRACKER_HOME`, or
+    /// forgets it, uses `<work>/home/.tracker` rather than the real store.
+    pub fn user_home(&self) -> PathBuf {
+        self.work.path().join("home")
     }
 
     /// A folder that's inside no project root.
@@ -48,11 +55,18 @@ impl Env {
         dir
     }
 
-    /// `tracker` with this test's store, run from a folder outside every
-    /// project root unless the test changes `current_dir`.
+    /// `tracker` with this test's store and `HOME`, run from a folder
+    /// outside every project root unless the test changes `current_dir`.
     pub fn cmd(&self) -> Command {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_tracker"));
+        Command::from_std(self.std_cmd())
+    }
+
+    /// The same as `cmd`, as a `std::process::Command`, for tests that
+    /// need to spawn the process themselves. Every test command starts here.
+    pub fn std_cmd(&self) -> std::process::Command {
+        let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_tracker"));
         cmd.env("TRACKER_HOME", self.home.path())
+            .env("HOME", self.user_home())
             .current_dir(self.outside());
         cmd
     }
