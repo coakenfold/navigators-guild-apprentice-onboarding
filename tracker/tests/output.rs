@@ -6,7 +6,7 @@ mod common;
 
 use std::fs;
 
-use common::{Env, parse};
+use common::{Env, check_schema, parse};
 use serde_json::json;
 use tracker::text;
 
@@ -134,6 +134,7 @@ fn errors_that_repeat_input_escape_it() {
     ] {
         let output = env.cmd().args(&args).arg("--json").assert().code(1);
         let stdout = &output.get_output().stdout;
+        check_schema("error", &parse(stdout));
         assert!(!has_raw(stdout, ESC) && !has_raw(stdout, RLO), "{args:?}");
         // Escaped as JSON, so the message itself is unchanged.
         let message = parse(stdout)["error"].as_str().unwrap().to_string();

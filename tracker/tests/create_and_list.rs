@@ -28,14 +28,10 @@ fn open_counts(open: u64) -> Value {
     json!({ "open": open, "in-progress": 0, "review": 0, "done": 0, "shelved": 0 })
 }
 
-/// Runs a command that should fail with exit 1 and `--json`, and returns
-/// the error message.
+/// Runs a command that should fail with exit 1 and `--json`, checks the
+/// error against its schema, and returns the error message.
 fn error_message(env: &Env, args: &[&str]) -> String {
-    let output = env.cmd().args(args).arg("--json").assert().code(1);
-    let error = parse(&output.get_output().stdout);
-    check_schema("error", &error);
-    assert_eq!(error["exit_code"], 1);
-    error["error"].as_str().unwrap().to_string()
+    env.error(args, 1)
 }
 
 #[test]
@@ -486,6 +482,7 @@ fn a_relative_tracker_home_is_refused() {
             .assert()
             .code(1);
         let error = parse(&output.get_output().stdout);
+        check_schema("error", &error);
         let message = error["error"].as_str().unwrap();
         assert!(message.contains("absolute path"), "{args:?}: {message}");
     }
@@ -519,6 +516,7 @@ fn an_argument_that_isnt_utf8_exits_1_without_panicking() {
         .assert()
         .code(1);
     let error = parse(&output.get_output().stdout);
+    check_schema("error", &error);
     assert_eq!(error["exit_code"], 1);
     assert!(!env.item_path("XX-1").exists());
 }
@@ -548,6 +546,7 @@ fn an_unreadable_store_exits_3_and_isnt_reported_as_missing() {
 
     let output = output.code(3);
     let error = parse(&output.get_output().stdout);
+    check_schema("error", &error);
     let message = error["error"].as_str().unwrap();
     assert_eq!(error["exit_code"], 3);
     assert!(!message.contains("tracker init"), "{message}");
@@ -631,34 +630,20 @@ fn a_lost_counter_doesnt_hand_out_an_id_already_on_disk() {
     fs::write(env.home.path().join("counters.json"), "{}\n").unwrap();
 
     // Without the counter, XX would start again at XX-1, the deleted ID.
-    let output = env
-        .cmd()
-        .args(["create", "c", "--project", "XX", "--json"])
-        .assert()
-        .code(3);
-    let message = parse(&output.get_output().stdout)["error"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let message = env.error(&["create", "c", "--project", "XX"], 3);
     assert!(message.contains("XX-2"), "{message}");
     assert!(message.contains("at least 3"), "{message}");
     assert!(!env.item_path("XX-1").exists());
 
     // A counter at the highest number on disk is refused too.
     fs::write(env.home.path().join("counters.json"), "{\"XX\": 2}\n").unwrap();
-    env.cmd()
-        .args(["create", "c", "--project", "XX"])
-        .assert()
-        .code(3);
+    env.error(&["create", "c", "--project", "XX"], 3);
 
     // Set above it, IDs carry on. YY's counter is separate: YY-1 is on disk,
     // so YY is refused until its counter is set as well.
     fs::write(env.home.path().join("counters.json"), "{\"XX\": 3}\n").unwrap();
     assert_eq!(env.create("XX", "c"), "XX-3");
-    env.cmd()
-        .args(["create", "d", "--project", "YY"])
-        .assert()
-        .code(3);
+    env.error(&["create", "d", "--project", "YY"], 3);
 }
 
 #[test]
@@ -754,21 +739,13 @@ fn a_bad_project_key_in_config_json_is_refused() {
         fs::write(&config_path, config.to_string()).unwrap();
 
         for args in [&["list"][..], &["project", "list"]] {
-            let output = env.cmd().args(args).arg("--json").assert().code(3);
-            let message = parse(&output.get_output().stdout)["error"]
-                .as_str()
-                .unwrap()
-                .to_string();
+            let message = env.error(args, 3);
             assert!(
                 message.contains("isn't valid"),
                 "{key:?} {args:?}: {message}"
             );
         }
-        env.cmd()
-            .current_dir(&root)
-            .args(["create", "escape"])
-            .assert()
-            .code(3);
+        env.error_in(&root, &["create", "escape"], 3);
     }
 
     // Nothing was written outside the store, or in it. `items/../../` is
@@ -820,6 +797,7 @@ fn without_tracker_home_the_store_is_in_home_not_the_real_one() {
         .assert()
         .success();
     let init = parse(&output.get_output().stdout);
+    check_schema("init", &init);
 
     let expected = env.user_home().join(".tracker");
     assert_eq!(init["home"], expected.to_str().unwrap());
@@ -831,7 +809,9 @@ fn without_tracker_home_the_store_is_in_home_not_the_real_one() {
         .args(["init", "--json"])
         .assert()
         .success();
-    assert_eq!(parse(&output.get_output().stdout)["created"], false);
+    let init = parse(&output.get_output().stdout);
+    check_schema("init", &init);
+    assert_eq!(init["created"], false);
 }
 
 #[test]
