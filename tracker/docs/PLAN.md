@@ -43,7 +43,7 @@ The stack, where things live, the conventions and the test command are in `guild
 | 4   | Show and delete                 | see an item's full record, and delete one from a real terminal                                        | 3          | —             | merged |
 | 5   | Bad data and polish             | keep working past a corrupt file; get help text, colour and empty states                              | 4          | —             | merged |
 |     | _Checkpoint: course submission_ |                                                                                                       |            |               |        |
-| 6   | Criteria and simple gates       | write Done-when criteria; get refused when they're missing or incomplete                              | 5          | —             | todo   |
+| 6   | Criteria and simple gates       | write Done-when criteria; get refused when they're missing or incomplete                              | 5          | —             | in review |
 |     | _Checkpoint: self-tracking_     |                                                                                                       |            |               |        |
 | 7   | Running checks                  | see checks run at start and submit, and fail with their output                                        | 6          | —             | todo   |
 | 8   | Submit proves committed work    | get items auto-verified against a commit, with saved output and a pinned ref                          | 7          | —             | todo   |
