@@ -47,14 +47,29 @@ fn every_command_has_help_text() {
             assert!(help.starts_with(about), "{what}:\n{help}");
             assert!(help.contains("Usage: tracker"), "{what}:\n{help}");
             assert!(help.contains("--json"), "{what}:\n{help}");
-            // Every option is described: no line names a flag and nothing else.
-            for line in help.lines() {
-                let line = line.trim();
-                if line.starts_with('-') {
-                    let described = line.split("  ").filter(|part| !part.is_empty()).count() > 1;
-                    let long_help_below = flag == "--help";
-                    assert!(described || long_help_below, "{what}: {line}");
+            // Every option and argument is described: on the same line,
+            // after two spaces, or, under `--help` for a command with long
+            // help, on the next line, indented further.
+            let lines: Vec<&str> = help.lines().collect();
+            for (i, line) in lines.iter().enumerate() {
+                let text = line.trim_start();
+                if !text.starts_with('-') && !text.starts_with('<') {
+                    continue;
                 }
+                let beside = text
+                    .trim_end()
+                    .split("  ")
+                    .filter(|part| !part.trim().is_empty())
+                    .count()
+                    > 1;
+                let indent = line.len() - text.len();
+                let below = flag == "--help"
+                    && lines.get(i + 1).is_some_and(|next| {
+                        let next_text = next.trim_start();
+                        !next_text.is_empty() && next.len() - next_text.len() > indent
+                    });
+                let described = beside || below;
+                assert!(described, "{what}: {line}");
             }
         }
     }
