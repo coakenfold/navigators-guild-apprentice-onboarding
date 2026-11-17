@@ -403,6 +403,48 @@ fn an_edit_from_a_terminal_records_interactive_true() {
 }
 
 #[test]
+fn concurrent_edits_all_land() {
+    // `edit` reads the item after taking the lock, so no edit is lost to
+    // another that read the file first.
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    let labels: Vec<String> = (1..=10).map(|n| format!("l{n}")).collect();
+    let children: Vec<_> = labels
+        .iter()
+        .map(|label| {
+            env.std_cmd()
+                .args(["edit", "XX-1", "--label", label, "--json"])
+                .stdout(std::process::Stdio::null())
+                .spawn()
+                .unwrap()
+        })
+        .collect();
+    for mut child in children {
+        assert!(child.wait().unwrap().success());
+    }
+
+    let item = env.item("XX-1");
+    let mut stored: Vec<String> = item["labels"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|label| label.as_str().unwrap().to_string())
+        .collect();
+    stored.sort();
+    let mut expected = labels.clone();
+    expected.sort();
+    assert_eq!(stored, expected);
+    assert_eq!(history(&item).len(), 10);
+
+    let left: Vec<_> = fs::read_dir(env.home.path().join("items"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(left, ["XX-1.json"]);
+}
+
+#[test]
 fn a_move_after_an_edit_still_works() {
     // The edit entry's `fields` must survive the move's rewrite.
     let env = Env::new();
