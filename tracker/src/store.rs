@@ -130,7 +130,10 @@ impl Store {
 
     /// Fails with "Run `tracker init`." (exit 1) until the store has been
     /// created, or when part of it is missing, which `init` puts back. Fails
-    /// with exit 3 if the store is there but can't be read.
+    /// with exit 3 if the store is there but can't be read, or if
+    /// `config.json` can't be parsed, even for a command that doesn't use
+    /// it (§3): a broken store is repaired by hand first, and a command that
+    /// carried on would hide that it's broken.
     pub fn require_exists(&self) -> Result<()> {
         // `init` creates these three, and puts back whichever is missing.
         let parts = [
@@ -171,6 +174,7 @@ impl Store {
                 }
             }
         }
+        crate::config::load(self)?;
         Ok(())
     }
 
