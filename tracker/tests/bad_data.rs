@@ -572,6 +572,62 @@ fn an_items_folder_with_chmod_000_exits_3() {
     }
 }
 
+/// The commands in backticks in `message` that start with `ls -ld` or
+/// `chmod`, as the message suggests running them.
+#[cfg(unix)]
+fn suggested_commands(message: &str) -> Vec<String> {
+    message
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .filter(|part| part.starts_with("ls -ld ") || part.starts_with("chmod "))
+        .map(str::to_string)
+        .collect()
+}
+
+// Review 2's bug 3: a path with a space, or a quote, in it is quoted in
+// the commands the permission messages suggest, so they work pasted.
+#[cfg(unix)]
+#[test]
+fn the_commands_a_permission_message_suggests_work_when_pasted() {
+    let env = Env::without_store();
+    let home = env.work.path().join("it's my store");
+    let run = |args: &[&str]| {
+        env.cmd()
+            .env("TRACKER_HOME", &home)
+            .args(args)
+            .arg("--json")
+            .output()
+            .unwrap()
+    };
+    assert!(run(&["init"]).status.success());
+    let items = home.join("items");
+
+    for (locked, args) in [(&home, &["list"][..]), (&items, &["show", "XX-1"])] {
+        let _mode = Mode::set(locked, 0o000);
+        if !permissions_apply(locked) {
+            return;
+        }
+        let output = run(args);
+        assert_eq!(output.status.code(), Some(3), "{args:?}");
+        let error = common::parse(&output.stdout);
+        let message = error["error"].as_str().unwrap();
+        let commands = suggested_commands(message);
+        assert!(!commands.is_empty(), "{args:?}: {message}");
+        for command in commands {
+            let ran = std::process::Command::new("sh")
+                .args(["-c", &command])
+                .output()
+                .unwrap();
+            assert!(
+                ran.status.success(),
+                "{args:?}: `{command}` failed: {}",
+                String::from_utf8_lossy(&ran.stderr)
+            );
+        }
+    }
+}
+
 /// Every file in the store whose name says it's a temporary file, such as
 /// `XX-1.json.4242.tmp`, in any folder.
 fn temporary_files(dir: &Path) -> Vec<PathBuf> {

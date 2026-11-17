@@ -43,13 +43,45 @@ impl Error {
 pub fn io(doing: &str, path: &Path, e: &std::io::Error) -> Error {
     let display = path.display();
     let hint = match e.kind() {
-        ErrorKind::PermissionDenied => format!(
-            " Check its permissions with `ls -ld {display}`: the store and everything in it \
-             should be yours, readable and writable by you, as `tracker init` made them."
-        ),
+        ErrorKind::PermissionDenied => {
+            // A folder above `path` without permission hides it, so
+            // `ls -ld` would fail on `path` itself. The deepest part that
+            // can be looked at is the one to check.
+            let shown = path
+                .ancestors()
+                .find(|part| std::fs::symlink_metadata(part).is_ok())
+                .unwrap_or(path);
+            let what = if shown == path {
+                "its permissions".to_string()
+            } else {
+                format!("the permissions of {}, which hides it,", shown.display())
+            };
+            format!(
+                " Check {what} with `ls -ld {}`: the store and everything in it should be \
+                 yours, readable and writable by you, as `tracker init` made them.",
+                shell_quote(shown)
+            )
+        }
         _ => String::new(),
     };
     Error::store(format!("Can't {doing} {display}: {e}.{hint}"))
+}
+
+/// `path` as one word for a shell command a message suggests, such as
+/// `ls -ld …`, so it works when pasted: as it is if it holds only
+/// characters a shell takes literally, and otherwise in single quotes,
+/// with each `'` in it written as `'\''`.
+pub fn shell_quote(path: &Path) -> String {
+    let text = path.to_string_lossy();
+    let literal = !text.is_empty()
+        && text
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "/._-+@,:".contains(c));
+    if literal {
+        text.into_owned()
+    } else {
+        format!("'{}'", text.replace('\'', r"'\''"))
+    }
 }
 
 /// The same as `io`, for one of the parts of the store that `tracker init`

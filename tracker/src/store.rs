@@ -185,10 +185,11 @@ impl Store {
                 }
                 Err(e) if e.kind() == ErrorKind::PermissionDenied => {
                     let home = self.home.display();
+                    let quoted = error::shell_quote(&self.home);
                     return Err(Error::store(format!(
                         "Can't read the store at {home}: {e}. Check its permissions with \
-                         `ls -ld {home}`. If it's yours, `chmod u+rwx {home}` lets you read and \
-                         write it again."
+                         `ls -ld {quoted}`. If it's yours, `chmod u+rwx {quoted}` lets you read \
+                         and write it again."
                     )));
                 }
                 Err(e) => return Err(error::io("read", path, &e)),
