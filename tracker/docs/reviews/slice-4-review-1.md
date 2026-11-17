@@ -26,37 +26,7 @@ I found no bug that loses data, and no new security hole. The findings are:
 - The test harness hangs rather than fails if a prompt never appears (test gap 1).
 - `tty::confirm` leaves the re-read under the lock to each caller, which is the step slice 9's `approve` most needs to get right (finding 9).
 
-## Outcome
-
-Added after the fixes. The findings below are left as written, so their line links point at `75ba405`, not at the fixed code. Each fix is in its own commit, and the readme's [Fixes after review 1](../slice-4-readme.md#fixes-after-review-1) lists them too.
-
-Seen failing: the tests for bugs 1, 2, 4 and 5 were each run with their fix commit's tests and its parent's `src/` and `schemas/`, and each failed. Test gap 2's test failed with `delete_item`'s rollback removed. Test gap 1's test wasn't run against the old harness, which would hang rather than fail. Test gaps 4 and 6 pin behaviour that was already right, so they pass on the old code by design.
-
-After the fixes, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and all 166 tests pass, 8 more than at `75ba405`.
-
-| Finding | Resolved by |
-| --- | --- |
-| Bug 1: `show --json` isn't "the item exactly as its file holds it" | `6c1a831`: option (a). `show` calls `item::lost_on_rewrite` and names what it can't show, at the end of the text and as `warning` beside `item`, which `show.schema.json` now allows. The schema's description, the readme and the test name (now `show_json_is_the_item_as_its_file_holds_it_when_this_version_wrote_it`) no longer claim exactness. `Store::load_item_with_text` reads the item and its text in one read. Tests: `show_names_the_fields_of_a_file_from_a_newer_tracker`, and `show_prints_an_item_whose_history_has_a_command_it_doesnt_know` now checks the warning |
-| Bug 2: the refusal tells an agent to shelve items that can't be shelved | `ca0d1b3`: the shelve advice is given only where `states::find` draws a shelve, for open and in-progress items. Review, done and shelved items get "Only a human deletes items, so a human decides whether to delete XX-3, which is done." Test: `delete_refused_without_a_terminal_suggests_shelve_only_where_it_works` |
-| Bug 3: a title with a line break breaks `deleted.schema.json` | Still open. Not taken in this round |
-| Bug 4: the warning calls an unchecked done item "verified" | `9ed9576`: "done at <time>, unchecked: no gates ran". An `auto` record reads "verified by its gates at", and a `human` one "approved by a human at" |
-| Bug 5: the warning understates what's lost in a newer tracker's file | `bef1a78`: the second option. `delete` exits 3 before asking, naming the fields, as `update_item` does for a rewrite, since a newer tracker may have more to remove, such as slice 8's ref. Test: `delete_refuses_a_file_from_a_newer_tracker_before_asking` |
-| Security 6: the readme's `script` recipe | `41a1197`: no code change. §7 and the readme's Try it say the recipe is the bypass §7 describes, and that only the digest tells a delete made through it from yours |
-| Security 7: a forged `deleted.json` line blocks `create` | `f7dd832`: no code change. DESIGN.md §3's `audit` row and PLAN.md's slice 16 _Done when_ have `audit` report a `deleted.json` ID at or above its project's counter |
-| Design 8: §2.8's example is out of date | `fc24732`: the example shows what `delete` prints, with the title, "deleted.json records the delete for the digest" and the shared question. Its commit and `refs/tracker/BM-12` stay, for slice 8 |
-| Design 9: `tty::confirm` doesn't own the re-read under the lock | `5a51de2`: `Store::lock_unchanged(id, before, command)` takes the lock and refuses with exit 1 if the item was removed or changed. `delete` calls it. Test: `lock_unchanged_holds_the_lock_only_while_the_file_is_as_it_was`, which also covers an item removed while the question waits |
-| Design 10: what `digest ack` asks for | `44b2d11`: it asks for `ack`, not the project key. Under the lock it builds the digest again and, if that differs from the one shown, records nothing and exits 1. §2.7, `tty::confirm`'s comment, and PLAN.md's slice 16 prompt and _Done when_ say so. `8799c74` records it in the readme |
-| Design 11: `show` needs a `config.json` that parses | `1fcdeec`: kept as it is. `show` exits 3 on a `config.json` that can't be parsed, like every command. §3 says so. `2c1a976` names the commit in the readme |
-| Test gap 1: the terminal harness hangs | `ef82659`: `typing` reads `script`'s output on a thread and gives up after `TERMINAL_TIMEOUT` (20 seconds), killing the command and panicking with the output so far. Test: `the_terminal_harness_fails_rather_than_hangs_when_the_prompt_never_comes` |
-| Test gap 2: `delete_item`'s rollback | `b44b843`: `a_delete_whose_file_cant_be_removed_takes_its_record_back_out`, Unix only, with `items/` set to `chmod 500`, both with and without an earlier `deleted.json`. It skips where permissions aren't enforced, as for root |
-| Test gap 3: a newer tracker's file in `show --json` and `delete` | `6c1a831` and `bef1a78`: the tests for bugs 1 and 5, each with a `criteria` field |
-| Test gap 4: a cancelled delete with `--json` | `ce27825`: `delete_json_in_a_terminal_cancelled_prints_only_the_error_on_stdout` |
-| Test gap 5: the terminal tests have only run on macOS | Still open |
-| Test gap 6: `show` of an item whose project isn't in `config.json` | `96ee241`: `show_and_delete_work_on_an_item_whose_project_isnt_in_config_json`, which also deletes one |
-| Process: the readme is accurate apart from finding 1 | `6c1a831` corrects finding 1's claims. `8ab0809` adds the readme's Fixes after review 1 section and updates its Status row and test counts |
-| Process: the slice is one commit | Unchanged. This round's fixes are one commit each |
-| Process: PLAN.md marks slice 4 `done` before this review | Still open |
-| Slice 5 must decide | Unchanged, for slice 5 |
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
 
 ## Done when
 
@@ -145,3 +115,35 @@ Slice 5 is about bad data, so it needs to settle what `show` and `delete` do wit
 - **A corrupt item file can't be deleted.** Both `show` and `delete` exit 3 today, so the only way to remove one is by hand, which leaves no line in `deleted.json` and so nothing for the digest. §4.4 says a file that can't be parsed "costs one item, not the whole tracker". `delete` could still work from a terminal: warn that the file can't be read, take the ID from the file name, and record `"title": null` (or the raw first line). That needs `deleted.schema.json` to allow it. `show` should print the parser's message and the file's path, which it already does.
 - **Colour** must stay off `show`'s output and off the question on stderr when either isn't a terminal. A test that redirects stderr while stdin is a terminal would check the second.
 - **Its "no temporary files are left behind" check** should include a `delete`, which writes `deleted.json` through a temporary file.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `75ba405`, not at the fixed code. Each fix is in its own commit, and the readme's [Fixes after review 1](../slice-4-readme.md#fixes-after-review-1) lists them too.
+
+Seen failing: the tests for bugs 1, 2, 4 and 5 were each run with their fix commit's tests and its parent's `src/` and `schemas/`, and each failed. Test gap 2's test failed with `delete_item`'s rollback removed. Test gap 1's test wasn't run against the old harness, which would hang rather than fail. Test gaps 4 and 6 pin behaviour that was already right, so they pass on the old code by design.
+
+After the fixes, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and all 166 tests pass, 8 more than at `75ba405`.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: `show --json` isn't "the item exactly as its file holds it" | `6c1a831`: option (a). `show` calls `item::lost_on_rewrite` and names what it can't show, at the end of the text and as `warning` beside `item`, which `show.schema.json` now allows. The schema's description, the readme and the test name (now `show_json_is_the_item_as_its_file_holds_it_when_this_version_wrote_it`) no longer claim exactness. `Store::load_item_with_text` reads the item and its text in one read. Tests: `show_names_the_fields_of_a_file_from_a_newer_tracker`, and `show_prints_an_item_whose_history_has_a_command_it_doesnt_know` now checks the warning |
+| Bug 2: the refusal tells an agent to shelve items that can't be shelved | `ca0d1b3`: the shelve advice is given only where `states::find` draws a shelve, for open and in-progress items. Review, done and shelved items get "Only a human deletes items, so a human decides whether to delete XX-3, which is done." Test: `delete_refused_without_a_terminal_suggests_shelve_only_where_it_works` |
+| Bug 3: a title with a line break breaks `deleted.schema.json` | Still open. Not taken in this round |
+| Bug 4: the warning calls an unchecked done item "verified" | `9ed9576`: "done at <time>, unchecked: no gates ran". An `auto` record reads "verified by its gates at", and a `human` one "approved by a human at" |
+| Bug 5: the warning understates what's lost in a newer tracker's file | `bef1a78`: the second option. `delete` exits 3 before asking, naming the fields, as `update_item` does for a rewrite, since a newer tracker may have more to remove, such as slice 8's ref. Test: `delete_refuses_a_file_from_a_newer_tracker_before_asking` |
+| Security 6: the readme's `script` recipe | `41a1197`: no code change. §7 and the readme's Try it say the recipe is the bypass §7 describes, and that only the digest tells a delete made through it from yours |
+| Security 7: a forged `deleted.json` line blocks `create` | `f7dd832`: no code change. DESIGN.md §3's `audit` row and PLAN.md's slice 16 _Done when_ have `audit` report a `deleted.json` ID at or above its project's counter |
+| Design 8: §2.8's example is out of date | `fc24732`: the example shows what `delete` prints, with the title, "deleted.json records the delete for the digest" and the shared question. Its commit and `refs/tracker/BM-12` stay, for slice 8 |
+| Design 9: `tty::confirm` doesn't own the re-read under the lock | `5a51de2`: `Store::lock_unchanged(id, before, command)` takes the lock and refuses with exit 1 if the item was removed or changed. `delete` calls it. Test: `lock_unchanged_holds_the_lock_only_while_the_file_is_as_it_was`, which also covers an item removed while the question waits |
+| Design 10: what `digest ack` asks for | `44b2d11`: it asks for `ack`, not the project key. Under the lock it builds the digest again and, if that differs from the one shown, records nothing and exits 1. §2.7, `tty::confirm`'s comment, and PLAN.md's slice 16 prompt and _Done when_ say so. `8799c74` records it in the readme |
+| Design 11: `show` needs a `config.json` that parses | `1fcdeec`: kept as it is. `show` exits 3 on a `config.json` that can't be parsed, like every command. §3 says so. `2c1a976` names the commit in the readme |
+| Test gap 1: the terminal harness hangs | `ef82659`: `typing` reads `script`'s output on a thread and gives up after `TERMINAL_TIMEOUT` (20 seconds), killing the command and panicking with the output so far. Test: `the_terminal_harness_fails_rather_than_hangs_when_the_prompt_never_comes` |
+| Test gap 2: `delete_item`'s rollback | `b44b843`: `a_delete_whose_file_cant_be_removed_takes_its_record_back_out`, Unix only, with `items/` set to `chmod 500`, both with and without an earlier `deleted.json`. It skips where permissions aren't enforced, as for root |
+| Test gap 3: a newer tracker's file in `show --json` and `delete` | `6c1a831` and `bef1a78`: the tests for bugs 1 and 5, each with a `criteria` field |
+| Test gap 4: a cancelled delete with `--json` | `ce27825`: `delete_json_in_a_terminal_cancelled_prints_only_the_error_on_stdout` |
+| Test gap 5: the terminal tests have only run on macOS | Still open |
+| Test gap 6: `show` of an item whose project isn't in `config.json` | `96ee241`: `show_and_delete_work_on_an_item_whose_project_isnt_in_config_json`, which also deletes one |
+| Process: the readme is accurate apart from finding 1 | `6c1a831` corrects finding 1's claims. `8ab0809` adds the readme's Fixes after review 1 section and updates its Status row and test counts |
+| Process: the slice is one commit | Unchanged. This round's fixes are one commit each |
+| Process: PLAN.md marks slice 4 `done` before this review | Still open |
+| Slice 5 must decide | Unchanged, for slice 5 |
