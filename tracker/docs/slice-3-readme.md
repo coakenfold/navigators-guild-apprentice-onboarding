@@ -388,7 +388,7 @@ Further tests cover the edges: `an_edit_that_changes_nothing_writes_nothing`, `e
 
 **`edit` checks the file against its output.** The `edit` helper in `tests/organise.rs` asserts that the file on disk equals the item the command printed, so every edit test also checks that `--json` reports what was written.
 
-**Seen failing.** The first pass landed as one commit with its tests (`1296661`), so there's no record of its tests failing before the code. Review 1's [outcome](reviews/slice-3-review-1.md#outcome) records that each test added with a fix was seen failing first, and that `concurrent_edits_all_land` and `an_edit_from_a_terminal_records_interactive_true`, which cover behaviour that already worked, were each checked by breaking the code on purpose. Review 2 has no outcome section yet, so nothing records whether the tests added after it were seen failing first.
+**Seen failing.** The first pass landed as one commit with its tests (`1296661`), so there's no record of its tests failing before the code. Review 1's [outcome](reviews/slice-3-review-1.md#outcome) records that each test added with a fix was seen failing first, and that `concurrent_edits_all_land` and `an_edit_from_a_terminal_records_interactive_true`, which cover behaviour that already worked, were each checked by breaking the code on purpose. Review 2's [outcome](reviews/slice-3-review-2.md#outcome) records that each test added after it was seen failing against the code from before its fix: three were run with their fix commit's parent's `src/` and `schemas/`, `wide_characters_keep_the_list_in_line` against the old `table`, and `a_wrong_output_is_caught`'s new cases with the schema's `else` branch cut back.
 
 **The fixtures.** `tests/fixtures/slice-3/` holds three files written by this slice's binary:
 
@@ -484,7 +484,7 @@ A few consequences:
 
 ## Fixes after review 2
 
-[slice-3-review-2.md](reviews/slice-3-review-2.md) reviewed the branch at `901bea6`, after review 1's fixes and this readme. It confirmed that review 1's claimed fixes are real and that the readme's test counts were right. It found review 1's fix before slice 4 still open (finding 1), one new bug of the same kind (finding 2), a lookalike-label problem that review 1's suggested fix wouldn't close (finding 3), a stronger option for T9 now that edits record `labels_removed` (finding 4), design references that could point anywhere (finding 5), three low-severity items, two places the docs disagreed with the code, and three test gaps. `5d85d0f` saves the review. Each fix below is in its own commit, and the commits that change behaviour also update DESIGN.md and this readme. The review has no outcome section yet, so nothing records whether each new test was seen failing first.
+[slice-3-review-2.md](reviews/slice-3-review-2.md) reviewed the branch at `901bea6`, after review 1's fixes and this readme. It confirmed that review 1's claimed fixes are real and that the readme's test counts were right. It found review 1's fix before slice 4 still open (finding 1), one new bug of the same kind (finding 2), a lookalike-label problem that review 1's suggested fix wouldn't close (finding 3), a stronger option for T9 now that edits record `labels_removed` (finding 4), design references that could point anywhere (finding 5), three low-severity items, two places the docs disagreed with the code, and three test gaps. `5d85d0f` saves the review. Each fix below is in its own commit, and the commits that change behaviour also update DESIGN.md and this readme. Its [outcome](reviews/slice-3-review-2.md#outcome) (`b244685`) records what was fixed and how each new test was seen failing.
 
 ### Low severity
 
@@ -552,8 +552,6 @@ Where two reviews, or a review and slice 2's readme, raised the same thing, it's
 - Hand-edited labels, once review 1's finding 4 is decided (review 1's gap 6).
 
 **Process**
-
-- **Review 2 has no outcome section**, unlike review 1, so the review file doesn't record what was fixed. This readme's [Fixes after review 2](#fixes-after-review-2) does.
 
 - **The `unchecked` note is still in the present tense.** `states::UNCHECKED_NOTE` reads "No gates ran: this version of tracker has none yet…" and stays in item files after slice 6 adds gates. It's cheapest to change before self-tracking starts after slice 6, while only the test fixtures hold the old text. From review 1, and slice 2 review 2's item 9.
 - **PLAN.md marks slice 3 `done` in its first-pass commit**, before any review, as slice 2's did (review 1). So the Status column means "built", not "built and reviewed". PLAN.md's intro should say so, or the status should change only after the review's fixes.
