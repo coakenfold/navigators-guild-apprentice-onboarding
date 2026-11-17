@@ -80,7 +80,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 
 ### Slice 3: Organise and filter
 
-- **Prompt:** "Add `--kind`, `--priority` and repeatable `--label` to `create`, using §2.1's values and defaults; labels are lowercased and de-duplicated. Add an `edit` command for priority, labels (`--label` and `--unlabel`), title, kind, design and description; it adds one history entry and is refused for done items. `list` sorts by priority within each project, marks priority and kind, and gets the combinable filters `--project`, `--status` (comma-separated), `--priority`, `--label`, `--kind` and `--by`. `--by` checks that the item is done as well as its `verification`, because a file written by slice 2 can hold a record on a shelved item. Without `--status`, `list` shows only open, in-progress and review items. Inside a project root, `list` shows only that project unless `--project` or the new `--all` says otherwise, and both its text and its JSON (`project`: the key, or `null`) say which it covered, as §3 describes."
+- **Prompt:** "Add `--kind`, `--priority` and repeatable `--label` to `create`, using §2.1's values and defaults; labels are lowercased and de-duplicated. Add an `edit` command for priority, labels (`--label` and `--unlabel`), title, kind, design and description; it adds one history entry, with `via: "edit"`, `from` equal to `to`, and `fields` naming what changed (§2.1), and is refused for done items. `list` sorts by priority within each project, marks priority and kind, and gets the combinable filters `--project`, `--status` (comma-separated), `--priority`, `--label`, `--kind` and `--by`. `--by` checks that the item is done as well as its `verification`, because a file written by slice 2 can hold a record on a shelved item. Without `--status`, `list` shows only open, in-progress and review items. Inside a project root, `list` shows only that project unless `--project` or the new `--all` says otherwise, and both its text and its JSON (`project`: the key, or `null`) say which it covered, as §3 describes."
 - **Done when:**
   - `list` shows high before medium before low.
   - An unknown priority or kind exits 1 and names the allowed values. `--label Bug --label bug` is stored once, as `bug`.
@@ -126,7 +126,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - `evidence`, for manual criteria only
   - repeatable `create --done-when`, which adds manual criteria
   - the `written` fingerprints (sha2), taken at create
-  - interactive-only `criterion accept`
+  - interactive-only `criterion accept`, which adds a history entry with `via: "criterion-accept"` (§2.1)
 
   Add gates G1 (at start: the item has criteria, and no other item in the project is in progress or review), G2 and G6. They run in a new `gates <id>` dry run and in front of `submit`. Any failure lists every reason, changes nothing and exits 2."
 
