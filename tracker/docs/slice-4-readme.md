@@ -6,10 +6,10 @@ After slice 4 you can **see an item's full record, and delete one from a real te
 
 | | |
 | --- | --- |
-| Status | Every _Done when_ check has a test, and every test passes, as does the test command. The by-hand check is done too: a person deleted an item in each state by typing its ID in a real terminal, and a wrong ID cancelled ([Checks done by hand](#checks-done-by-hand)). Slice 3's two fixes before slice 4 are done, each in its own commit ([below](#slice-3s-fixes-before-slice-4)). From [review 1](reviews/slice-4-review-1.md), four bugs, both security items, all four DESIGN.md items and five test gaps are done ([below](#fixes-after-review-1)). The branch isn't merged into `main`. What's left is listed under [Still open](#still-open). |
-| Branch | `feat/tracker/slice-4`: `c980317` (`feat: slice 4 first pass`), then `bf229d0` and `1d2f64e` (slice 3's fixes) and `c1a08b2` (slice 3's docs pointed at them) |
+| Status | Every _Done when_ check has a test, and every test passes, as does the test command. The by-hand check is done too: a person deleted an item in each state by typing its ID in a real terminal, and a wrong ID cancelled ([Checks done by hand](#checks-done-by-hand)). Slice 3's two fixes before slice 4 are done, each in its own commit ([below](#slice-3s-fixes-before-slice-4)). From [review 1](reviews/slice-4-review-1.md), four bugs, both security items, all four DESIGN.md items and five test gaps are done ([below](#fixes-after-review-1)). From [review 2](reviews/slice-4-review-2.md), both bugs, both DESIGN.md items and all three test gaps are done ([below](#fixes-after-review-2)). The branch isn't merged into `main`. What's left is listed under [Still open](#still-open). |
+| Branch | `feat/tracker/slice-4`: `c980317` (`feat: slice 4 first pass`), then `bf229d0` and `1d2f64e` (slice 3's fixes), `c1a08b2` (slice 3's docs pointed at them) and `75ba405` (this readme). Then review 1's fixes and their docs, `6c1a831` to `574af5f` ([Fixes after review 1](#fixes-after-review-1)), `d7fd570` (slice 3's reviews), `3880bf9` (the `slice-review` skill, outside `tracker/`), `85f66f3` (review 2), and review 2's fixes from `9d16c32` ([Fixes after review 2](#fixes-after-review-2)) |
 | Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/` |
-| Tests | 166: 38 in `tests/create_and_list.rs`, 34 in `tests/organise.rs`, 27 in `tests/states.rs`, 22 in `tests/show_and_delete.rs`, 12 in `tests/item_files.rs`, 11 in `tests/docs_links.rs`, 6 each in `tests/fixtures.rs` and `tests/output.rs`, 4 each in `tests/schemas.rs` and `tests/store_writes.rs`, and 2 in `tests/item_ids.rs` |
+| Tests | 170: 39 in `tests/create_and_list.rs`, 34 in `tests/organise.rs`, 27 in `tests/states.rs`, 24 in `tests/show_and_delete.rs`, 13 in `tests/item_files.rs`, 11 in `tests/docs_links.rs`, 6 each in `tests/fixtures.rs` and `tests/output.rs`, 4 each in `tests/schemas.rs` and `tests/store_writes.rs`, and 2 in `tests/item_ids.rs` |
 
 ## Contents
 
@@ -24,6 +24,7 @@ After slice 4 you can **see an item's full record, and delete one from a real te
 - [Testing](#testing)
 - [Decisions worth knowing](#decisions-worth-knowing)
 - [Fixes after review 1](#fixes-after-review-1)
+- [Fixes after review 2](#fixes-after-review-2)
 - [Still open](#still-open)
 - [Limits, and what later slices change](#limits-and-what-later-slices-change)
 
@@ -199,7 +200,7 @@ Both take `--json`. An ID can be typed in lower case. Neither needs a project, s
 | `0` | `show` printed the item, or `delete` deleted it |
 | `1` | No such item, or not an ID. For `delete`, also: stdin isn't a terminal, the answer wasn't the ID, or the item changed or was removed while the question waited. For `create` and `edit`, a label with a capital that has no lower-case form |
 | `2` | Not used yet. It's reserved for "refused by a gate" (slice 6) |
-| `3` | The store, the item file or `deleted.json` can't be read, or `deleted.json` can't be written or the item file removed. An item file that can't be parsed also exits 3, until slice 5 |
+| `3` | `config.json` can't be parsed, for every command but `init`, which reports it the same way. The store, the item file or `deleted.json` can't be read, or `deleted.json` can't be written or the item file removed. An item file that can't be parsed also exits 3, until slice 5 |
 
 ## The delete record
 
@@ -245,8 +246,8 @@ A few consequences:
 
 `show` in [src/main.rs](../src/main.rs):
 
-1. Checks that the store exists and puts the ID's key in capitals.
-2. Reads the item with `Store::load_item`, which exits 1 for a missing item and 3 for a file it can't read or parse. It takes no lock, as `list` doesn't: every write is a rename (slice 1's [atomic writes](slice-1-readme.md#atomic-writes)), so a reader sees the whole old file or the whole new one.
+1. Checks that the store exists, and that `config.json` parses, and puts the ID's key in capitals.
+2. Reads the item and its file's text in one read with `Store::load_item_with_text`, which exits 1 for a missing item and 3 for a file it can't read or parse. It takes no lock, as `list` doesn't: every write is a rename (slice 1's [atomic writes](slice-1-readme.md#atomic-writes)), so a reader sees the whole old file or the whole new one.
 3. Reads `config.json` for the project's name. A project that isn't there is shown as "(not in config.json)".
 4. Prints the heading line, ID and title, then the fields as a `table` of two columns: project, kind, status, priority, labels and design if the item has them, created and updated.
 5. Prints the description, if there is one, under "Description:", indented, with its line breaks kept.
@@ -256,6 +257,8 @@ A few consequences:
 **Escaping.** A file edited by hand can hold anything, so every piece of free text is escaped before it's placed. `table` escapes each cell. The title and each history detail go through `text::for_terminal` with line breaks escaped too, so they can't start a line of their own. The description goes through it with `\n` kept, so its paragraphs survive. `main` then escapes the whole output once more, as for every command. `show_escapes_text_edited_by_hand` checks that an escape sequence, a bell, a C1 control, a line separator and a mark that reorders text, in the title, description or a reason, never reach the terminal.
 
 A history entry whose command this version doesn't know, from a file a newer tracker wrote, is shown with the command `unknown`, as `list --json` prints it ([slice 2's readme](slice-2-readme.md#fixes-after-review-2)). `show` never writes, so the file stays as it was.
+
+**Fields it can't show.** `item::lost_on_rewrite` compares the file with what this version would write back, and sorts what differs into two kinds. `unknown` is a field, or a value inside a record or the history, that this version doesn't know, such as a newer tracker's `criteria` or a history entry with `via: "approve"`. `show` names those at the end of the text, and as `warning` beside `item`. `respelled` is a value it knows but would write another way: `[]` or `null`, which it leaves out, or a time with an offset such as `+00:00`, which it writes as the same instant ending in `Z`. Those come from hand edits and hide nothing, so `show` says nothing about them.
 
 ### The confirmation
 
@@ -271,12 +274,12 @@ It doesn't take the lock and doesn't know what the command will change. That's t
 
 `delete` in [src/main.rs](../src/main.rs):
 
-1. Checks that the store exists and puts the ID's key in capitals.
-2. Reads the item and its file's text in one read, with `Store::load_item_with_text`. A missing item exits 1 here, before the terminal check, so an agent asking to delete an ID that doesn't exist is told it doesn't exist. A file holding fields this version doesn't know, such as one a newer tracker wrote, exits 3 here, naming them, and nothing is asked. A newer tracker may have more to remove than this version knows about, such as slice 8's git ref, and a delete can't be undone, so it's left to the tracker that wrote the file. `Store::update_item` refuses to rewrite such a file for the same reason.
+1. Checks that the store exists, and that `config.json` parses, and puts the ID's key in capitals.
+2. Reads the item and its file's text in one read, with `Store::load_item_with_text`. A missing item exits 1 here, before the terminal check, so an agent asking to delete an ID that doesn't exist is told it doesn't exist. A file holding fields this version doesn't know (`unknown`, under [`show`](#show)), such as one a newer tracker wrote, exits 3 here, naming them, and nothing is asked. A newer tracker may have more to remove than this version knows about, such as slice 8's git ref, and a delete can't be undone, so it's left to the tracker that wrote the file. `Store::update_item` refuses to rewrite such a file for the same reason. A file whose values are only written differently (`respelled`) is deleted as usual.
 3. Builds the warning with `deletion_warning` and calls `tty::confirm`, without the lock. Holding the lock while a person reads and decides would stop every other command, an agent's `create` included, for as long as that takes.
 4. Takes the store's lock with `Store::lock_unchanged`, which reads the file's text again. If the file is gone, it exits 1 ("was removed while you were deciding"). If the text differs at all from what was read in step 2, it exits 1 ("changed while you were deciding") and deletes nothing, so what's deleted is exactly what the warning described (§4.4). The item in step 2 was parsed from that same text, so the warning and this check describe the same file.
 5. Builds the record (ID, title, state, the current time and `tty::is_interactive()`) and hands it, as one line of JSON, to `Store::delete_item` in [src/store.rs](../src/store.rs).
-6. `delete_item` appends the line to `deleted.json` through `write_file`, then removes the item file and flushes `items/`. The record is written first, so a crash between the two leaves a delete that's listed but didn't happen, which you'd notice, rather than one that happened unlisted. If the file can't be removed, it puts `deleted.json` back as it was, or removes it if this was the first delete, and exits 3. If even that fails, the message says to remove the last line by hand. `a_delete_whose_file_cant_be_removed_takes_its_record_back_out` tests both cases with `items/` set to `chmod 500`, on Unix, and skips where permissions aren't enforced, as for root.
+6. `delete_item` appends the line to `deleted.json` through `write_file`, then removes the item file and flushes `items/`. The record is written first, so a crash between the two leaves a delete that's listed but didn't happen, which you'd notice, rather than one that happened unlisted. If the file can't be removed, it puts `deleted.json` back as it was, or removes it if this was the first delete, and exits 3. If even that fails, the message says to remove the last line by hand. If `deleted.json` already has a line for the ID, from a delete that crashed before it removed the file, it doesn't add another, so running the delete again removes the file and the digest lists the delete once. IDs are never reused, so such a line can only be from that delete. `a_delete_whose_file_cant_be_removed_takes_its_record_back_out` tests both cases with `items/` set to `chmod 500`, on Unix, and skips where permissions aren't enforced, as for root.
 
 Appending reads the whole file, adds a newline if the last line has none, adds the record and writes the result through `write_file`, so `deleted.json` is never half-written, like every other file in the store.
 
@@ -320,16 +323,17 @@ This is §2.8's example, which review 1 brought into line with the code. It name
 | File | What changed |
 | --- | --- |
 | [src/tty.rs](../src/tty.rs) | `confirm`, the shared confirmation for human-only commands, beside `is_interactive`. |
+| [src/item.rs](../src/item.rs) | `lost_on_rewrite` returns a `Lost`, which sorts what a rewrite would change into `unknown` and `respelled` fields. `Store::update_item` still refuses both. `show` and `delete` look only at `unknown`. |
 | [src/main.rs](../src/main.rs) | The `Show` and `Delete` variants of `Command`, with their `--help` text. `show`, with `verification_rows` and `entries`. `delete` and `deletion_warning`. `init`'s note about a lost `counters.json` now says `create` checks `deleted.json` too. For slice 3's fixes, `check_new_labels` refuses a capital with no lower-case form, the `--label` help of `create` and `edit` says so, and `edit` rebuilds the labels through `add_labels` only when given `--label` or `--unlabel`. |
-| [src/store.rs](../src/store.rs) | `deleted_path`, `item_text`, which reads an item file's text exactly as it is on disk, `load_item_with_text`, which reads the item and that text in one read, `lock_unchanged`, which takes the lock and refuses if that text has changed, and `delete_item`. `next_id`'s tripwire becomes `highest_number_used`, which reads `items/` and, through `read_deleted`, `deleted.json`, and says which it found. |
+| [src/store.rs](../src/store.rs) | `deleted_path`, `item_text`, which reads an item file's text exactly as it is on disk, `load_item_with_text`, which reads the item and that text in one read, `lock_unchanged`, which takes the lock and refuses if that text has changed, and `delete_item`, which adds no second line for an ID `deleted.json` already lists. `require_exists` parses `config.json` too. `next_id`'s tripwire becomes `highest_number_used`, which reads `items/` and, through `read_deleted`, `deleted.json`, and says which it found. |
 | [schemas/show.schema.json](../schemas/show.schema.json), [schemas/delete.schema.json](../schemas/delete.schema.json), [schemas/deleted.schema.json](../schemas/deleted.schema.json) | New, as described under [JSON output](#json-output). |
 | [tests/show_and_delete.rs](../tests/show_and_delete.rs) | Every test for `show` and `delete`. `deleted` reads `deleted.json` and checks each line against its schema. `edit_file` changes an item's file as a hand edit would. `PROMPT` is the end of the question the tests wait for. |
 | [tests/common/mod.rs](../tests/common/mod.rs) | `Env::in_terminal_typing` and `Env::in_terminal_typing_sh`, through `typing`, and `script_cmd`, which `in_terminal` now shares, takes any command, and sets `TRACKER` to the binary. `typing` reads `script`'s output on its own thread, and `read_until` waits for it with a deadline. `in_terminal_typing_within` takes a shorter deadline, for the test of the deadline itself. `schema_for` maps `show` and `delete` to their schemas. |
 | [tests/organise.rs](../tests/organise.rs) | `a_label_with_no_lower_case_form_is_refused` and `a_label_written_twice_by_hand_is_kept_and_removed_once`, for slice 3's fixes. |
 | [tests/fixtures.rs](../tests/fixtures.rs) | `the_binary_shows_every_fixture_with_each_history_time`. |
-| [tests/item_files.rs](../tests/item_files.rs) | `show_prints_an_item_whose_history_has_a_command_it_doesnt_know`. |
+| [tests/item_files.rs](../tests/item_files.rs) | `show_prints_an_item_whose_history_has_a_command_it_doesnt_know`, `lock_unchanged_holds_the_lock_only_while_the_file_is_as_it_was` and `lost_on_rewrite_tells_unknown_fields_from_values_written_differently`. |
 | [tests/schemas.rs](../tests/schemas.rs) | `a_wrong_show_or_delete_output_is_caught`. |
-| [tests/create_and_list.rs](../tests/create_and_list.rs) | `commands_without_a_store_say_run_tracker_init` covers `show` and `delete` too. |
+| [tests/create_and_list.rs](../tests/create_and_list.rs) | `commands_without_a_store_say_run_tracker_init` covers `show` and `delete` too. `every_command_refuses_a_config_json_that_cant_be_parsed` is new. |
 | [DESIGN.md](DESIGN.md) | §2.7 describes the shared confirmation: the refusal without a terminal, the question on stderr, cancelling with exit 1, the ID in either case, and the re-read under the lock. §4.1 says `deleted.json` holds one JSON object per line. §4.4 says the item files and `deleted.json` are a tripwire for `counters.json`. §2.1 says `create` and `edit --label` refuse a capital with no lower-case form. |
 | [PLAN.md](PLAN.md) | Slice 4's Status is `done`. |
 | [slice-3-readme.md](slice-3-readme.md), [slice-3-review-1.md](reviews/slice-3-review-1.md), [slice-3-review-2.md](reviews/slice-3-review-2.md) | Point at slice 3's fixes, made on this branch (`c1a08b2`). |
@@ -358,7 +362,7 @@ Every _Done when_ check in [PLAN.md's slice 4](PLAN.md#slice-4-show-and-delete) 
 | By hand in a terminal, for an item in each state: the prompt names the state and what will be lost, typing the ID deletes it, and a wrong ID cancels | By a person in a real terminal ([Checks done by hand](#checks-done-by-hand)), and automatically under `script` by `in_a_terminal_typing_the_id_deletes_an_item_in_each_state` (open, in-progress, done, shelved, and review by a hand edit, each with its exact state line and list of what's lost) and `in_a_terminal_a_wrong_id_cancels` (another ID, extra words and an empty line, then the ID in lower case) |
 | Deleting `XX-2` and then creating an item gives `XX-3` | `deleting_xx_2_and_then_creating_an_item_gives_xx_3` |
 | A delete leaves one line in `deleted.json` with the ID, title, state, time and `interactive`, and nothing else of the item | `a_delete_leaves_one_line_with_the_id_title_state_time_and_interactive_only`, which also checks that the description, labels, design and history aren't in the file, and that `items/` is empty |
-| _Prompt:_ `show` prints every field, the verification record, and history with timestamps | `show_prints_every_field_the_verification_records_and_history_with_times`, `show_json_is_the_item_exactly_as_its_file_holds_it`, `show_says_when_an_item_has_no_verification_or_history` |
+| _Prompt:_ `show` prints every field, the verification record, and history with timestamps | `show_prints_every_field_the_verification_records_and_history_with_times`, `show_json_is_the_item_as_its_file_holds_it_when_this_version_wrote_it`, `show_says_when_an_item_has_no_verification_or_history` |
 | _Prompt:_ one shared helper that refuses without `tty::is_interactive()`, prints what will be lost, and requires the ID | `tty::confirm`, through every `delete` test above |
 | _Slice 3's readme:_ `show` escapes the control characters in labels, design, description and history | `show_escapes_text_edited_by_hand`, for the title, description and a reason. Labels and design go through the same `table` cell escaping as the other fields |
 | _Slice 3's readme:_ `delete` works on items with any of slice 3's fields | `a_delete_leaves_one_line_with_the_id_title_state_time_and_interactive_only` deletes one with labels, a design and a description |
@@ -403,7 +407,7 @@ The demo under [Try it](#try-it) was run against the debug binary, and its outpu
 - **`deleted.json` is also a tripwire for counters.** Without it, deleting a project's newest item would leave a reset counter free to hand that ID out again.
 - **The warning names the title**, so you can tell which item you're about to delete. §2.8's example now does too.
 - **`show` leaves out the fields an item doesn't have** rather than print empty rows, but always says whether there's a verification record and whether there's any history.
-- **`show` works without the project in `config.json`**, like the moves and `edit`, and says "(not in config.json)". It still needs `config.json` to parse, as every command does: review 1's finding 11 was settled that way, and §3 says so.
+- **`show` works without the project in `config.json`**, like the moves and `edit`, and says "(not in config.json)". It still needs `config.json` to parse, as every command does: review 1's finding 11 was settled that way, §3 says so, and since review 2's finding 3, `Store::require_exists` checks it for every command.
 - **The confirmation isn't applied to `edit` of an item in review.** That edit needs a terminal but not a typed ID: it isn't one of §2.7's human actions ([slice 3's readme](slice-3-readme.md#an-edit-to-an-item-in-review)).
 - **A label with a capital that has no lower-case form is refused, not changed.** There's no lower-case letter to change `ℂ` into, and `item.schema.json` forbids capitals, so refusing it keeps the two in step. Slice 3 review 2's other option, ASCII-only labels, would also have closed this, but it's a wider decision, about lookalike labels, and is still open ([below](#still-open)).
 - **The capital check uses `char::is_uppercase`**, with no new crate. Run over every Unicode character after lowercasing, it refuses all 471 that the schema's `\p{Lu}\p{Lt}` pattern forbids. It also refuses 78 enclosed capitals, such as `🄰` and `🅰`, which the schema allows because they aren't letters. They read as capitals, so refusing them too costs nothing.
@@ -448,14 +452,41 @@ The demo under [Try it](#try-it) was run against the debug binary, and its outpu
 | 4. A cancelled delete with `--json` | `ce27825` | `delete_json_in_a_terminal_cancelled_prints_only_the_error_on_stdout` |
 | 6. `show` of an item whose project isn't in `config.json` | `96ee241` | `show_and_delete_work_on_an_item_whose_project_isnt_in_config_json` |
 
+## Fixes after review 2
+
+[slice-4-review-2.md](reviews/slice-4-review-2.md) reviewed the branch at `3880bf9`. It found two bugs, two places where the code and DESIGN.md disagree or the design is unclear, three test gaps and three process points, and carried forward review 1's bug 3, test gap 5 and PLAN.md's status. Each fix below is in its own commit, with its tests. The tests for bugs 1 and 2 and findings 3 and 4 were each run against their fix's parent, and failed (bug 1's `tests/item_files.rs` test uses the new `Lost`, so only its `tests/show_and_delete.rs` test was run). Test gap 1's check was seen failing against a copy of `lock_unchanged` that gives the lock up. The review's process points and what's carried forward are under [Still open](#still-open), apart from the readme's three out-of-date places, which this update corrects.
+
+### Bugs
+
+| Finding | Commit | Fix | Tests |
+| --- | --- | --- | --- |
+| 1. A hand-edited item file is treated as a newer tracker's, so `delete` refuses it and `show` misreports it | `9d16c32` | The review's simpler option, made exact. `item::lost_on_rewrite` returns a `Lost` with two lists. `unknown` is a field, or a value inside one, that this version doesn't know. `respelled` is a value it would only write differently: `[]`, `null`, or a time with another offset for the same instant. `show` warns and `delete` refuses only for `unknown`. `Store::update_item` still refuses both, for slice 5 to decide. | `show_and_delete_accept_a_file_whose_values_are_only_written_differently`, with a row each for `"labels": []`, `"design": null` and `created` ending `+00:00`. `lost_on_rewrite_tells_unknown_fields_from_values_written_differently` in `tests/item_files.rs`, including a field inside `verification` and a history `via` this version doesn't know |
+| 2. A delete run again after a crash adds a second line for the same ID | `62d6bc9` | Fixed in the code rather than left to slice 16. `delete_item` adds no line when any line of `deleted.json` already has the ID, and only removes the file. If that removal fails, it says `deleted.json` already lists the item. | `a_delete_run_again_after_a_crash_doesnt_list_it_twice`, with another delete listed after the crashed one, so the check isn't only of the last line |
+
+### Design
+
+| Finding | Commit | Fix | Tests |
+| --- | --- | --- | --- |
+| 3. §3 says every command needs `config.json` to parse, but most commands that take an ID never read it | `6f22b81` | The review's option (a). `Store::require_exists`, which every command but `init` calls first, ends by loading `config.json` with `config::load`, so a config that can't be parsed, or holds a bad key or relative root, exits 3 before anything else. §3 needed no change. | `every_command_refuses_a_config_json_that_cant_be_parsed`: every command that needs the store, with `edit` both with and without `--design`, then `init`, and `delete` at a terminal. Each exits 3, and nothing is written |
+| 4. `tty::confirm`'s refusal speaks only of an ID | `0dd432c` | "who types {id} to confirm it", so `digest ack`'s refusal will say "who types ack". [Try it](#try-it) shows the new text. | `echo_the_id_into_delete_is_refused_and_the_file_remains` checks for "who types XX-1 to confirm it" |
+
+### Test gaps
+
+| Gap | Commit | Test |
+| --- | --- | --- |
+| 1. Nothing checks that `lock_unchanged` holds the lock it returns | `803c83c` | `lock_unchanged_holds_the_lock_only_while_the_file_is_as_it_was` opens the `lock` file a second time and checks that `try_lock` gives `WouldBlock` while the guard lives, and succeeds once it's dropped. |
+| 2. No test of a hand-edited file in `show` or `delete` | `9d16c32` | The tests for bug 1 |
+| 3. No test of a command against a broken `config.json` | `6f22b81` | The test for finding 3 |
+
 ## Still open
 
 Nothing from this slice's own _Done when_ checks is uncovered, and the one that needs a person has been done. Everything below but the first group is carried over from [slice 3's readme](slice-3-readme.md#still-open), which carries slice 2's open items as well.
 
-**This slice** (review 1)
+**This slice** (reviews 1 and 2)
 
-- **3. A title holding a line break breaks `deleted.schema.json`**, in `delete --json` and in the line kept in `deleted.json`.
+- **Review 1's bug 3. A title edited by hand can break `deleted.schema.json`**, in `delete --json` and in the line kept in `deleted.json`. Review 2 found it covers more than a line break: an empty title breaks the schema's `minLength`, and a control character its pattern. Review 1's fix still fits: the record's `title` is any string, since it records what was there.
 - **Test gap 5. The terminal tests have only run on macOS.** The util-linux branch of `script_cmd` is untried with piped stdin.
+- **Review 2's process point: `3880bf9` puts an unrelated change on this branch.** It adds `.claude/skills/slice-review/SKILL.md`, outside `tracker/`. Say so in the pull request, or cherry-pick it to `main` on its own.
 - **The slice landed as one commit** (`c980317`, 1197 lines added across 14 files), as slices 2 and 3 did. The earlier slices' reviews asked for one commit per step rather than one for the whole slice. That's in the history and stays.
 
 **Security** (slice 3 review 2)
@@ -479,7 +510,7 @@ Nothing from this slice's own _Done when_ checks is uncovered, and the one that 
 
 **Carried over from slice 2**, untouched by this slice:
 
-- **A hand-edited timestamp is blamed on "a newer tracker"** (slice 2 review 2, item 4).
+- **A hand-edited timestamp is blamed on "a newer tracker"** (slice 2 review 2, item 4). Since review 2's bug 1, `show` and `delete` tell a value written differently from a newer tracker's field, but the moves and `edit` still refuse both through `Store::update_item`, with the newer-tracker message. Slice 5 decides what they do.
 - **`status <id> closed` is refused** (slice 2 review 2, item 5).
 - **Commands on an item whose project isn't in `config.json`** (slice 2 review 2, item 7). `show` and `delete` now work on one too, which `show_and_delete_work_on_an_item_whose_project_isnt_in_config_json` pins. The moves and `edit` still have no such test.
 - **`error.schema.json`'s `allowed[].via` enum lists only today's four moves** (slice 2 review 2, item 3). `delete` isn't a move, so it doesn't appear there.
@@ -488,11 +519,11 @@ Nothing from this slice's own _Done when_ checks is uncovered, and the one that 
 
 ## Limits, and what later slices change
 
-- **Slice 5** skips files that can't be parsed in listings. It must decide what `show` and `delete` do with one: today both exit 3, so a corrupt item file can only be removed by hand, which leaves no line in `deleted.json`. It adds colour, which must stay out of `show`'s output when it isn't a terminal, as for `list`, and must not reach the question on stderr when stderr isn't a terminal. Its "No temporary files are left in the store after any command" check covers `delete`'s write of `deleted.json`. It's also the natural place for slice 3 review 1's finding 5, invisible characters, which `show` would then escape.
+- **Slice 5** skips files that can't be parsed in listings. It must decide what `show` and `delete` do with one: today both exit 3, so a corrupt item file can only be removed by hand, which leaves no line in `deleted.json`. It adds colour, which must stay out of `show`'s output when it isn't a terminal, as for `list`, and must not reach the question on stderr when stderr isn't a terminal. Its "No temporary files are left in the store after any command" check covers `delete`'s write of `deleted.json`. It's also the natural place for slice 3 review 1's finding 5, invisible characters, which `show` would then escape. It decides whether the moves and `edit` rewrite a file whose values are only written differently, which `item::lost_on_rewrite` now tells apart as `respelled`. Its "a missing store or config gives a clear message" (§4.4) builds on `Store::require_exists`, which now refuses a `config.json` that can't be parsed for every command.
 - **Slice 6** adds `criteria`, `written` and `evidence`, which `show` must print, and which the warning should name ("its criteria (N)"). Its `criterion accept` is the second user of `tty::confirm`, and adds a history entry with `via: "criterion-accept"`, which `show` prints as `criterion-accept` once `Via` has it, and as `unknown` until then. Its _Done when_ needs `criterion accept` refused outside a terminal. G1 means most move tests need items with a criterion. The deletion tests in `tests/show_and_delete.rs` start and submit items, so they need that too.
 - **Slice 7** adds `started` and each check's last 20 lines of output, which `show` must print with the verification record. Long output should be indented under its check like the description, and escaped with its line breaks kept.
 - **Slice 8** adds the verification commit and `refs/tracker/<ID>`. `show` prints both, and the warning for a done item says "verified by its gates at <commit>" and lists the ref among what's lost, as §2.8's example does. `delete` must remove the ref, and its _Done when_ checks that. Keep the record first. A ref that can't be removed should leave the item file in place, or be named in the error so it can be removed by hand. After the test is renamed, `show` must still print the saved output.
 - **Slice 9** adds `approve`, `reject` and `show --diff`. `approve` and `reject` use `tty::confirm`, and `approve` re-runs the gates after the question, so it must re-read the item under the lock, through `Store::lock_unchanged` as `delete` does, which PLAN.md's integration risks also ask. `reject --reason` checks its reason before asking. `show` prints `holds` for an item in review, and the warning for an item in review could name its holds. `show --diff` adds a property to `show.schema.json`. The tests that put an item in review by editing its file, `in_a_terminal_typing_the_id_deletes_an_item_in_each_state` among them, can then use a real hold. T9 matches `needs-review` exactly, so slice 9 also decides slice 3 review 2's finding 4.
 - **Slice 12** adds judge answers with their refs to the verification record, which `show` prints with each question's ref, answer and reason ([§2.3.2](DESIGN.md#232-when-a-judge-is-wrong)).
-- **Slice 16**'s digest lists every line of `deleted.json` since that project's last ack, marked by `interactive`, yours included. It finds the project from the ID's key, since the record has no `project` field. A line that doesn't parse should be reported rather than skipped, unlike the counter tripwire. `digest ack` uses `tty::confirm`. `audit`'s "IDs used twice" should count `deleted.json` as well as `items/`, since an ID both deleted and on disk means the counter was reset. Slice 16 also brings `--help` and empty states up to slice 5's standard for `show` and `delete`.
+- **Slice 16**'s digest lists every line of `deleted.json` since that project's last ack, one per delete, since a delete run again after a crash adds no second line, marked by `interactive`, yours included. It finds the project from the ID's key, since the record has no `project` field. A line that doesn't parse should be reported rather than skipped, unlike the counter tripwire. `digest ack` uses `tty::confirm`. `audit`'s "IDs used twice" should count `deleted.json` as well as `items/`, since an ID both deleted and on disk means the counter was reset. Slice 16 also brings `--help` and empty states up to slice 5's standard for `show` and `delete`.
 - **Item files change shape again later.** `show --json` prints whatever the item holds, so each new field needs only what the earlier readmes list: a serde default and `skip_serializing_if`, its place in [§4.3](DESIGN.md#43-item-file)'s order, an entry in `item.schema.json`, and a fixtures folder. `show`'s text needs a line for it, or the field is left out of the text, though not of the JSON. A new label rule belongs in `check_new_labels`, so `--unlabel` can still remove a label written by hand.
