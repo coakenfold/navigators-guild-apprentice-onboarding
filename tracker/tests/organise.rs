@@ -224,6 +224,7 @@ fn edit_priority_and_unlabel_changes_the_item_and_adds_one_history_entry() {
             "via": "edit",
             "interactive": false,
             "fields": ["priority", "labels"],
+            "labels_removed": ["bug"],
         })
     );
     assert_eq!(item["updated"], entry["at"]);
@@ -403,6 +404,50 @@ fn i_can_edit_an_item_in_review_from_a_terminal() {
     let last = history(&item).last().unwrap().clone();
     assert_eq!(last["via"], "edit");
     assert_eq!(last["interactive"], true);
+}
+
+#[test]
+fn an_edit_records_the_labels_it_removed_and_the_kind_it_replaced() {
+    // So the digest can list an edit that takes off needs-review or moves
+    // an item away from capability, which T9 and T1 rely on (§2.6).
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    let id = create(
+        &env,
+        "XX",
+        "a",
+        &[
+            "--kind",
+            "capability",
+            "--label",
+            "needs-review",
+            "--label",
+            "ui",
+        ],
+    );
+
+    let output = edit(
+        &env,
+        &[
+            &id,
+            "--kind",
+            "change",
+            "--unlabel",
+            "needs-review",
+            "--unlabel",
+            "absent",
+        ],
+    );
+    let last = history(&output["item"]).last().unwrap().clone();
+    assert_eq!(last["fields"], json!(["kind", "labels"]));
+    assert_eq!(last["kind_before"], "capability");
+    assert_eq!(last["labels_removed"], json!(["needs-review"]));
+
+    // Adding a label or changing something else records neither.
+    let output = edit(&env, &[&id, "--label", "bug", "--priority", "high"]);
+    let last = history(&output["item"]).last().unwrap().clone();
+    assert!(last.get("kind_before").is_none(), "{last}");
+    assert!(last.get("labels_removed").is_none(), "{last}");
 }
 
 #[test]

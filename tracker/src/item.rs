@@ -97,6 +97,15 @@ pub struct HistoryEntry {
     /// names of the fields it changed (§2.1).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<String>,
+    /// For an `edit` that changed `kind`, the kind it replaced, so the
+    /// digest can list a move away from `capability`, which T1 relies on
+    /// (§2.6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind_before: Option<Kind>,
+    /// For an `edit`, the labels it removed, so the digest can list one
+    /// that removed `needs-review`, which T9 relies on (§2.6).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels_removed: Vec<String>,
 }
 
 /// The commands that add a history entry: the ones that move an item

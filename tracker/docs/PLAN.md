@@ -291,7 +291,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 ### Slice 16: Digest, audit, judge report
 
 - **Prompt:** "Add per-project digests as §2.6 describes:
-  - `digest [--project]` lists auto-verified items, judge-passed ones first with refs, answers and reasons. It also lists every shelve and every human action (`approve`, `reject`, `delete`, `criterion accept`), mine included, each marked by whether it came from an interactive terminal, and says when the digest was last acknowledged.
+  - `digest [--project]` lists auto-verified items, judge-passed ones first with refs, answers and reasons. It also lists every shelve, every human action (`approve`, `reject`, `delete`, `criterion accept`), mine included, and every `edit` whose history entry shows it removed `needs-review` or changed kind away from `capability`, each marked by whether it came from an interactive terminal, and says when the digest was last acknowledged.
   - `digest ack` records what was seen in `digests.json`.
   - `review` flags a digest older than `every_days` as overdue.
 
@@ -299,7 +299,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 
 - **Done when:**
   - `digest` lists every item auto-verified since that project's last ack, judge-passed first. `digest ack --project XX` empties only XX's digest.
-  - A shelve from piped stdin and one run under `script` (skipped where `script` isn't installed) are both listed, marked not from a terminal and from a terminal. So are a delete and an approve made since the last ack.
+  - A shelve from piped stdin and one run under `script` (skipped where `script` isn't installed) are both listed, marked not from a terminal and from a terminal. So are a delete and an approve made since the last ack, an edit that removes `needs-review`, and one that changes kind from `capability` to `change`. An edit that only adds a label isn't listed.
   - `audit` reports a hand-edited status, a done item with no verification record, and an ID used twice.
   - `judges` shows the approve and reject counts for each question.
 

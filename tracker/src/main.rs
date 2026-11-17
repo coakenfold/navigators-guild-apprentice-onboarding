@@ -748,6 +748,7 @@ fn edit(store: &Store, args: EditArgs) -> Result<Output> {
 
     // The fields that change, in the item file's order.
     let mut fields = Vec::new();
+    let mut kind_before = None;
     if let Some(title) = title
         && title != item.title
     {
@@ -757,6 +758,7 @@ fn edit(store: &Store, args: EditArgs) -> Result<Output> {
     if let Some(kind) = kind
         && kind != item.kind
     {
+        kind_before = Some(item.kind);
         item.kind = kind;
         fields.push("kind");
     }
@@ -773,6 +775,12 @@ fn edit(store: &Store, args: EditArgs) -> Result<Output> {
         .cloned()
         .collect();
     add_labels(&mut labels, &add);
+    let labels_removed: Vec<String> = item
+        .labels
+        .iter()
+        .filter(|label| !labels.contains(label))
+        .cloned()
+        .collect();
     if labels != item.labels {
         item.labels = labels;
         fields.push("labels");
@@ -805,6 +813,8 @@ fn edit(store: &Store, args: EditArgs) -> Result<Output> {
             interactive: tty::is_interactive(),
             reason: None,
             fields: fields.clone(),
+            kind_before,
+            labels_removed,
         });
         store.update_item(&item)?;
         format!("Edited {id}: changed {}.\n", states::join(&fields, "and"))
@@ -1119,6 +1129,8 @@ fn apply(
         interactive: tty::is_interactive(),
         reason,
         fields: Vec::new(),
+        kind_before: None,
+        labels_removed: Vec::new(),
     });
     store.update_item(&item)?;
     let json = if step.via == Via::Submit {

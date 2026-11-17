@@ -126,12 +126,27 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": { "enum": ["title", "kind", "priority", "labels", "design", "description"] }
+        },
+        "kind_before": {
+          "description": "For an edit that changed kind, the kind it replaced, so the digest can list a move away from capability (DESIGN.md §2.6). Left out otherwise.",
+          "enum": ["fix", "change", "capability", "chore"]
+        },
+        "labels_removed": {
+          "description": "For an edit, the labels it removed, so the digest can list one that removed needs-review (DESIGN.md §2.6). Left out when it removed none.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
         }
       },
       "additionalProperties": false,
       "if": { "properties": { "via": { "const": "edit" } } },
       "then": { "required": ["fields"], "not": { "required": ["reason"] } },
-      "else": { "not": { "required": ["fields"] } }
+      "else": { "allOf": [
+        { "not": { "required": ["fields"] } },
+        { "not": { "required": ["kind_before"] } },
+        { "not": { "required": ["labels_removed"] } }
+      ] }
     }
   }
 }

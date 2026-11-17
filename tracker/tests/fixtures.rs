@@ -69,9 +69,11 @@ fn slice_2_wrote_three_fixtures_with_history() {
 /// XX-6 has every field slice 3 adds: a kind and priority other than the
 /// defaults, labels, a design reference and an edit entry. XX-7 was edited
 /// while in progress, which records `from` equal to `to`, and then shelved.
+/// XX-8's edit, written after review 1, records the kind it replaced and
+/// the labels it removed.
 #[test]
-fn slice_3_wrote_two_fixtures_with_edits() {
-    assert_eq!(names_in("slice-3"), ["XX-6.json", "XX-7.json"]);
+fn slice_3_wrote_three_fixtures_with_edits() {
+    assert_eq!(names_in("slice-3"), ["XX-6.json", "XX-7.json", "XX-8.json"]);
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/slice-3");
     let read = |name: &str| -> Value {
         serde_json::from_str(&fs::read_to_string(root.join(name)).unwrap()).unwrap()
@@ -96,6 +98,11 @@ fn slice_3_wrote_two_fixtures_with_edits() {
         edit["fields"],
         serde_json::json!(["title", "kind", "labels"])
     );
+
+    let item = read("XX-8.json");
+    let edit = &item["history"][0];
+    assert_eq!(edit["kind_before"], "capability");
+    assert_eq!(edit["labels_removed"], serde_json::json!(["needs-review"]));
 }
 
 #[test]
