@@ -105,6 +105,58 @@ fn slice_3_wrote_three_fixtures_with_edits() {
     assert_eq!(edit["labels_removed"], serde_json::json!(["needs-review"]));
 }
 
+/// The item file's last shape before slice 6 adds `criteria` (PLAN.md,
+/// integration risks), one item in each state slice 5 can reach: review
+/// waits for slice 9. XX-9 is open, with every field and an edit that
+/// records `fields`, `kind_before` and `labels_removed`. XX-10 is in
+/// progress, and XX-11 done and unchecked. XX-12 was done, then reopened,
+/// so its record is in `previous_verification`, and then shelved.
+#[test]
+fn slice_5_wrote_four_fixtures_one_in_each_state() {
+    assert_eq!(
+        names_in("slice-5"),
+        ["XX-10.json", "XX-11.json", "XX-12.json", "XX-9.json"]
+    );
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/slice-5");
+    let read = |name: &str| -> Value {
+        serde_json::from_str(&fs::read_to_string(root.join(name)).unwrap()).unwrap()
+    };
+
+    let states: Vec<Value> = ["XX-9", "XX-10", "XX-11", "XX-12"]
+        .iter()
+        .map(|id| read(&format!("{id}.json"))["status"].clone())
+        .collect();
+    assert_eq!(
+        states,
+        ["open", "in-progress", "done", "shelved"].map(Value::from)
+    );
+
+    let item = read("XX-9.json");
+    assert_eq!(item["design"], "DESIGN.md#2.5");
+    assert!(item["description"].is_string());
+    let edit = &item["history"][0];
+    assert_eq!(edit["via"], "edit");
+    assert_eq!(
+        edit["fields"],
+        serde_json::json!(["title", "kind", "labels"])
+    );
+    assert_eq!(edit["kind_before"], "capability");
+    assert_eq!(edit["labels_removed"], serde_json::json!(["needs-review"]));
+
+    assert_eq!(read("XX-11.json")["verification"]["by"], "unchecked");
+
+    let item = read("XX-12.json");
+    assert!(item.get("verification").is_none());
+    assert_eq!(item["previous_verification"]["by"], "unchecked");
+    let vias: Vec<&str> = item["history"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["via"].as_str().unwrap())
+        .collect();
+    assert_eq!(vias, ["start", "submit", "reopen", "shelve"]);
+}
+
 #[test]
 fn every_fixture_loads_and_comes_back_byte_for_byte() {
     for path in fixture_files() {
