@@ -151,3 +151,89 @@ fn save_item_never_overwrites_a_file() {
     assert_eq!(store.save_item(&item).unwrap_err().code, 3);
     assert_eq!(fs::read_to_string(env.item_path("XX-1")).unwrap(), original);
 }
+
+/// Adds a history entry the way slice 3's `edit` will write one, with a
+/// `via` and a `fields` this version doesn't know, and returns the file's
+/// new text.
+fn add_edit_entry(env: &Env, id: &str) -> String {
+    let path = env.item_path(id);
+    let mut item: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let status = item["status"].clone();
+    let entry = serde_json::json!({
+        "at": "2026-11-16T12:00:00Z",
+        "from": status,
+        "to": status,
+        "via": "edit",
+        "interactive": false,
+        "fields": ["priority"],
+    });
+    match item["history"].as_array_mut() {
+        Some(history) => history.push(entry),
+        None => item["history"] = serde_json::json!([entry]),
+    }
+    let text = serde_json::to_string_pretty(&item).unwrap() + "\n";
+    fs::write(&path, &text).unwrap();
+    text
+}
+
+#[test]
+fn a_history_entry_from_a_newer_tracker_still_lists() {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    env.create("XX", "b");
+    env.json(&["start", "XX-1"]);
+    add_edit_entry(&env, "XX-1");
+
+    let items = env.json(&["list"])["items"].clone();
+    let ids: Vec<&str> = items
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["XX-1", "XX-2"]);
+    let history = items[0]["history"].as_array().unwrap();
+    assert_eq!(history[1]["via"], "unknown");
+    env.json(&["project", "list"]);
+}
+
+#[test]
+fn a_move_refuses_an_item_whose_history_has_a_command_it_doesnt_know() {
+    // Writing the item back would turn `edit` into `unknown` and drop the
+    // entry's `fields`. Other items are unaffected.
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    env.create("XX", "b");
+    env.json(&["start", "XX-1"]);
+    let edited = add_edit_entry(&env, "XX-1");
+    let path = env.item_path("XX-1");
+
+    for args in [
+        &["submit", "XX-1"][..],
+        &["status", "XX-1", "done"],
+        &["shelve", "XX-1", "--reason", "later"],
+    ] {
+        let message = env.error(args, 3);
+        assert!(message.contains("history"), "{args:?}: {message}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), edited, "{args:?}");
+    }
+
+    // The text list shows it too, and the other item still moves.
+    let output = env
+        .cmd()
+        .arg("list")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(output).unwrap();
+    assert!(text.contains("XX-1  in-progress  a"), "{text}");
+    assert_eq!(
+        env.json(&["start", "XX-2"])["item"]["status"],
+        "in-progress"
+    );
+}

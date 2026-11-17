@@ -1,0 +1,48 @@
+{
+  "id": "XX-4",
+  "title": "Done, reopened and shelved",
+  "project": "XX",
+  "kind": "change",
+  "status": "shelved",
+  "priority": "medium",
+  "created": "2026-11-16T02:41:57Z",
+  "updated": "2026-11-16T02:41:57Z",
+  "verification": {
+    "by": "unchecked",
+    "at": "2026-11-16T02:41:57Z",
+    "note": "No gates ran: this version of tracker has none yet, so nothing checked the work."
+  },
+  "history": [
+    {
+      "at": "2026-11-16T02:41:57Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-16T02:41:57Z",
+      "from": "in-progress",
+      "to": "done",
+      "via": "submit",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-16T02:41:57Z",
+      "from": "done",
+      "to": "open",
+      "via": "reopen",
+      "interactive": false,
+      "reason": "Found a bug: “upstream” — é 😀"
+    },
+    {
+      "at": "2026-11-16T02:41:57Z",
+      "from": "open",
+      "to": "shelved",
+      "via": "shelve",
+      "interactive": false,
+      "reason": "Not needed now"
+    }
+  ],
+  "description": "Has every field slice 2 adds."
+}

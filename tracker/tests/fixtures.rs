@@ -25,14 +25,45 @@ fn fixture_files() -> Vec<PathBuf> {
     files
 }
 
+/// The names of the fixture files in `tests/fixtures/<slice>/`.
+fn names_in(slice: &str) -> Vec<String> {
+    fixture_files()
+        .iter()
+        .filter(|path| path.parent().unwrap().ends_with(slice))
+        .map(|path| path.file_name().unwrap().to_str().unwrap().to_string())
+        .collect()
+}
+
 #[test]
 fn slice_1_wrote_two_fixtures() {
-    let names: Vec<String> = fixture_files()
+    assert_eq!(names_in("slice-1"), ["XX-1.json", "XX-2.json"]);
+}
+
+/// XX-3 is done and unchecked. XX-4 was done, then reopened and shelved, so
+/// it has a verification record and history entries with reasons: slice 2
+/// kept the record on reopen until review 1. XX-5, written after review 1,
+/// was done and then reopened, so its record is in `previous_verification`.
+#[test]
+fn slice_2_wrote_three_fixtures_with_history() {
+    assert_eq!(names_in("slice-2"), ["XX-3.json", "XX-4.json", "XX-5.json"]);
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/slice-2");
+    let read = |name: &str| -> Value {
+        serde_json::from_str(&fs::read_to_string(root.join(name)).unwrap()).unwrap()
+    };
+
+    let item = read("XX-5.json");
+    assert!(item.get("verification").is_none());
+    assert_eq!(item["previous_verification"]["by"], "unchecked");
+
+    let item = read("XX-4.json");
+    assert_eq!(item["verification"]["by"], "unchecked");
+    let vias: Vec<&str> = item["history"]
+        .as_array()
+        .unwrap()
         .iter()
-        .filter(|path| path.parent().unwrap().ends_with("slice-1"))
-        .map(|path| path.file_name().unwrap().to_str().unwrap().to_string())
+        .map(|entry| entry["via"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["XX-1.json", "XX-2.json"]);
+    assert_eq!(vias, ["start", "submit", "reopen", "shelve"]);
 }
 
 #[test]

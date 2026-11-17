@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracker.invalid/schemas/move.schema.json",
+  "title": "tracker start, shelve, reopen and status --json",
+  "description": "A move between states (DESIGN.md §2.2). The item's last history entry is the move just made. submit, and status <id> done, which runs it, print submit.schema.json instead.",
+  "type": "object",
+  "required": ["item"],
+  "properties": {
+    "item": {
+      "description": "The item after the move, exactly as its file holds it.",
+      "$ref": "item.schema.json"
+    }
+  },
+  "additionalProperties": false
+}

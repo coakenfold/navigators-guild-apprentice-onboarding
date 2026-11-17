@@ -98,6 +98,13 @@ impl Env {
     /// `code`, checks the output against the error schema, and returns the
     /// error message.
     pub fn error_in(&self, dir: &Path, args: &[&str], code: i32) -> String {
+        let error = self.error_json_in(dir, args, code);
+        error["error"].as_str().unwrap().to_string()
+    }
+
+    /// The same as `error_in`, returning the whole error object, for the
+    /// fields some errors add, such as `allowed`.
+    pub fn error_json_in(&self, dir: &Path, args: &[&str], code: i32) -> Value {
         let output = self
             .cmd()
             .current_dir(dir)
@@ -111,7 +118,7 @@ impl Env {
         let error = parse(&output);
         check_schema("error", &error);
         assert_eq!(error["exit_code"], code, "{error}");
-        error["error"].as_str().unwrap().to_string()
+        error
     }
 
     /// Runs `tracker <args> --json` from outside every project root and
@@ -143,6 +150,12 @@ impl Env {
         output["item"]["id"].as_str().unwrap().to_string()
     }
 
+    /// Reads an item's file as JSON.
+    pub fn item(&self, id: &str) -> Value {
+        let text = fs::read_to_string(self.item_path(id)).unwrap();
+        serde_json::from_str(&text).unwrap()
+    }
+
     pub fn item_path(&self, id: &str) -> PathBuf {
         self.home.path().join("items").join(format!("{id}.json"))
     }
@@ -171,6 +184,8 @@ pub fn schema_for(args: &[&str]) -> &'static str {
         ["project", "list", ..] => "project-list",
         ["create", ..] => "create",
         ["list", ..] => "list",
+        ["submit", ..] | ["status", _, "done", ..] => "submit",
+        ["start" | "shelve" | "reopen" | "status", ..] => "move",
         _ => panic!(
             "No schema for `tracker {}`. Add one to schemas/.",
             args.join(" ")

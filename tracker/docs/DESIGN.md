@@ -10,7 +10,7 @@ A personal command-line tracker, written in Rust, for work done with coding agen
 - When an agent submits an item, the tool runs **gates**: rules such as "every check passes now" or "the work is committed". If any gate fails, the submit is refused and every reason is listed.
 - If the gates pass, the tool applies **review triggers**: rules that spot risk, such as a new capability, a new dependency or an edited test. If nothing fires, the item is **auto-verified** and moves to done with no human involved. If something fires, the item is **held** for me, with the reasons.
 - Judges can be wrong. An agent that believes a judge failed good work can **dispute** the answer, which sends the item to me instead of past the judge. I decide by approving or rejecting it.
-- A periodic **digest** for each project lists auto-verified items and items an agent shelved, so I can audit the machine's decisions without blocking any single item.
+- A periodic **digest** for each project lists auto-verified items, every shelve, and every action only I am meant to take, so I can audit the machine's decisions without blocking any single item, and spot an action I didn't make.
 
 ### Goals
 
@@ -86,10 +86,11 @@ An item is one piece of verifiable work, usually a vertical slice from a `/decom
 | `written`            | automatic               | A list of fingerprints, one per criterion's text as it was written at `create`. Only a `criterion` command run from an interactive terminal (me) updates it, including `criterion accept` after I edit a criterion by hand, so an agent can't quietly reword or drop a criterion it was given (T5).                                                                                                                                                                                                                       |
 | `criteria`           | yes, before work starts | The **Done when** list (§2.3).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `started`            | automatic               | When work started, the commit `HEAD` pointed to (used by trigger T14), a fingerprint (hash) of the criteria, kind and design at that moment (used by trigger T5), and whether each criterion's script check or judge passed when it was run at start (used by trigger T13). The criteria fingerprint covers each criterion's text, check command, judge questions and judge inputs. It leaves out evidence, which can only be written once the work exists. Failed judge requests (T11) are kept outside the item (§4.1). |
-| `verification`       | automatic               | Filled in when the item reaches done: `auto`, `human`, or `unchecked` for items done before the gates existed (§9), the commit (kept by a git ref), and the checks that ran with their results and output (§2.7).                                                                                                                                                                                                                                                                                                         |
+| `verification`       | automatic               | Filled in when the item reaches done: `auto`, `human`, or `unchecked` for items done before the gates existed (§9), the commit (kept by a git ref), and the checks that ran with their results and output (§2.7). Present only while the item is done: reopening moves it to `previous_verification`.                                                                                                                                                                                                                      |
+| `previous_verification` | automatic          | The `verification` record from before the item was last reopened, so reopening doesn't lose it. Each reopen from done replaces it.                                                                                                                                                                                                                                                                                                                                                                                         |
 | `holds`              | automatic               | The triggers that fired, while the item waits in review.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `created`, `updated` | automatic               | When the item was created and last changed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `history`            | automatic               | One entry per state change or `edit`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `history`            | automatic               | One entry per move between states, `edit` or `criterion accept`, oldest first. Every entry has `at`, `from`, `to`, `via` and `interactive`. One made by `shelve`, `reopen` or `reject` adds `reason`. One that doesn't change the state, such as an `edit`, has `from` equal to `to`, and adds `fields`, the names of the fields it changed.                                                                                                                                                                                                                                                                     |
 | `description`        | no                      | Free markdown, set with `create --description` or `edit --description`.                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 **Commits, changed files and source files.** The gates, judges and triggers all work from git history rather than from what the agent says, using these definitions:
@@ -118,7 +119,7 @@ An item is one piece of verifiable work, usually a vertical slice from a `/decom
 - **in-progress**: someone, usually an agent, is working on it.
 - **review**: held for a human, with the reasons in `holds`.
 - **done**: verified, either automatically or by me.
-- **shelved**: back in the backlog. Nobody is working on it now, and `reopen` brings it back to open. A reason is required. Open and in-progress items can be shelved. A held item is mine to decide, so I reject it first if it should be shelved. Plain `list` hides shelved items, and items an agent shelves are listed in the next digest (§2.6, §2.8).
+- **shelved**: back in the backlog. Nobody is working on it now, and `reopen` brings it back to open. A reason is required. Open and in-progress items can be shelved. A held item is mine to decide, so I reject it first if it should be shelved. Plain `list` hides shelved items, and every shelve is listed in the next digest (§2.6, §2.8).
 
 Agents never move an item to done. They **submit**, and the tool decides. Any move that isn't drawn above is refused, and the tool lists the moves that are allowed.
 
@@ -188,11 +189,11 @@ How a judge runs:
 
   There are no thresholds to tune. When a question's answers keep disagreeing with my approve and reject decisions, I reword the question or sharpen what yes and no mean (§2.3.2).
 
-- **Pinned model.** The config names a full model name (`claude-haiku-5-5`), never an alias such as `haiku`, which moves to each new model. The judge checks that the model the CLI reports in `modelUsage` is the one it asked for, and fails otherwise, so a changed default or a fallback model can't answer in its place. The model that answered is recorded. I chose it by comparing models on 48 labelled cases ([judge-eval/](judge-eval/), summarised in §7).
+- **Pinned model.** The config names a full model name (`claude-haiku-5-5`), never an alias such as `haiku`, which moves to each new model. The judge checks that the model the CLI reports in `modelUsage` is the one it asked for, and fails otherwise, so a changed default or a fallback model can't answer in its place. The model that answered is recorded. I chose it by comparing models on 48 labelled cases ([judge-eval/](../judge-eval/), summarised in §7).
 - **Cached by content.** Answers are stored under a fingerprint of the exact excerpt, the questions, the model name and the adapter's name and version, which the adapter reports in every response. They live in `~/.tracker/judge/cache/` (§4.1), not in the item. If nothing changed, a rerun (for example on `approve`) reuses them. The CLI has no temperature setting, so the same question can get a different answer next time. The cache makes the first answer the recorded one, so re-running `gates` on unchanged work can't fish for a better one.
 - **Small inputs on purpose.** Accuracy drops when the excerpt is full of irrelevant material. So the tool refuses any question whose excerpt is over `max_input_bytes`, before calling the model, and never truncates it. The model's context window is far larger than that limit, so the limit is about accuracy and cost, not fit.
 - **Shown in full, with a reason.** Every answer comes with its reason in the same reply. When a question fails or is unsure, the gate output lists the question, the answer, the excerpt and the reason. The reason is only there to help me and the agent. It never changes the result.
-- **Adapter.** The tool runs a **judge command** that reads a request (`model`, `state`, `questions`) on stdin and writes the answers as JSON to stdout. The default is `tracker-judge`, a second binary in the same crate (`src/bin/tracker-judge.rs`), which runs `claude -p` once per question. Because the model call sits behind this contract, tests swap in a fake command that prints fixed answers, and [judge-eval/](judge-eval/) runs the same binary, so the eval measures exactly what the tool runs. `cargo install` installs both.
+- **Adapter.** The tool runs a **judge command** that reads a request (`model`, `state`, `questions`) on stdin and writes the answers as JSON to stdout. The default is `tracker-judge`, a second binary in the same crate (`src/bin/tracker-judge.rs`), which runs `claude -p` once per question. Because the model call sits behind this contract, tests swap in a fake command that prints fixed answers, and [judge-eval/](../judge-eval/) runs the same binary, so the eval measures exactly what the tool runs. `cargo install` installs both.
 
 `tracker-judge` handles each request like this:
 
@@ -270,7 +271,7 @@ $ tracker submit BM-13 --dispute c2:src/import.js:57:suggests_next_step \
 
 **Learning from my decisions.** Each approve or reject of an item a judge held is a case where I looked closely. `tracker judges` reports, for each judge question, how often I approved and how often I rejected the items it held. A reject may be about something else, such as a new dependency, so the two are shown separately rather than combined into one agreement rate.
 
-When I keep approving items that one question held, I fix the question rather than keep deciding on it: add cases to [judge-eval/](judge-eval/), reword the question or sharpen what its yes and no mean, and re-run the eval to check that nothing else got worse. Giving up on the question, and leaving that quality to a test or to me, is the last resort.
+When I keep approving items that one question held, I fix the question rather than keep deciding on it: add cases to [judge-eval/](../judge-eval/), reword the question or sharpen what its yes and no mean, and re-run the eval to check that nothing else got worse. Giving up on the question, and leaving that quality to a test or to me, is the last resort.
 
 ### 2.4 Gates: is it finished?
 
@@ -344,7 +345,9 @@ $ tracker submit BM-14
 
 The digest is how I check the checker. It never blocks an individual item.
 
-Each project has its own digest. It lists every item auto-verified since I last acknowledged that project's digest: titles, criteria, the checks that ran, the commits, and each judge's questions with their refs, answers and reasons. Items that passed on a judge, rather than only on scripts, are listed first. It also lists items an agent shelved, with the reason. `tracker digest` shows the current project's digest inside a project root, or every project's outside one or with `--all`, and `tracker digest ack` records that I've seen the current project's (or `--project <KEY>`'s). Outside every root, `digest ack` needs `--project`, so one command can't acknowledge every project at once (§3). If something looks wrong, `tracker reopen BM-12 --reason "…"` sends it back. If it comes back with unchanged code, T13 holds it, because its checks already pass at start. A project's digest older than its `review.digest.every_days` shows as overdue in `tracker review`.
+Each project has its own digest. It lists every item auto-verified since I last acknowledged that project's digest: titles, criteria, the checks that ran, the commits, and each judge's questions with their refs, answers and reasons. Items that passed on a judge, rather than only on scripts, are listed first. `tracker digest` shows the current project's digest inside a project root, or every project's outside one or with `--all`, and `tracker digest ack` records that I've seen the current project's (or `--project <KEY>`'s). Outside every root, `digest ack` needs `--project`, so one command can't acknowledge every project at once (§3). If something looks wrong, `tracker reopen BM-12 --reason "…"` sends it back. If it comes back with unchanged code, T13 holds it, because its checks already pass at start. A project's digest older than its `review.digest.every_days` shows as overdue in `tracker review`.
+
+The digest also lists, since that same ack, every shelve with its reason and every human action from §2.7: each `approve`, `reject`, `delete` and `criterion accept`. Each line says whether it came from an interactive terminal, and the digest starts by saying when it was last acknowledged. My own actions are listed too, rather than left out because they look like mine. The terminal check can be got around on purpose (§7), and an action that gets round it looks exactly like one of mine, so leaving mine out would hide it. Instead, I check that I made each one. There are few of them, so this is quick. The `interactive` flag only marks which lines need a closer look: a shelve not from a terminal was an agent's, but one from a terminal may still not be mine.
 
 ### 2.7 Human actions
 
@@ -356,25 +359,27 @@ These must come from an interactive terminal, and I confirm each one by typing t
 - `tracker criterion accept BM-12`: after I edit a criterion by hand, records its new text in `written`, so T5 doesn't fire.
 - `tracker digest ack`.
 
+Each one is recorded so the digest can list it (§2.6): `approve` and `reject` as moves in the item's history, `criterion accept` as a history entry with `via: "criterion-accept"` (§2.1), `delete` in `deleted.json` (§2.8), and `digest ack` in `digests.json`.
+
 When an item reaches done, its `verification` record stores: `by` (auto or human), the commit SHA, each check with its result, duration and last 20 lines of output (§2.3), each judge question's answer and reason with the model that answered and the request fingerprint, any held judge questions I accepted on approve, and the triggers that fired, if any.
 
-At the same moment, the tool creates the git ref `refs/tracker/BM-12` in the project's repository, pointing at that commit. A commit that no branch points to is eventually deleted by git, which would happen after a rebase, a squash or an amend. The ref keeps the verified commit, and so the tests exactly as they ran, for as long as the ref exists. If the item is reopened and verified again, the ref moves to the new commit. Deleting the item removes the ref (§2.8). The ref lives in my local clone and isn't pushed unless I push it.
+At the same moment, the tool creates the git ref `refs/tracker/BM-12` in the project's repository, pointing at that commit. A commit that no branch points to is eventually deleted by git, which would happen after a rebase, a squash or an amend. The ref keeps the verified commit, and so the tests exactly as they ran, for as long as the ref exists. Reopening the item moves its record to `previous_verification` (§2.1), and the ref stays until the item is verified again, when it moves to the new commit. Deleting the item removes the ref (§2.8). The ref lives in my local clone and isn't pushed unless I push it.
 
 When I approve or reject an item that a judge held under T10 or T12, the tool records my decision against each held question, which `tracker judges` reports (§2.3.2).
 
 ### 2.8 Shelve vs. delete
 
-**Shelving** puts an item back in the backlog: nobody is working on it now, but it might be picked up later. A reason is required, and the record is kept. Plain `list` hides shelved items, `list --status shelved` shows them, and `reopen` brings one back to open. Open and in-progress items can be shelved. A held item is mine to decide, so I reject it first. Items an agent shelves are listed in the next digest (§2.6).
+**Shelving** puts an item back in the backlog: nobody is working on it now, but it might be picked up later. A reason is required, and the record is kept. Plain `list` hides shelved items, `list --status shelved` shows them, and `reopen` brings one back to open. Open and in-progress items can be shelved. A held item is mine to decide, so I reject it first. Every shelve is listed in the next digest, marked by whether it came from an interactive terminal (§2.6).
 
 Shelving an in-progress item frees its project for the next item (§4.4), so it has to leave the branch in a state the next item can build on: the working tree must be clean (as in G5) and every project check must pass (G4). The item's tests were committed before `start` and still fail, so the agent first reverts its unfinished work in a commit scoped to the item, such as `revert(BM-7): remove the favicon test`. If either rule fails, the shelve is refused with exit code `2` and nothing changes. When the item is reopened and started again, `start` records a new `HEAD` and fingerprint and runs its checks again, which should fail again before the work exists.
 
-**Deleting** removes an item for good: its file, its history and its verification record. It works on an item in any state, but only from an interactive terminal (§2.7), so agents can't delete. Before asking me to type the ID, the prompt says what will be lost:
+**Deleting** removes an item for good: its file, its history and its verification record. One line stays in `deleted.json` so the next digest can list the delete (§2.6): the ID, title, state, when it was deleted and whether that came from an interactive terminal. It works on an item in any state, but only from an interactive terminal (§2.7), so agents can't delete. Before asking me to type the ID, the prompt says what will be lost:
 
 ```
 $ tracker delete BM-12
 BM-12 is done, verified at a41be07.
 Deleting it removes its file, its history (6 entries), its verification record and refs/tracker/BM-12.
-Its commits stay in git, and the ID won't be used again.
+Its commits stay in git, the ID won't be used again, and the next digest lists the delete.
 Type BM-12 to delete:
 ```
 
@@ -439,11 +444,17 @@ The `criterion` commands work at any time, but after `start` any change to the c
 | `tracker delete BM-12`                                                       | Any item, from an interactive terminal only, after a prompt that says what will be lost (§2.8).                                                                                                                                                                                                               |
 | `tracker audit`                                                              | Reports files that can't be read, status changes with no matching history, done items with no verification record, and IDs used twice.                                                                                                                                                                        |
 
-`tracker status <id> <state>`, from the course's starting doc, stays as an alias that maps onto the commands above. For example, `status <id> done` runs `submit`. `status <id> open` (reopen) and `status <id> shelved` need `--reason`, like the commands they map to. `status` on an item in review is refused, with a pointer to `approve` and `reject`.
+`tracker status <id> <state>`, from the course's starting doc, stays as an alias that maps onto the commands above. For example, `status <id> done` runs `submit`. `status <id> open` (reopen) and `status <id> shelved` need `--reason`, like the commands they map to. A reason is one line of at most 500 characters, because it's printed among other lines. The details belong in the item's description. `status` on an item in review is refused, with a pointer to `approve` and `reject`.
 
 **Exit codes:** `0` success, which includes "held for review". The output says which state the item ended in. `1` bad input, not found, or the item changed while the command ran (§4.4). `2` refused by a gate. `3` the store, a file or git is unreadable.
 
-**Output for agents.** Every command takes `--json` and then prints one JSON object instead of text, with the same exit code. The text is for me and can change wording freely. The JSON fields are an interface, so renaming or removing one is a breaking change. Each command's output is defined by a JSON Schema in [schemas/](schemas/), not in this doc, and the tests check every output against it, so an output can't change without its schema changing too. A command that returns an item wraps it, as `{"item": {…}}`, so fields about the command, such as a warning, never sit among the item's own. Every non-zero exit prints the same base shape, `{"error": "…", "exit_code": n}` ([error.schema.json](schemas/error.schema.json)), so an agent can always read `error`. For `gates` and `submit`, the object lists every gate and trigger with its id and result, and every judge question with its ref and answer. A held submit looks like this:
+**Output for agents.** Every command takes `--json` and then prints one JSON object instead of text, with the same exit code. The text is for me and can change wording freely. The JSON fields are an interface, so renaming or removing one is a breaking change. Each command's output is defined by a JSON Schema in [schemas/](../schemas/), not in this doc, and the tests check every output against it, so an output can't change without its schema changing too. A command that returns an item wraps it, as `{"item": {…}}`, so fields about the command, such as a warning, never sit among the item's own. Every non-zero exit prints the same base shape, `{"error": "…", "exit_code": n}` ([error.schema.json](../schemas/error.schema.json)), so an agent can always read `error`. A move the state diagram doesn't draw adds `allowed`, which lists each move allowed from the item's state with its command, so an agent never has to parse the message to learn what it can do next. It has one entry per arrow in §2.2's diagram, each with a single `to`. So a command with two possible outcomes is listed once for each: `submit` from in-progress appears with `"to": "done"` and with `"to": "review"`, both with the same `command`, and the triggers decide which one happens. For `gates` and `submit`, the object lists every judge question with its ref and answer, and:
+
+- `gates`: every gate that ran, with `ok`.
+- `triggers`: every trigger that ran, with whether it `fired`. A trigger the project switched off in `review.disabled` doesn't run and isn't listed, so an agent can tell a trigger that stayed quiet from one that wasn't checked.
+- `holds`: the triggers that fired, each with the message saying why.
+
+`submit` also returns the item as `item`, after those fields. A held submit looks like this:
 
 ```json
 {
@@ -454,6 +465,11 @@ The `criterion` commands work at any time, but after `start` any change to the c
     { "gate": "G2", "ok": true },
     { "gate": "G3", "ok": true, "secs": 6 }
   ],
+  "triggers": [
+    { "trigger": "T1", "fired": false },
+    { "trigger": "T3", "fired": true },
+    { "trigger": "T4", "fired": true }
+  ],
   "holds": [
     {
       "trigger": "T3",
@@ -463,7 +479,8 @@ The `criterion` commands work at any time, but after `start` any change to the c
       "trigger": "T4",
       "message": "existing test modified: tests/bookmarks.spec.js"
     }
-  ]
+  ],
+  "item": { "id": "BM-14", "…": "…" }
 }
 ```
 
@@ -486,6 +503,7 @@ One central store at `~/.tracker/`, or wherever the `TRACKER_HOME` environment v
 ~/.tracker/
 ├── config.json          # projects, their checks and review policy
 ├── counters.json        # the next item number for each project, so IDs are never reused
+├── deleted.json         # one line per deleted item, so the digest can list deletes (§2.8)
 ├── digests.json         # when each project's digest was acknowledged, and what it covered
 ├── lock                 # locked while a command reads and writes the store (§4.4)
 ├── judge/
@@ -504,7 +522,7 @@ One central store at `~/.tracker/`, or wherever the `TRACKER_HOME` environment v
     "TR": {
       "name": "tracker",
       "root": "~/Documents/Code/guild-projects/guild-portfolio/tracker",
-      "design": "DESIGN.md",
+      "design": "docs/DESIGN.md",
       "checks": [
         "cargo fmt --check",
         "cargo clippy -- -D warnings",
@@ -553,7 +571,7 @@ Every value has a sensible default, so a project needs only `name` and `root` to
 
 ### 4.3 Item file
 
-Each item is one JSON file, and serde maps it to Rust structs and back. The tool writes it pretty-printed with two-space indents, with the fields always in the same order, so a file reads the same way every time and a change shows up as a small diff. [item.schema.json](schemas/item.schema.json) defines its fields, and is the same schema the `--json` output uses for an item.
+Each item is one JSON file, and serde maps it to Rust structs and back. The tool writes it pretty-printed with two-space indents, with the fields always in the same order, so a file reads the same way every time and a change shows up as a small diff. [item.schema.json](../schemas/item.schema.json) defines its fields, and is the same schema the `--json` output uses for an item.
 
 ```json
 {
@@ -575,7 +593,7 @@ Each item is one JSON file, and serde maps it to Rust structs and back. The tool
     }
   ],
   "started": {
-    "at": "2026-11-13T09:15:00Z",
+    "at": "2026-11-13T10:10:00Z",
     "criteria_hash": "9f2c41",
     "head": "5d0e9b2",
     "checks": [{ "criterion": 1, "passed": false }]
@@ -603,6 +621,36 @@ Each item is one JSON file, and serde maps it to Rust structs and back. The tool
   },
   "history": [
     {
+      "at": "2026-11-13T09:15:00Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-13T09:30:00Z",
+      "from": "in-progress",
+      "to": "shelved",
+      "via": "shelve",
+      "interactive": false,
+      "reason": "Tag chips need the tag list from BM-11, which isn't done yet."
+    },
+    {
+      "at": "2026-11-13T10:05:00Z",
+      "from": "shelved",
+      "to": "open",
+      "via": "reopen",
+      "interactive": true,
+      "reason": "BM-11 is done."
+    },
+    {
+      "at": "2026-11-13T10:10:00Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
       "at": "2026-11-13T11:40:00Z",
       "from": "in-progress",
       "to": "done",
@@ -617,6 +665,8 @@ Each item is one JSON file, and serde maps it to Rust structs and back. The tool
 - `written` holds one fingerprint per criterion's text as it was written at `create` (T5).
 - `started.head` is `HEAD` at start (T14). `started.checks` is the run at start, where failing is expected (T13).
 - `verification.judges` has one entry per judge question: its ref, the model, the request hash, the answer and the reason.
+- `verification.note` explains a record that its other fields don't, such as an `unchecked` one: "No gates ran: this version of tracker has none yet, so nothing checked the work."
+- A history entry's `reason` is the one given to `shelve`, `reopen` or `reject`, and it's left out for other moves. In the example, the agent shelved the item while it waited for BM-11, and I reopened it.
 - JSON has no date type, so timestamps are [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339) strings in UTC, which `jiff` reads and writes.
 - `description` is markdown stored as a JSON string, so its line breaks are written as `\n`. `tracker show` prints it as plain text, and `tracker edit --description` changes it, so it never needs editing in the file.
 
@@ -718,18 +768,19 @@ Links to my existing workflow:
 | edits tests or checks to make them pass                    | T4 and T5 hold the item for me                                                                                                                                                                                                                                                                                  |
 | mislabels a capability as a `change` to avoid review       | T1 still fires if a new file or module appears                                                                                                                                                                                                                                                                  |
 | edits the item file by hand                                | Claude Code's deny rule blocks its edit tools there (§5). For anything that gets past it, `audit` flags status and verification fields that don't match history                                                                                                                                                 |
-| shelves an item instead of finishing it                    | nothing reaches done. The digest lists every item an agent shelved, with its reason                                                                                                                                                                                                                             |
+| shelves an item instead of finishing it                    | nothing reaches done. The digest lists every shelve, with its reason and whether it came from a terminal                                                                                                                                                                                                        |
+| gets past the interactive-terminal check, such as with `script` | the digest lists every human action and shelve, mine included, so I'd see one I didn't make (§2.6, §7)                                                                                                                                                                                                     |
 
 ## 7. Honest limits
 
 - **Weak checks are the soft spot.** A check like `true`, or a test that asserts nothing, passes every gate. Running checks at start (T13) catches the ones that exist before the work, but only if the agent really writes its tests first. A test written during the work that asserts nothing fails at start, because it doesn't exist yet, and passes at submit. The digest is where I catch those. Future idea: mutation testing, which deliberately breaks the code to see whether the tests notice.
 - **The files are plain text.** An agent could hand-edit a status. Agents have no reason to open the files, since every change goes through a `tracker` command, and a deny rule blocks Claude Code's edit tools there (§5). A shell command such as `sed -i` can still write there, though. `audit` detects that afterwards but doesn't prevent it.
-- **The interactive-terminal requirement for human actions is a convention, not security.** It stops an agent's normal shell calls, because those aren't interactive terminals, but it can be got around on purpose.
-- **Deleting can't be undone.** A deleted item leaves nothing in the store, only its scoped commits in git. Only I can delete, and the prompt says what will be lost, but a mistaken delete can only be recovered from a backup of `~/.tracker`.
+- **The interactive-terminal requirement for human actions is a convention, not security.** It stops an agent's normal shell calls, because those aren't interactive terminals, but it can be got around on purpose, for example by running a command under `script`. The same goes for the `interactive` flag in history, so a shelve made that way looks like mine. The digest lists my actions as well as the agent's, so I can spot one I didn't make (§2.6), but that relies on my reading it. It also can't catch an agent that edits the store to cover its tracks, such as by moving the digest's ack time forward or writing a history that agrees with itself, which `audit` doesn't flag either. Making this hold against a determined agent would take signing my actions with a key that needs my touch.
+- **Deleting can't be undone.** A deleted item leaves only a line in `deleted.json` and its scoped commits in git. Only I can delete, and the prompt says what will be lost, but a mistaken delete can only be recovered from a backup of `~/.tracker`.
 - **Check commands are run as shell commands.** Anyone who can write an item file or the config can make `tracker` run a command. This is acceptable for a single-user tool on my own machine. The tool prints each command before running it, runs it only inside a registered project root, and applies a timeout.
 - **Judges are not proof the way tests are.** Any single answer can be wrong, and the CLI gives no probability to show how close a call was. That's why scripts come first, judge-passed items lead the digest, and T10 holds unsure answers. Judges give evidence, not certainty, and how much evidence is something I measure against my own decisions (§2.3.2), not assume.
 
-- **No probabilities, so nothing to tune.** The CLI returns an answer, not a probability, so I can't see how close a call was, or move a threshold to trade wrong passes for holds. The only dials are a question's wording and what its yes and no mean. An unsure answer depends on the model choosing to say so, and a confident wrong answer looks exactly like a confident right one. The safety comes from scripts running first, the digest, T11, disputes for wrong fails (T12), and re-running [judge-eval/](judge-eval/) whenever the model changes.
+- **No probabilities, so nothing to tune.** The CLI returns an answer, not a probability, so I can't see how close a call was, or move a threshold to trade wrong passes for holds. The only dials are a question's wording and what its yes and no mean. An unsure answer depends on the model choosing to say so, and a confident wrong answer looks exactly like a confident right one. The safety comes from scripts running first, the digest, T11, disputes for wrong fails (T12), and re-running [judge-eval/](../judge-eval/) whenever the model changes.
 - **Answers aren't repeatable.** The CLI has no temperature setting, so the same question can get a different answer on another run. The cache (§2.3.1) makes the first answer the one that counts for unchanged work, but any change to the excerpt, even a renamed variable, asks again. T11 limits how many times an agent can try.
 - **The judge is the same kind of model as the agent.** A Claude model grades a Claude agent's work. Their blind spots may overlap, so a mistake the agent didn't notice may get past the judge too, and an agent knows how text reads to a model like the judge. Scripts depend on neither, which is one more reason they come first.
 - **The model can be swayed by the text it grades.** Models can be steered by instructions hidden in the input, or by code written to look right, such as reassuring comments and confident names. The `<material>` framing, stripping comments, small excerpts and T11 all help. None of them makes a judge immune. With no tools, an injection can at most change an answer: it can't read or run anything.
@@ -738,7 +789,7 @@ Links to my existing workflow:
 - **The reason can be wrong.** The one-sentence reason comes in the same reply as the answer and can rationalise rather than explain. It's a hint for fixing the work, never evidence.
 - **Large inputs are refused, not truncated.** A judge that saw half a file would grade the wrong thing. If a judge's excerpt exceeds `max_input_bytes`, the judge fails before calling the model and asks for narrower inputs.
 - **Judges need the `claude` CLI, a login and a network connection.** Only items with a judge criterion need them: an item proven by scripts alone never calls the model. A question takes about 3 seconds, so a judge with 4 `each` matches and 2 questions adds about 20 seconds to a submit. Calls count against my Claude plan's usage limits, or are billed per token with an API key. At list price, a question costs about $0.0005 on Haiku. If the CLI isn't installed or logged in, the network is down, a usage limit is hit or a call times out, the gate fails with a clear message. It never passes. Excerpts go to Anthropic, which already has the code, because Claude Code wrote it.
-- **Changing the model means re-running the eval.** A different model can answer differently. Before switching, I run [judge-eval/](judge-eval/) on the candidate and compare (`node run.mjs <model>`, then `node compare.mjs`). The model name is part of the cache key and the verification record, so I can see which answers came from which model. Claude Code updates itself, and an update can change the CLI the judge depends on. A flag that stops working makes the call fail rather than pass, and re-running judge-eval after an update shows whether answers moved.
+- **Changing the model means re-running the eval.** A different model can answer differently. Before switching, I run [judge-eval/](../judge-eval/) on the candidate and compare (`node run.mjs <model>`, then `node compare.mjs`). The model name is part of the cache key and the verification record, so I can see which answers came from which model. Claude Code updates itself, and an update can change the CLI the judge depends on. A flag that stops working makes the call fail rather than pass, and re-running judge-eval after an update shows whether answers moved.
 - **Changed files depend on commit messages.** If an agent leaves the ID out of the scope, the triggers see fewer files. G5 requires at least one commit scoped to the item, and T14 holds the item when a commit since `start` is unscoped. Work scoped to the wrong item's ID still gets past both.
 - **A project inside a larger repo is checked only inside its root.** G5 ignores dirty and untracked files outside the root, and T14 ignores commits that only touch them (§2.1). So if a project's tests read a file from elsewhere in the repository, such as `../shared/fixtures.json`, a change to that file isn't caught, and the verified commit may not hold everything the tests ran with. A project that depends on files outside its folder should be registered with the repository's top as its root.
 - **One item at a time per project.** A held item pauses its project until I decide, which is the price of everything happening on one branch (§4.4). The course's next chapter introduces branches. Giving each item its own branch and git worktree (a second folder with another branch checked out) would let several agents work at once, but each item would then be verified on its branch rather than after merging.
@@ -762,7 +813,7 @@ Links to my existing workflow:
 | Interactive check | `std::io::IsTerminal`                                                                                                   | Built into the standard library.                                                                                                                                                                                                                                                                                                                                                  |
 | Tests             | `assert_cmd` + `tempfile`, `trycmd` for transcript tests, and `jsonschema` (without default features) | Runs the real binary against a temporary `TRACKER_HOME` and throwaway git repos. `jsonschema` checks every `--json` output against its schema (§3). Without default features it can't fetch a schema over the network, so the schemas refer to each other only through the local copies.                                                                                                                                                                                                                                                                                                  |
 
-The project lives at `guild-portfolio/tracker/`, a folder in the guild-portfolio git repository rather than a repository of its own, so `tracker` is itself a project inside a larger repo (§2.1). This design doc, [PLAN.md](PLAN.md), [walkthrough.html](walkthrough.html) and [judge-eval/](judge-eval/) move there with `git mv` in slice 1, so the relative links keep working, their history follows them, and T8 watches the real design.
+The project lives at `guild-portfolio/tracker/`, a folder in the guild-portfolio git repository rather than a repository of its own, so `tracker` is itself a project inside a larger repo (§2.1). This design doc, [PLAN.md](PLAN.md), [walkthrough.html](../walkthrough.html) and [judge-eval/](../judge-eval/) move there with `git mv` in slice 1, so their history follows them and T8 watches the real design. The design doc and PLAN.md sit in its `docs/` folder, so TR's `design` setting is `docs/DESIGN.md`, and a test checks that the docs' relative links still resolve.
 
 ## 9. Build plan
 

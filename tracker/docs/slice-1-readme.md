@@ -1,12 +1,12 @@
 # Slice 1: Create and list
 
-`tracker` is a command-line work tracker, written in Rust, that keeps one central list of work items across many projects and, in later slices, decides when an item is really done. This document covers **slice 1**, the first of the 16 slices in [PLAN.md](../PLAN.md): what it built, how it works, and how to test it.
+`tracker` is a command-line work tracker, written in Rust, that keeps one central list of work items across many projects and, in later slices, decides when an item is really done. This document covers **slice 1**, the first of the 16 slices in [PLAN.md](PLAN.md): what it built, how it works, and how to test it.
 
-After slice 1 you can **register projects, create items in them, and list everything from one store**. The spec is [DESIGN.md](../DESIGN.md). This slice implements §3 (interface) for `init`, `project add`, `project list`, `create` and `list`, and §4.1–4.3 (store layout, config and item file).
+After slice 1 you can **register projects, create items in them, and list everything from one store**. The spec is [DESIGN.md](DESIGN.md). This slice implements §3 (interface) for `init`, `project add`, `project list`, `create` and `list`, and §4.1–4.3 (store layout, config and item file).
 
 | | |
 | --- | --- |
-| Status | Done. Every _Done when_ check passes. From [review 1](slice-1-review-1.md), bugs 1–8 and security items S1–S3 are fixed, its design questions are settled, and its test gaps are closed ([below](#fixes-after-review-1)). From [review 2](slice-1-review-2.md), its five fixes before slice 2, two low-severity items, the schema mismatch, its test gaps and the `rust-version` nit are done ([below](#fixes-after-review-2)). |
+| Status | Done. Every _Done when_ check passes. From [review 1](reviews/slice-1-review-1.md), bugs 1–8 and security items S1–S3 are fixed, its design questions are settled, and its test gaps are closed ([below](#fixes-after-review-1)). From [review 2](reviews/slice-1-review-2.md), its five fixes before slice 2, two low-severity items, the schema mismatch, its test gaps and the `rust-version` nit are done ([below](#fixes-after-review-2)). |
 | Branch | `feat/tracker/slice-1` |
 | Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/` |
 | Tests | 67: 38 in `tests/create_and_list.rs`, 8 in `tests/item_files.rs`, 6 in `tests/output.rs`, 5 in `tests/docs_links.rs`, 3 each in `tests/fixtures.rs` and `tests/schemas.rs`, and 2 each in `tests/item_ids.rs` and `tests/store_writes.rs` |
@@ -363,7 +363,7 @@ ls -a | grep -x .git                        # prints nothing: no nested repo
 
 ## Fixes after review 1
 
-[slice-1-review-1.md](slice-1-review-1.md) found eight bugs, each reproduced against the binary. Each is fixed in its own commit, with a regression test. For bugs 1–7, the test was seen failing with the fix taken out.
+[slice-1-review-1.md](reviews/slice-1-review-1.md) found eight bugs, each reproduced against the binary. Each is fixed in its own commit, with a regression test. For bugs 1–7, the test was seen failing with the fix taken out.
 
 | Bug | Commit | Fix | Test |
 | --- | --- | --- | --- |
@@ -416,11 +416,11 @@ The review found two places where the code and DESIGN.md disagreed, settled afte
 
 For gaps 1, 3 and 4, the new test was seen failing with what it guards broken. The link check only checked that a file exists. Since review 2 it also checks that a `#L…` line anchor names lines the file has, but not that they still hold what the doc means.
 
-Still open from the review: its four nits, which are small cleanups ([slice-1-review-1.md](slice-1-review-1.md#nits)).
+Still open from the review: its four nits, which are small cleanups ([slice-1-review-1.md](reviews/slice-1-review-1.md#nits)).
 
 ## Fixes after review 2
 
-[slice-1-review-2.md](slice-1-review-2.md) found five things to fix before slice 2, and some smaller ones. Each fix is in its own commit with its tests.
+[slice-1-review-2.md](reviews/slice-1-review-2.md) found five things to fix before slice 2, and some smaller ones. Each fix is in its own commit with its tests.
 
 | Finding | Commit | Fix | Tests |
 | --- | --- | --- | --- |

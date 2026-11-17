@@ -31,7 +31,7 @@ The stack, where things live, the conventions and the test command are in `guild
 | #   | Slice                           | Outcome (I can…)                                                                                      | Depends on | Parallel with | Status |
 | --- | ------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------- | ------------- | ------ |
 | 1   | Create and list                 | create items in two projects and list them from one store                                             | —          | —             | done   |
-| 2   | States                          | start, submit, shelve and reopen items, with history kept                                             | 1          | —             | todo   |
+| 2   | States                          | start, submit, shelve and reopen items, with history kept                                             | 1          | —             | done   |
 | 3   | Organise and filter             | set priority, kind and labels, edit items, filter a sorted list                                       | 2          | —             | todo   |
 | 4   | Show and delete                 | see an item's full record, and delete one from a real terminal                                        | 3          | —             | todo   |
 | 5   | Bad data and polish             | keep working past a corrupt file; get help text, colour and empty states                              | 4          | —             | todo   |
@@ -80,7 +80,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 
 ### Slice 3: Organise and filter
 
-- **Prompt:** "Add `--kind`, `--priority` and repeatable `--label` to `create`, using §2.1's values and defaults; labels are lowercased and de-duplicated. Add an `edit` command for priority, labels (`--label` and `--unlabel`), title, kind, design and description; it adds one history entry and is refused for done items. `list` sorts by priority within each project, marks priority and kind, and gets the combinable filters `--project`, `--status` (comma-separated), `--priority`, `--label`, `--kind` and `--by`. Without `--status`, `list` shows only open, in-progress and review items. Inside a project root, `list` shows only that project unless `--project` or the new `--all` says otherwise, and both its text and its JSON (`project`: the key, or `null`) say which it covered, as §3 describes."
+- **Prompt:** "Add `--kind`, `--priority` and repeatable `--label` to `create`, using §2.1's values and defaults; labels are lowercased and de-duplicated. Add an `edit` command for priority, labels (`--label` and `--unlabel`), title, kind, design and description; it adds one history entry, with `via: "edit"`, `from` equal to `to`, and `fields` naming what changed (§2.1), and is refused for done items. `list` sorts by priority within each project, marks priority and kind, and gets the combinable filters `--project`, `--status` (comma-separated), `--priority`, `--label`, `--kind` and `--by`. `--by` checks that the item is done as well as its `verification`, because a file written by slice 2 can hold a record on a shelved item. Without `--status`, `list` shows only open, in-progress and review items. Inside a project root, `list` shows only that project unless `--project` or the new `--all` says otherwise, and both its text and its JSON (`project`: the key, or `null`) say which it covered, as §3 describes."
 - **Done when:**
   - `list` shows high before medium before low.
   - An unknown priority or kind exits 1 and names the allowed values. `--label Bug --label bug` is stored once, as `bug`.
@@ -92,12 +92,13 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 
 ### Slice 4: Show and delete
 
-- **Prompt:** "Add `show <id>`: every field, the verification record, and history with timestamps. Add `delete <id>` as §2.8 describes. Build one shared helper for interactive-only commands: it refuses unless stdin is a terminal, prints what will be lost, and requires the ID typed back. Later slices reuse it for `criterion accept`, `approve`, `reject` and `digest ack`."
+- **Prompt:** "Add `show <id>`: every field, the verification record, and history with timestamps. Add `delete <id>` as §2.8 describes, including its line in `deleted.json`. Build one shared helper for interactive-only commands: it refuses unless `tty::is_interactive()` (the check that already sets history's `interactive`), prints what will be lost, and requires the ID typed back. Later slices reuse it for `criterion accept`, `approve`, `reject` and `digest ack`."
 - **Done when:**
   - `show` of a missing ID exits 1.
   - `echo XX-1 | tracker delete XX-1` is refused and the file remains.
   - By hand in a terminal, for an item in each state: the prompt names the state and what will be lost, typing the ID deletes it, and a wrong ID cancels.
   - Deleting `XX-2` and then creating an item gives `XX-3`.
+  - A delete leaves one line in `deleted.json` with the ID, title, state, time and `interactive`, and nothing else of the item.
 
 ### Slice 5: Bad data and polish
 
@@ -125,9 +126,11 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - `evidence`, for manual criteria only
   - repeatable `create --done-when`, which adds manual criteria
   - the `written` fingerprints (sha2), taken at create
-  - interactive-only `criterion accept`
+  - interactive-only `criterion accept`, which adds a history entry with `via: "criterion-accept"` (§2.1)
 
-  Add gates G1 (at start: the item has criteria, and no other item in the project is in progress or review), G2 and G6. They run in a new `gates <id>` dry run and in front of `submit`. Any failure lists every reason, changes nothing and exits 2."
+  Add gates G1 (at start: the item has criteria, and no other item in the project is in progress or review), G2 and G6. They run in a new `gates <id>` dry run and in front of `submit`. Any failure lists every reason, changes nothing and exits 2.
+
+  G1 refuses `start` for an item with no criteria, and almost every test in `tests/states.rs` starts one that has none. Give those items a criterion, for example by having the shared test helper that creates them add one, so that the move tests still test moves."
 
 - **Done when:**
   - `start` with no criteria is refused by G1 with exit 2, and so is `start` while another item in the project is in progress.
@@ -138,7 +141,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 
 **Checkpoint: self-tracking starts.**
 
-1. Run `cargo install --path .`, then `tracker init` and `tracker project add TR --name tracker --root <guild-portfolio>/tracker --design DESIGN.md`.
+1. Run `cargo install --path .`, then `tracker init` and `tracker project add TR --name tracker --root <guild-portfolio>/tracker --design docs/DESIGN.md`.
 2. Create items for slices 7–16 from this plan. The outcome becomes the title, "Done when" becomes the criteria, and a slice that adds new behaviour gets the kind `capability` (§5).
 3. Add DESIGN.md §5's settings and its block for `~/.claude/CLAUDE.md` yourself, trimming the lines about commands that don't exist yet.
 
@@ -189,7 +192,9 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - `reject --reason`, which sends the item back to in-progress
   - `show --diff`, which prints the item's commits and their combined diff
 
-  `status` refuses an item in review and points to `approve` and `reject`."
+  `status` refuses an item in review and points to `approve` and `reject`.
+
+  Add the diagram's arrows to the move table: `submit` from in-progress to review, `approve` from review to done, and `reject` from review to in-progress. `states::find` returns the first row for a command and state, so change it to answer whether the command has any move from that state, and let `submit` pick done or review from the triggers. `allowed` keeps one entry per arrow, each with a single `to`, as §3 describes."
 
 - **Done when:**
   - A manual criterion with evidence is held under T6. A `needs-review` item is held under T9. An item with neither still auto-verifies.
@@ -197,7 +202,9 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - `review` lists held items with their reasons and the `show --diff` hint, and prints "Nothing needs you." when it's empty.
   - `echo XX-1 | tracker approve XX-1` is refused. Typing the ID in a real terminal moves the item to done (checked by hand).
   - An approve whose gate re-run fails leaves the item in review. A reject puts its reason in history.
+  - Every move refused for an item in review, through a command or through `status`, names `approve` and `reject`, and its `allowed` lists both. Until now the message says this version can't do either, and `allowed` is empty.
   - `show XX-1 --diff` includes XX-1's commits and none of XX-12's.
+  - A refused move from in-progress lists `submit` twice in `allowed`, once to done and once to review, with the same command.
 
 ### Slice 10: Risky changes are held
 
@@ -283,14 +290,15 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 ### Slice 16: Digest, audit, judge report
 
 - **Prompt:** "Add per-project digests as §2.6 describes:
-  - `digest [--project]` lists auto-verified items, judge-passed ones first with refs, answers and reasons, plus items an agent shelved.
+  - `digest [--project]` lists auto-verified items, judge-passed ones first with refs, answers and reasons. It also lists every shelve and every human action (`approve`, `reject`, `delete`, `criterion accept`), mine included, each marked by whether it came from an interactive terminal, and says when the digest was last acknowledged.
   - `digest ack` records what was seen in `digests.json`.
   - `review` flags a digest older than `every_days` as overdue.
 
   Add `audit` and `judges` (§3), and bring `--help` text and empty states up to slice 5's standard for every command added since."
 
 - **Done when:**
-  - `digest` lists every item auto-verified since that project's last ack, judge-passed first, plus agent-shelved items. `digest ack --project XX` empties only XX's digest.
+  - `digest` lists every item auto-verified since that project's last ack, judge-passed first. `digest ack --project XX` empties only XX's digest.
+  - A shelve from piped stdin and one run under `script` (skipped where `script` isn't installed) are both listed, marked not from a terminal and from a terminal. So are a delete and an approve made since the last ack.
   - `audit` reports a hand-edited status, a done item with no verification record, and an ID used twice.
   - `judges` shows the approve and reject counts for each question.
 

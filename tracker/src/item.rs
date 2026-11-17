@@ -17,8 +17,92 @@ pub struct Item {
     pub priority: Priority,
     pub created: Timestamp,
     pub updated: Timestamp,
+    /// Filled in when the item reaches done (§2.7), and present only while
+    /// it's done: reopening moves it to `previous_verification`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verification: Option<Verification>,
+    /// The record of the item's last verification, from before it was last
+    /// reopened. Each reopen from done replaces it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_verification: Option<Verification>,
+    /// One entry per move between states (§2.2), oldest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub history: Vec<HistoryEntry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+}
+
+/// How an item reached done (§2.1, §2.7). Later slices add the commit, its
+/// ref, and the checks and judges that ran.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Verification {
+    pub by: VerifiedBy,
+    pub at: Timestamp,
+    /// Why the record says what it does, such as that no gates ran.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VerifiedBy {
+    /// The gates passed and no trigger fired.
+    Auto,
+    /// I approved it from the inbox.
+    Human,
+    /// It reached done before the gates existed, so nothing checked it.
+    Unchecked,
+}
+
+/// One move between states.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HistoryEntry {
+    pub at: Timestamp,
+    pub from: Status,
+    pub to: Status,
+    /// The command that made the move. `status <id> <state>` records the
+    /// command it maps onto.
+    pub via: Via,
+    /// Whether stdin was a terminal, which is how the digest tells my moves
+    /// from an agent's (§2.6).
+    pub interactive: bool,
+    /// Why, for the moves that need a reason: shelve and reopen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// The commands that move an item between states (§2.2, §3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Via {
+    Start,
+    Submit,
+    Shelve,
+    Reopen,
+    /// A command this version doesn't know, such as `edit`, in a file
+    /// written by a newer tracker. The file still loads and lists, but the
+    /// command's name is lost, so `Store::update_item` refuses to write the
+    /// file back. No move has it.
+    #[serde(other)]
+    Unknown,
+}
+
+impl Via {
+    /// The command's name, as typed and as item files record it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Via::Start => "start",
+            Via::Submit => "submit",
+            Via::Shelve => "shelve",
+            Via::Reopen => "reopen",
+            Via::Unknown => "unknown",
+        }
+    }
+
+    /// Whether the move needs `--reason` (§2.2).
+    pub fn needs_reason(self) -> bool {
+        matches!(self, Via::Shelve | Via::Reopen)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -58,6 +142,21 @@ impl Status {
             Status::Review => "review",
             Status::Done => "done",
             Status::Shelved => "shelved",
+        }
+    }
+
+    /// The state named `text`, such as `in-progress`.
+    pub fn parse(text: &str) -> Option<Status> {
+        Status::ALL
+            .into_iter()
+            .find(|status| status.as_str() == text)
+    }
+
+    /// The state as it reads after "is": "open", or "in review".
+    pub fn phrase(self) -> &'static str {
+        match self {
+            Status::Review => "in review",
+            other => other.as_str(),
         }
     }
 }

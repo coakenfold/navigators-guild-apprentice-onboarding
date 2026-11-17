@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracker.invalid/schemas/submit.schema.json",
+  "title": "tracker submit and status <id> done --json",
+  "description": "A submit that wasn't refused (DESIGN.md §3). A refused one prints the error shape instead. Until the gates (slice 6) and triggers (slice 9) exist, result is always done and gates, triggers and holds are empty.",
+  "type": "object",
+  "required": ["id", "result", "status", "gates", "triggers", "holds", "item"],
+  "properties": {
+    "id": {
+      "description": "The item's ID.",
+      "type": "string"
+    },
+    "result": {
+      "description": "done when the item went straight to done, held when a trigger sent it to review.",
+      "enum": ["done", "held"]
+    },
+    "status": {
+      "description": "The state the item ended in.",
+      "enum": ["done", "review"]
+    },
+    "gates": {
+      "description": "Every gate that ran, with whether it passed.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["gate", "ok"],
+        "properties": {
+          "gate": { "type": "string", "pattern": "^G[0-9]+$" },
+          "ok": { "type": "boolean" },
+          "secs": {
+            "description": "How long the gate's checks took, for gates that run checks.",
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "triggers": {
+      "description": "Every trigger that ran, with whether it fired. A trigger switched off in the project's review.disabled doesn't run and isn't listed.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["trigger", "fired"],
+        "properties": {
+          "trigger": { "type": "string", "pattern": "^T[0-9]+$" },
+          "fired": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "holds": {
+      "description": "Every trigger that fired, with the message saying why, which is why the item is in review. Each one is also in triggers, with fired true.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["trigger", "message"],
+        "properties": {
+          "trigger": { "type": "string", "pattern": "^T[0-9]+$" },
+          "message": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "item": {
+      "description": "The item after the submit, exactly as its file holds it.",
+      "$ref": "item.schema.json"
+    }
+  },
+  "additionalProperties": false
+}
