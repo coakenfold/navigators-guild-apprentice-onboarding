@@ -139,6 +139,60 @@ fn a_file_that_isnt_utf8_or_is_empty_or_is_a_folder_is_skipped() {
     assert!(message.contains("UTF-8"), "{message}");
 }
 
+#[cfg(unix)]
+#[test]
+fn a_symlink_to_a_missing_file_is_skipped_and_named_without_suggesting_init() {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    env.create("XX", "b");
+    let nowhere = env.work.path().join("nowhere.json");
+    std::os::unix::fs::symlink(&nowhere, env.item_path("XX-7")).unwrap();
+
+    // The other items still list, and the link is reported with its fix.
+    let list = env.json(&["list"]);
+    assert_eq!(ids(&list), ["XX-1", "XX-2"]);
+    let skipped = list["skipped"].as_array().unwrap();
+    assert_eq!(skipped.len(), 1, "{list:#}");
+    assert!(
+        skipped[0]["file"].as_str().unwrap().ends_with("XX-7.json"),
+        "{list:#}"
+    );
+    assert_eq!(
+        skipped[0]["reason"],
+        "it's a symlink to a file that doesn't exist"
+    );
+    let projects = env.json(&["project", "list"]);
+    assert_eq!(projects["skipped"], list["skipped"]);
+
+    let output = env.cmd().arg("list").assert().success();
+    let stderr = String::from_utf8(output.get_output().stderr.clone()).unwrap();
+    assert!(stderr.contains("XX-7.json: it's a symlink"), "{stderr}");
+    assert!(stderr.contains("Remove it from items/."), "{stderr}");
+    assert!(!stderr.contains("tracker init"), "{stderr}");
+
+    // A command that names it says what it is, not that there's no item,
+    // and not that `init` would help: `init` doesn't create items.
+    for args in [
+        &["show", "XX-7"][..],
+        &["start", "XX-7"],
+        &["delete", "XX-7"],
+    ] {
+        let message = env.error(args, 3);
+        assert!(
+            message.contains("symlink to a file that doesn't exist"),
+            "{args:?}: {message}"
+        );
+        assert!(
+            message.contains("Remove it from items/."),
+            "{args:?}: {message}"
+        );
+        assert!(!message.contains("tracker init"), "{args:?}: {message}");
+    }
+    // Nothing was written through it.
+    assert!(!nowhere.exists());
+}
+
 /// One run of every command, for the tests that need each of them.
 fn every_command(root: &Path) -> Vec<Vec<String>> {
     let root = root.to_str().unwrap();

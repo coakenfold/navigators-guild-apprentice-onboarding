@@ -91,7 +91,7 @@ impl Store {
     /// there are checked first, so a store that can't be used isn't
     /// reported as fine, and nothing is written to it.
     pub fn init(&self) -> Result<Init> {
-        create_private_dir(&self.home).map_err(|e| error::io("create", &self.home, &e))?;
+        create_private_dir(&self.home).map_err(|e| error::io_in_store("create", &self.home, &e))?;
         let _lock = self.lock()?;
 
         let config_missing = is_missing(&self.config_path())?;
@@ -115,7 +115,7 @@ impl Store {
         }
         if items_missing {
             let items = self.items_dir();
-            fs::create_dir(&items).map_err(|e| error::io("create", &items, &e))?;
+            fs::create_dir(&items).map_err(|e| error::io_in_store("create", &items, &e))?;
             put_back.push("items/");
         }
 
@@ -197,8 +197,9 @@ impl Store {
             .create(true)
             .truncate(false)
             .open(&path)
-            .map_err(|e| error::io("open", &path, &e))?;
-        file.lock().map_err(|e| error::io("lock", &path, &e))?;
+            .map_err(|e| error::io_in_store("open", &path, &e))?;
+        file.lock()
+            .map_err(|e| error::io_in_store("lock", &path, &e))?;
         Ok(file)
     }
 
@@ -306,7 +307,7 @@ impl Store {
         let number_of = |id: &str| id.strip_prefix(&prefix).and_then(|n| n.parse::<u64>().ok());
 
         let dir = self.items_dir();
-        let entries = fs::read_dir(&dir).map_err(|e| error::io("read", &dir, &e))?;
+        let entries = fs::read_dir(&dir).map_err(|e| error::io_in_store("read", &dir, &e))?;
         let mut on_disk = None;
         for entry in entries {
             let entry = entry.map_err(|e| error::io("read", &dir, &e))?;
@@ -347,12 +348,16 @@ impl Store {
     }
 
     /// The text of an item's file, exactly as it is on disk. Fails with
-    /// exit 1 if there's no such item.
+    /// exit 1 if there's no such item, and exit 3 if its file is a symlink
+    /// to a file that doesn't exist.
     pub fn item_text(&self, id: &str) -> Result<String> {
         let path = self.item_path(id)?;
         match fs::read_to_string(&path) {
             Ok(text) => Ok(text),
             Err(e) if e.kind() == ErrorKind::NotFound => {
+                if is_broken_symlink(&path) {
+                    return Err(broken_symlink(&path).error());
+                }
                 Err(Error::input(format!("There's no item {id}.")))
             }
             Err(e) if e.kind() == ErrorKind::InvalidData => Err(not_utf8(&path).error()),
@@ -446,12 +451,7 @@ impl Store {
     /// since nothing is lost (`item::Lost::respelled`).
     pub fn update_item(&self, item: &Item) -> Result<()> {
         let path = self.item_path(&item.id)?;
-        if let Err(e) = fs::metadata(&path)
-            && e.kind() == ErrorKind::NotFound
-        {
-            return Err(Error::input(format!("There's no item {}.", item.id)));
-        }
-        let text = read_file(&path)?;
+        let text = self.item_text(&item.id)?;
         let lost = item::lost_on_rewrite(&text).map_err(|e| error::parse(&path, &e, ITEM_FIX))?;
         if !lost.unknown.is_empty() {
             return Err(Error::store(format!(
@@ -476,24 +476,22 @@ impl Store {
 
     /// Reads one item by its ID. Fails with exit 1 if there's no such item.
     pub fn load_item(&self, id: &str) -> Result<Item> {
-        let path = self.item_path(id)?;
-        match fs::metadata(&path) {
-            Err(e) if e.kind() == ErrorKind::NotFound => {
-                Err(Error::input(format!("There's no item {id}.")))
-            }
-            _ => read_item(&path),
-        }
+        Ok(self.load_item_with_text(id)?.0)
     }
 
     /// Reads every item file, sorted by project and then by number, and
     /// the files it skipped (§4.4). A file that can't be read as the item
     /// its name says, such as one that isn't valid JSON, costs that one
     /// item, not the whole list, so it's skipped and reported instead.
-    /// A folder or file the store can't read at all, such as one without
-    /// permission, still fails, with exit 3: that's the store, not one item.
+    /// A symlink to a file that doesn't exist is skipped and reported the
+    /// same way. A file removed between listing the folder and reading it,
+    /// by a `delete` that ran meanwhile, is left out without a word, since
+    /// that item is gone. A folder or file the store can't read at all, such
+    /// as one without permission, still fails, with exit 3: that's the
+    /// store, not one item.
     pub fn load_items(&self) -> Result<(Vec<Item>, Vec<Skipped>)> {
         let dir = self.items_dir();
-        let entries = fs::read_dir(&dir).map_err(|e| error::io("read", &dir, &e))?;
+        let entries = fs::read_dir(&dir).map_err(|e| error::io_in_store("read", &dir, &e))?;
 
         let mut items = Vec::new();
         let mut skipped = Vec::new();
@@ -503,33 +501,55 @@ impl Store {
             if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
                 continue;
             }
-            if path.is_dir() {
-                skipped.push(Skipped {
-                    file: path,
-                    line: None,
-                    column: None,
-                    reason: "it's a folder, not a file".to_string(),
-                    fix: "Move it out of items/.".to_string(),
-                });
-                continue;
-            }
-            let text = match fs::read_to_string(&path) {
-                Ok(text) => text,
-                Err(e) if e.kind() == ErrorKind::InvalidData => {
-                    skipped.push(not_utf8(&path));
-                    continue;
-                }
-                Err(e) => return Err(error::io("read", &path, &e)),
-            };
-            match check_item(&path, &text) {
-                Ok(item) => items.push(item),
-                Err(problem) => skipped.push(problem),
+            match read_listed(&path)? {
+                Listed::Item(item) => items.push(item),
+                Listed::Skipped(problem) => skipped.push(problem),
+                Listed::Gone => {}
             }
         }
         items.sort_by(|a, b| (&a.project, a.number()).cmp(&(&b.project, b.number())));
         skipped.sort_by(|a, b| a.file.cmp(&b.file));
         Ok((items, skipped))
     }
+}
+
+/// What `load_items` made of one `.json` file in `items/`.
+enum Listed {
+    Item(Item),
+    /// A file that can't be read as the item its name says.
+    Skipped(Skipped),
+    /// A file that was removed after the folder was listed.
+    Gone,
+}
+
+/// Reads one file that `load_items` found in `items/`. Fails, with exit 3,
+/// only when the file is there but can't be read at all, such as one
+/// without permission.
+fn read_listed(path: &Path) -> Result<Listed> {
+    if path.is_dir() {
+        return Ok(Listed::Skipped(Skipped {
+            file: path.to_path_buf(),
+            line: None,
+            column: None,
+            reason: "it's a folder, not a file".to_string(),
+            fix: "Move it out of items/.".to_string(),
+        }));
+    }
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == ErrorKind::InvalidData => return Ok(Listed::Skipped(not_utf8(path))),
+        Err(e) if e.kind() == ErrorKind::NotFound => {
+            if is_broken_symlink(path) {
+                return Ok(Listed::Skipped(broken_symlink(path)));
+            }
+            return Ok(Listed::Gone);
+        }
+        Err(e) => return Err(error::io("read", path, &e)),
+    };
+    Ok(match check_item(path, &text) {
+        Ok(item) => Listed::Item(item),
+        Err(problem) => Listed::Skipped(problem),
+    })
 }
 
 /// What to do about an item file that isn't valid JSON, or isn't an item.
@@ -579,20 +599,30 @@ fn not_utf8(path: &Path) -> Skipped {
     }
 }
 
-/// Reads an item file and checks that it is the item its name says: the
-/// file `XX-1.json` must hold `"id": "XX-1"` in project `XX`. A file copied
-/// or renamed by hand would otherwise list one ID twice, and a later write
-/// to `item_path(&item.id)` would overwrite the other item's file.
-fn read_item(path: &Path) -> Result<Item> {
-    match fs::read_to_string(path) {
-        Ok(text) => parse_item(path, &text),
-        Err(e) if e.kind() == ErrorKind::InvalidData => Err(not_utf8(path).error()),
-        Err(e) => Err(error::io("read", path, &e)),
+/// Whether `path` is there, but only as a symlink to something that isn't:
+/// reading it says "not found", though the link itself exists.
+fn is_broken_symlink(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok() && fs::metadata(path).is_err()
+}
+
+/// A symlink in `items/` whose target doesn't exist. `init` can't help, and
+/// the item it pointed to, if it was one, is gone.
+fn broken_symlink(path: &Path) -> Skipped {
+    Skipped {
+        file: path.to_path_buf(),
+        line: None,
+        column: None,
+        reason: "it's a symlink to a file that doesn't exist".to_string(),
+        fix: "Remove it from items/.".to_string(),
     }
 }
 
-/// Parses `text`, read from `path`, with `read_item`'s checks. Fails with
-/// exit 3, naming the file, the line and the reason.
+/// Parses `text`, read from `path`, and checks that it is the item its
+/// name says: the file `XX-1.json` must hold `"id": "XX-1"` in project
+/// `XX`. A file copied or renamed by hand would otherwise list one ID
+/// twice, and a later write to `item_path(&item.id)` would overwrite the
+/// other item's file. Fails with exit 3, naming the file, the line and the
+/// reason.
 fn parse_item(path: &Path, text: &str) -> Result<Item> {
     check_item(path, text).map_err(|problem| problem.error())
 }
@@ -680,8 +710,9 @@ fn is_missing(path: &Path) -> Result<bool> {
     }
 }
 
+/// Reads `config.json` or `counters.json`, which `init` creates.
 pub fn read_file(path: &Path) -> Result<String> {
-    fs::read_to_string(path).map_err(|e| error::io("read", path, &e))
+    fs::read_to_string(path).map_err(|e| error::io_in_store("read", path, &e))
 }
 
 /// Writes `contents` to a temporary file beside `path`, then renames it over
@@ -707,7 +738,7 @@ pub fn write_file(path: &Path, contents: &str) -> Result<()> {
                 tmp.display()
             )));
         }
-        Err(e) => return Err(error::io("write", &tmp, &e)),
+        Err(e) => return Err(error::io_in_store("write", &tmp, &e)),
     };
     // Flushed to disk before the rename. Otherwise a crash could keep the
     // rename but lose the data, leaving an empty file in place of the old one.
@@ -716,11 +747,11 @@ pub fn write_file(path: &Path, contents: &str) -> Result<()> {
         .and_then(|()| file.sync_all());
     if let Err(e) = written {
         let _ = fs::remove_file(&tmp);
-        return Err(error::io("write", &tmp, &e));
+        return Err(error::io_in_store("write", &tmp, &e));
     }
     if let Err(e) = fs::rename(&tmp, path) {
         let _ = fs::remove_file(&tmp);
-        return Err(error::io("write", path, &e));
+        return Err(error::io_in_store("write", path, &e));
     }
     // Flushing the folder keeps the rename itself. This is best effort,
     // because not every system lets a folder be opened and flushed.
@@ -730,4 +761,21 @@ pub fn write_file(path: &Path, contents: &str) -> Result<()> {
         let _ = dir.sync_all();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // `load_items` lists the folder and then reads each file, without the
+    // lock, so a `delete` can remove a file in between. An integration test
+    // can't time that, so this reads a file that was listed and is gone.
+    #[test]
+    fn a_file_removed_after_listing_is_left_out_without_a_word() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("XX-1.json");
+        fs::write(&path, "{}").unwrap();
+        fs::remove_file(&path).unwrap();
+        assert!(matches!(read_listed(&path), Ok(Listed::Gone)));
+    }
 }

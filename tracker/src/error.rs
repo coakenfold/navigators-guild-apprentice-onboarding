@@ -41,16 +41,29 @@ impl Error {
 /// as `Can't read …/counters.json: Permission denied (os error 13).`, with
 /// how to fix it where the error says. `doing` is the verb, such as `read`.
 pub fn io(doing: &str, path: &Path, e: &std::io::Error) -> Error {
-    let path = path.display();
+    let display = path.display();
     let hint = match e.kind() {
         ErrorKind::PermissionDenied => format!(
-            " Check its permissions with `ls -ld {path}`: the store and everything in it \
+            " Check its permissions with `ls -ld {display}`: the store and everything in it \
              should be yours, readable and writable by you, as `tracker init` made them."
         ),
-        ErrorKind::NotFound => " Run `tracker init` to put back what's missing.".to_string(),
         _ => String::new(),
     };
-    Error::store(format!("Can't {doing} {path}: {e}.{hint}"))
+    Error::store(format!("Can't {doing} {display}: {e}.{hint}"))
+}
+
+/// The same as `io`, for one of the parts of the store that `tracker init`
+/// creates: its folder, `config.json`, `counters.json`, `items/` and the
+/// lock, or a file written into one of those folders. Only for these does
+/// "not found" mean that `init` would put back what's missing. An item
+/// file that's missing isn't one: `init` doesn't create items.
+pub fn io_in_store(doing: &str, path: &Path, e: &std::io::Error) -> Error {
+    let mut err = io(doing, path, e);
+    if e.kind() == ErrorKind::NotFound {
+        err.message
+            .push_str(" Run `tracker init` to put back what's missing.");
+    }
+    err
 }
 
 /// Where the parser stopped and why, from a serde_json error: the line and
