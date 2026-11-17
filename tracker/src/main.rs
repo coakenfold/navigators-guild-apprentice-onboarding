@@ -1501,11 +1501,21 @@ fn delete(store: &Store, id: &str) -> Result<Output> {
     // the two can only make the check under the lock refuse.
     let before = store.item_text(&id)?;
     let item = store.load_item(&id)?;
-    let otherwise = format!(
-        "Only a human deletes items. An item that shouldn't be done is shelved instead, with \
-         `{}`, and a human decides whether to delete it.",
-        states::command(&id, Via::Shelve)
-    );
+    // Shelving is the agent's way to put an item aside, but only open and
+    // in-progress items can be shelved (§2.8), so only they get that advice.
+    let otherwise = if states::find(Via::Shelve, item.status).is_some() {
+        format!(
+            "Only a human deletes items. An item that shouldn't be done is shelved instead, \
+             with `{}`, and a human decides whether to delete it.",
+            states::command(&id, Via::Shelve)
+        )
+    } else {
+        format!(
+            "Only a human deletes items, so a human decides whether to delete {id}, which is \
+             {}.",
+            item.status.phrase()
+        )
+    };
     tty::confirm(
         &format!("tracker delete {id}"),
         &id,

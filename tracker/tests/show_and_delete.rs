@@ -263,6 +263,37 @@ fn echo_the_id_into_delete_is_refused_and_the_file_remains() {
 }
 
 #[test]
+fn delete_refused_without_a_terminal_suggests_shelve_only_where_it_works() {
+    let env = env_with_project();
+    for title in ["open one", "started", "finished", "put away", "held"] {
+        env.create("XX", title);
+    }
+    env.json(&["start", "XX-2"]);
+    env.json(&["start", "XX-3"]);
+    env.json(&["submit", "XX-3"]);
+    env.json(&["shelve", "XX-4", "--reason", "later"]);
+    edit_file(&env, "XX-5", |item| item["status"] = json!("review"));
+
+    for id in ["XX-1", "XX-2"] {
+        let message = env.error(&["delete", id], 1);
+        let shelve = format!("tracker shelve {id} --reason");
+        assert!(message.contains(&shelve), "{id}: {message}");
+        // And the advice works.
+        env.json(&["shelve", id, "--reason", "not needed"]);
+    }
+    for (id, state) in [("XX-3", "done"), ("XX-4", "shelved"), ("XX-5", "in review")] {
+        let message = env.error(&["delete", id], 1);
+        assert!(!message.contains("tracker shelve"), "{id}: {message}");
+        assert!(
+            message.ends_with(&format!(
+                "a human decides whether to delete {id}, which is {state}."
+            )),
+            "{id}: {message}"
+        );
+    }
+}
+
+#[test]
 fn delete_of_a_missing_id_exits_1_and_writes_nothing() {
     let env = env_with_project();
     env.error(&["delete", "XX-1"], 1);
