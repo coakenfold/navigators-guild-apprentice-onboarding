@@ -381,10 +381,10 @@ Shelving an in-progress item frees its project for the next item (§4.4), so it 
 
 ```
 $ tracker delete BM-12
-BM-12 is done, verified at a41be07.
+BM-12 "Search filters bookmarks by tag" is done, verified by its gates at a41be07.
 Deleting it removes its file, its history (6 entries), its verification record and refs/tracker/BM-12.
-Its commits stay in git, the ID won't be used again, and the next digest lists the delete.
-Type BM-12 to delete:
+Any commits scoped to it stay in git, the ID won't be used again, and deleted.json records the delete for the digest.
+Type BM-12 to confirm, or anything else to cancel:
 ```
 
 Deleting a done item also removes its git ref, so nothing keeps a commit alive for an item that no longer exists. The ID is never handed out again (§4.4): commits scoped to it, such as `feat(BM-12): …`, stay in git history and would otherwise count as a new item's work.
