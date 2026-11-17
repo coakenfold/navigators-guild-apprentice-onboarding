@@ -331,7 +331,7 @@ impl Store {
             let path = entry
                 .map_err(|e| Error::store(format!("Can't read {}: {e}", dir.display())))?
                 .path();
-            // Skips anything that isn't an item file, such as `XX-1.json.tmp`.
+            // Skips anything that isn't an item file, such as `XX-1.json.4242.tmp`.
             if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
                 continue;
             }
@@ -418,17 +418,34 @@ pub fn read_file(path: &Path) -> Result<String> {
 
 /// Writes `contents` to a temporary file beside `path`, then renames it over
 /// `path`, so nobody ever reads a half-written file (§4.4).
+///
+/// The temporary file, such as `XX-1.json.4242.tmp`, is named with this
+/// process's ID and must not exist yet. A symlink planted at that name is
+/// refused rather than followed, so a write can't be sent to a file
+/// outside the store.
 pub fn write_file(path: &Path, contents: &str) -> Result<()> {
     let mut tmp_name = path.file_name().unwrap_or_default().to_os_string();
-    tmp_name.push(".tmp");
+    tmp_name.push(format!(".{}.tmp", std::process::id()));
     let tmp = path.with_file_name(tmp_name);
 
+    let mut file = match OpenOptions::new().write(true).create_new(true).open(&tmp) {
+        Ok(file) => file,
+        Err(e) if e.kind() == ErrorKind::AlreadyExists => {
+            // Not ours, so it's left where it is.
+            return Err(Error::store(format!(
+                "Can't write {}: {} already exists. If no tracker is running, remove it and \
+                 try again.",
+                path.display(),
+                tmp.display()
+            )));
+        }
+        Err(e) => return Err(Error::store(format!("Can't write {}: {e}", tmp.display()))),
+    };
     // Flushed to disk before the rename. Otherwise a crash could keep the
     // rename but lose the data, leaving an empty file in place of the old one.
-    let written = File::create(&tmp).and_then(|mut file| {
-        file.write_all(contents.as_bytes())?;
-        file.sync_all()
-    });
+    let written = file
+        .write_all(contents.as_bytes())
+        .and_then(|()| file.sync_all());
     if let Err(e) = written {
         let _ = fs::remove_file(&tmp);
         return Err(Error::store(format!("Can't write {}: {e}", tmp.display())));
