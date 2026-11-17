@@ -183,6 +183,7 @@ pub fn schema_for(args: &[&str]) -> &'static str {
         ["project", "add", ..] => "project-add",
         ["project", "list", ..] => "project-list",
         ["create", ..] => "create",
+        ["edit", ..] => "edit",
         ["list", ..] => "list",
         ["submit", ..] | ["status", _, "done", ..] => "submit",
         ["start" | "shelve" | "reopen" | "status", ..] => "move",

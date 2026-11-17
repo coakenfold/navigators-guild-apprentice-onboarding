@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::builder::PossibleValuesParser;
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use serde_json::{Value, json};
 
 use tracker::config::{self, Project};
@@ -39,18 +39,18 @@ enum Command {
         command: ProjectCommand,
     },
     /// Create an open item
-    Create {
-        /// What the item is, on one line
-        title: String,
-        /// Free markdown, stored in the item's `description` field
-        #[arg(long)]
-        description: Option<String>,
-        /// The project's key. Defaults to the project whose root holds the current folder
-        #[arg(long)]
-        project: Option<String>,
-    },
-    /// List items, grouped by project
-    List,
+    Create(CreateArgs),
+    /// Change an item's details, such as its priority or labels
+    ///
+    /// Adds one entry to the item's history, naming the fields that
+    /// changed. A done item can't be edited: reopen it first
+    Edit(EditArgs),
+    /// List items, grouped by project and sorted by priority
+    ///
+    /// Inside a project root it lists that project's items, and outside
+    /// every root, every project's. Without --status it shows open,
+    /// in-progress and review items. The filters combine
+    List(ListArgs),
     /// Start work on an open item: open → in-progress
     Start {
         /// The item's ID, such as BM-12
@@ -100,6 +100,97 @@ enum Command {
         #[arg(long)]
         reason: Option<String>,
     },
+}
+
+#[derive(Args)]
+struct CreateArgs {
+    /// What the item is, on one line
+    title: String,
+    /// Free markdown, stored in the item's `description` field
+    #[arg(long)]
+    description: Option<String>,
+    /// The project's key. Defaults to the project whose root holds the current folder
+    #[arg(long)]
+    project: Option<String>,
+    /// What kind of work it is. A capability adds something the system couldn't do before
+    #[arg(long, default_value = "change", value_parser = kinds())]
+    kind: String,
+    /// How soon it matters. `list` shows high first
+    #[arg(long, default_value = "medium", value_parser = priorities())]
+    priority: String,
+    /// A label, such as bug. Repeat it for more than one. Labels are lowercased, and each is kept once
+    #[arg(long = "label", value_name = "LABEL")]
+    labels: Vec<String>,
+    /// A reference into the project's design doc, such as DESIGN.md#2.4
+    #[arg(long)]
+    design: Option<String>,
+}
+
+#[derive(Args)]
+struct EditArgs {
+    /// The item's ID, such as BM-12
+    id: String,
+    /// A new title, on one line
+    #[arg(long)]
+    title: Option<String>,
+    /// A new kind
+    #[arg(long, value_parser = kinds())]
+    kind: Option<String>,
+    /// A new priority
+    #[arg(long, value_parser = priorities())]
+    priority: Option<String>,
+    /// A label to add, such as needs-review. Repeat it for more than one
+    #[arg(long = "label", value_name = "LABEL")]
+    labels: Vec<String>,
+    /// A label to remove. Repeat it for more than one
+    #[arg(long = "unlabel", value_name = "LABEL")]
+    unlabels: Vec<String>,
+    /// A new reference into the design doc, or "" to remove it
+    #[arg(long)]
+    design: Option<String>,
+    /// A new description, which replaces the old one, or "" to remove it
+    #[arg(long)]
+    description: Option<String>,
+}
+
+#[derive(Args)]
+struct ListArgs {
+    /// Only this project's items, from anywhere
+    #[arg(long, conflicts_with = "all")]
+    project: Option<String>,
+    /// Every project's items, even inside a project root
+    #[arg(long)]
+    all: bool,
+    /// Only items in these states, comma-separated, such as open,shelved
+    #[arg(
+        long,
+        value_delimiter = ',',
+        value_name = "STATES",
+        value_parser = PossibleValuesParser::new(Status::ALL.map(Status::as_str))
+    )]
+    status: Vec<String>,
+    /// Only items with this priority
+    #[arg(long, value_parser = priorities())]
+    priority: Option<String>,
+    /// Only items with this label
+    #[arg(long)]
+    label: Option<String>,
+    /// Only items of this kind
+    #[arg(long, value_parser = kinds())]
+    kind: Option<String>,
+    /// Only done items verified this way
+    #[arg(long, value_parser = PossibleValuesParser::new(VerifiedBy::ALL.map(VerifiedBy::as_str)))]
+    by: Option<String>,
+}
+
+/// The values `--kind` takes, so that clap names them when one is wrong.
+fn kinds() -> PossibleValuesParser {
+    PossibleValuesParser::new(Kind::ALL.map(Kind::as_str))
+}
+
+/// The values `--priority` takes, so that clap names them when one is wrong.
+fn priorities() -> PossibleValuesParser {
+    PossibleValuesParser::new(Priority::ALL.map(Priority::as_str))
 }
 
 #[derive(Subcommand)]
@@ -174,12 +265,9 @@ fn main() -> ExitCode {
             } => project_add(&store, &key, &name, &root, design),
             ProjectCommand::List => project_list(&store),
         },
-        Command::Create {
-            title,
-            description,
-            project,
-        } => create(&store, &title, description, project),
-        Command::List => list(&store),
+        Command::Create(args) => create(&store, args),
+        Command::Edit(args) => edit(&store, args),
+        Command::List(args) => list(&store, args),
         Command::Start { id } => move_item(&store, &id, Via::Start, None),
         Command::Submit { id } => move_item(&store, &id, Via::Submit, None),
         Command::Shelve { id, reason } => move_item(&store, &id, Via::Shelve, reason),
@@ -444,27 +532,24 @@ fn project_list(store: &Store) -> Result<Output> {
     })
 }
 
-fn create(
-    store: &Store,
-    title: &str,
-    description: Option<String>,
-    project: Option<String>,
-) -> Result<Output> {
+fn create(store: &Store, args: CreateArgs) -> Result<Output> {
     store.require_exists()?;
-    let title = title.trim();
-    if title.is_empty() {
-        return Err(Error::input(
-            "A title can't be empty or only whitespace. Say what the item is, such as \
-             tracker create \"Search filters bookmarks by tag\"."
-                .to_string(),
-        ));
-    }
-    check_printable(title, "A title", "Put the details in --description.")?;
-    let description = description.filter(|text| !text.trim().is_empty());
+    let title = check_title(&args.title)?;
+    let description = args.description.filter(|text| !text.trim().is_empty());
+    let kind = Kind::parse(&args.kind).expect("clap only accepts kinds");
+    let priority = Priority::parse(&args.priority).expect("clap only accepts priorities");
+    let mut labels = Vec::new();
+    add_labels(&mut labels, &check_labels(&args.labels)?);
+    let design = args
+        .design
+        .as_deref()
+        .map(check_design)
+        .transpose()?
+        .flatten();
 
     let _lock = store.lock()?;
     let config = config::load(store)?;
-    let key = match project {
+    let key = match args.project {
         Some(key) => {
             let key = key.trim().to_ascii_uppercase();
             if !config.projects.contains_key(&key) {
@@ -486,11 +571,13 @@ fn create(
     let now = item::now();
     let item = Item {
         id,
-        title: title.to_string(),
+        title,
         project: key,
-        kind: Kind::Change,
+        kind,
         status: Status::Open,
-        priority: Priority::Medium,
+        priority,
+        labels,
+        design,
         created: now,
         updated: now,
         verification: None,
@@ -503,6 +590,184 @@ fn create(
     Ok(Output {
         text: format!("Created {}: {}\n", item.id, item.title),
         json: json!({ "item": item }),
+    })
+}
+
+/// A title, trimmed. Refuses one that's empty or doesn't fit on a line.
+fn check_title(title: &str) -> Result<String> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err(Error::input(
+            "A title can't be empty or only whitespace. Say what the item is, such as \
+             tracker create \"Search filters bookmarks by tag\"."
+                .to_string(),
+        ));
+    }
+    check_printable(title, "A title", "Put the details in --description.")?;
+    Ok(title.to_string())
+}
+
+/// A label as it's stored: trimmed and lowercased (§2.1), so `Bug` and
+/// `bug` are one label. Refuses one that's empty or doesn't fit on a line.
+fn check_label(label: &str) -> Result<String> {
+    let label = label.trim().to_lowercase();
+    if label.is_empty() {
+        return Err(Error::input(
+            "A label can't be empty or only whitespace. Name it, such as --label bug.".to_string(),
+        ));
+    }
+    check_printable(&label, "A label", "Use a word or two, such as --label bug.")?;
+    Ok(label)
+}
+
+/// Each label checked as `check_label` does, in the order given.
+fn check_labels(labels: &[String]) -> Result<Vec<String>> {
+    labels.iter().map(|label| check_label(label)).collect()
+}
+
+/// Adds each of `new` to `labels` that isn't there yet, so each label is
+/// kept once, in the order it was first given.
+fn add_labels(labels: &mut Vec<String>, new: &[String]) {
+    for label in new {
+        if !labels.contains(label) {
+            labels.push(label.clone());
+        }
+    }
+}
+
+/// A design reference, trimmed, or `None` for an empty one, which `edit`
+/// takes as "remove it". Refuses one that doesn't fit on a line.
+fn check_design(design: &str) -> Result<Option<String>> {
+    let design = design.trim();
+    if design.is_empty() {
+        return Ok(None);
+    }
+    check_printable(
+        design,
+        "A --design reference",
+        "Name a file and section, such as DESIGN.md#2.4.",
+    )?;
+    Ok(Some(design.to_string()))
+}
+
+/// `edit`: changes an item's details and adds one history entry that names
+/// the fields it changed (§2.1). Refused for a done item, whose verification
+/// record is about the item as it was verified.
+fn edit(store: &Store, args: EditArgs) -> Result<Output> {
+    store.require_exists()?;
+    let id = normalize_id(&args.id);
+    // Every value is checked before the lock is taken, so bad input never
+    // waits for another command.
+    let title = args.title.as_deref().map(check_title).transpose()?;
+    let kind = args
+        .kind
+        .as_deref()
+        .map(|kind| Kind::parse(kind).expect("clap only accepts kinds"));
+    let priority = args
+        .priority
+        .as_deref()
+        .map(|priority| Priority::parse(priority).expect("clap only accepts priorities"));
+    let add = check_labels(&args.labels)?;
+    let remove = check_labels(&args.unlabels)?;
+    if let Some(label) = add.iter().find(|label| remove.contains(label)) {
+        return Err(Error::input(format!(
+            "\"{label}\" is given to both --label and --unlabel. Keep the one you mean."
+        )));
+    }
+    let design = args.design.as_deref().map(check_design).transpose()?;
+    let description = args
+        .description
+        .map(|text| Some(text).filter(|text| !text.trim().is_empty()));
+    let nothing_given = title.is_none()
+        && kind.is_none()
+        && priority.is_none()
+        && add.is_empty()
+        && remove.is_empty()
+        && design.is_none()
+        && description.is_none();
+    if nothing_given {
+        return Err(Error::input(format!(
+            "Say what to change, with at least one of --title, --kind, --priority, --label, \
+             --unlabel, --design and --description, such as `tracker edit {id} --priority high`."
+        )));
+    }
+
+    let _lock = store.lock()?;
+    let mut item = store.load_item(&id)?;
+    if item.status == Status::Done {
+        return Err(Error::input(format!(
+            "{id} is done, so it can't be edited: its verification record is about the item as \
+             it was verified. Reopen it first with `{}`.",
+            states::command(&id, Via::Reopen)
+        )));
+    }
+
+    // The fields that change, in the item file's order.
+    let mut fields = Vec::new();
+    if let Some(title) = title
+        && title != item.title
+    {
+        item.title = title;
+        fields.push("title");
+    }
+    if let Some(kind) = kind
+        && kind != item.kind
+    {
+        item.kind = kind;
+        fields.push("kind");
+    }
+    if let Some(priority) = priority
+        && priority != item.priority
+    {
+        item.priority = priority;
+        fields.push("priority");
+    }
+    let mut labels: Vec<String> = item
+        .labels
+        .iter()
+        .filter(|label| !remove.contains(label))
+        .cloned()
+        .collect();
+    add_labels(&mut labels, &add);
+    if labels != item.labels {
+        item.labels = labels;
+        fields.push("labels");
+    }
+    if let Some(design) = design
+        && design != item.design
+    {
+        item.design = design;
+        fields.push("design");
+    }
+    if let Some(description) = description
+        && description != item.description
+    {
+        item.description = description;
+        fields.push("description");
+    }
+
+    let fields: Vec<String> = fields.into_iter().map(String::from).collect();
+    let text = if fields.is_empty() {
+        // Nothing to record, so the file isn't touched.
+        format!("{id} already has those details. Nothing changed.\n")
+    } else {
+        let now = item::now();
+        item.updated = now;
+        item.history.push(HistoryEntry {
+            at: now,
+            from: item.status,
+            to: item.status,
+            via: Via::Edit,
+            interactive: tty::is_interactive(),
+            reason: None,
+            fields: fields.clone(),
+        });
+        store.update_item(&item)?;
+        format!("Edited {id}: changed {}.\n", states::join(&fields, "and"))
+    };
+    Ok(Output {
+        text,
+        json: json!({ "fields": fields, "item": item }),
     })
 }
 
@@ -531,48 +796,161 @@ fn no_project_here(config: &config::Config) -> String {
     }
 }
 
-fn list(store: &Store) -> Result<Output> {
+/// The states plain `list` shows: the work that isn't finished or put away.
+const ACTIVE: [Status; 3] = [Status::Open, Status::InProgress, Status::Review];
+
+/// `list`: the items in one project or every project (§3), filtered,
+/// grouped by project and sorted by priority, highest first.
+fn list(store: &Store, args: ListArgs) -> Result<Output> {
     store.require_exists()?;
+    let label = args.label.as_deref().map(check_label).transpose()?;
     let config = config::load(store)?;
-    let items = store.load_items()?;
+    let mut items = store.load_items()?;
+    let store_is_empty = items.is_empty();
+
+    // Which project: the one named, every one, or the one whose root holds
+    // the current folder. `scope_hint` says how to see every project.
+    let project = if args.all {
+        None
+    } else if let Some(key) = args.project {
+        let key = key.trim().to_ascii_uppercase();
+        // A project removed from config.json by hand still has its items.
+        let known =
+            config.projects.contains_key(&key) || items.iter().any(|item| item.project == key);
+        if !known {
+            return Err(Error::input(unknown_project(&config, &key)));
+        }
+        Some(key)
+    } else {
+        let cwd = std::env::current_dir()
+            .map_err(|e| Error::input(format!("Can't read the current folder: {e}")))?;
+        config::project_for_dir(&config, &cwd)
+    };
+
+    // Without --status, the active states, unless --by asks for done items.
+    let statuses: Vec<Status> = if !args.status.is_empty() {
+        let parsed = args
+            .status
+            .iter()
+            .map(|name| Status::parse(name).expect("clap only accepts state names"));
+        let mut statuses: Vec<Status> = Vec::new();
+        for status in parsed {
+            if !statuses.contains(&status) {
+                statuses.push(status);
+            }
+        }
+        statuses
+    } else if args.by.is_some() {
+        vec![Status::Done]
+    } else {
+        ACTIVE.to_vec()
+    };
+    let priority = args
+        .priority
+        .as_deref()
+        .map(|name| Priority::parse(name).expect("clap only accepts priorities"));
+    let kind = args
+        .kind
+        .as_deref()
+        .map(|name| Kind::parse(name).expect("clap only accepts kinds"));
+    let by = args
+        .by
+        .as_deref()
+        .map(|name| VerifiedBy::parse(name).expect("clap only accepts ways of verifying"));
+
+    items.retain(|item| {
+        project.as_ref().is_none_or(|key| &item.project == key)
+            && statuses.contains(&item.status)
+            && priority.is_none_or(|priority| item.priority == priority)
+            && kind.is_none_or(|kind| item.kind == kind)
+            && label.as_ref().is_none_or(|label| item.labels.contains(label))
+            // A file written by slice 2 can hold a verification record on
+            // a shelved item, so the state is checked too.
+            && by.is_none_or(|by| {
+                item.status == Status::Done
+                    && item.verification.as_ref().is_some_and(|record| record.by == by)
+            })
+    });
+    // `load_items` sorted by project and number, so within each priority
+    // the items stay in number order.
+    items.sort_by_key(|item| (item.project.clone(), item.priority.rank(), item.number()));
 
     let mut text = String::new();
-    if items.is_empty() {
+    if store_is_empty {
         text.push_str("No items yet. Create one with `tracker create \"title\"`.\n");
+    } else if items.is_empty() {
+        text.push_str("No items match.\n");
     }
-    let mut start = 0;
-    while start < items.len() {
-        // `load_items` sorts by project, so each project's items sit together.
-        let project = &items[start].project;
-        let end = start
-            + items[start..]
-                .iter()
-                .take_while(|item| &item.project == project)
-                .count();
-
-        let heading = match config.projects.get(project) {
-            Some(p) => format!("{project}  {}", p.name),
-            None => project.clone(),
-        };
-        text.push_str(&text::for_terminal(&heading, false));
+    // One table for every row, so the columns line up across projects, with
+    // a heading line before each project's first item.
+    let rows: Vec<Vec<String>> = items
+        .iter()
+        .map(|item| {
+            let labels = if item.labels.is_empty() {
+                String::new()
+            } else {
+                format!("[{}]", item.labels.join(", "))
+            };
+            vec![
+                format!("  {}", item.id),
+                item.priority.as_str().to_string(),
+                item.kind.as_str().to_string(),
+                item.status.as_str().to_string(),
+                item.title.clone(),
+                labels,
+            ]
+        })
+        .collect();
+    let table = table(&rows);
+    for (i, (item, line)) in items.iter().zip(table.lines()).enumerate() {
+        if i == 0 || items[i - 1].project != item.project {
+            let heading = match config.projects.get(&item.project) {
+                Some(p) => format!("{}  {}", item.project, p.name),
+                None => item.project.clone(),
+            };
+            text.push_str(&text::for_terminal(&heading, false));
+            text.push('\n');
+        }
+        text.push_str(line);
         text.push('\n');
-        let rows: Vec<Vec<String>> = items[start..end]
-            .iter()
-            .map(|item| {
-                vec![
-                    format!("  {}", item.id),
-                    item.status.as_str().to_string(),
-                    item.title.clone(),
-                ]
-            })
-            .collect();
-        text.push_str(&table(&rows));
-        start = end;
+    }
+
+    // What the list covered, so a filtered list is never mistaken for an
+    // empty store (§3).
+    text.push('\n');
+    match &project {
+        Some(key) => text.push_str(&format!("{key} only. `--all` for every project.\n")),
+        None => text.push_str("Every project.\n"),
+    }
+    let mut filters = Vec::new();
+    if !args.status.is_empty() {
+        let names: Vec<String> = statuses.iter().map(|s| s.as_str().to_string()).collect();
+        filters.push(format!("status {}", states::join(&names, "or")));
+    }
+    if let Some(priority) = priority {
+        filters.push(format!("priority {}", priority.as_str()));
+    }
+    if let Some(label) = &label {
+        filters.push(format!("label \"{label}\""));
+    }
+    if let Some(kind) = kind {
+        filters.push(format!("kind {}", kind.as_str()));
+    }
+    if let Some(by) = by {
+        filters.push(format!("verified by {} (done items only)", by.as_str()));
+    }
+    if args.status.is_empty() && by.is_none() {
+        text.push_str(
+            "Open, in-progress and review items. `--status done,shelved` for the others.\n",
+        );
+    }
+    if !filters.is_empty() {
+        text.push_str(&format!("Filters: {}.\n", filters.join(", ")));
     }
 
     Ok(Output {
         text,
-        json: json!({ "items": items }),
+        json: json!({ "project": project, "items": items }),
     })
 }
 
@@ -693,6 +1071,7 @@ fn apply(
         via: step.via,
         interactive: tty::is_interactive(),
         reason,
+        fields: Vec::new(),
     });
     store.update_item(&item)?;
     let json = if step.via == Via::Submit {

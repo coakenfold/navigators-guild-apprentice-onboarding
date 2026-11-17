@@ -573,14 +573,21 @@ fn list_and_project_list_show_the_new_states() {
     env.json(&["start", "XX-2"]);
     env.json(&["shelve", "XX-3", "--reason", "r"]);
 
-    let list = env.json(&["list"]);
-    let states: Vec<&str> = list["items"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|item| item["status"].as_str().unwrap())
-        .collect();
-    assert_eq!(states, ["done", "in-progress", "shelved"]);
+    let states = |args: &[&str]| -> Vec<String> {
+        env.json(args)["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["status"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let every_state = "open,in-progress,review,done,shelved";
+    assert_eq!(
+        states(&["list", "--status", every_state]),
+        ["done", "in-progress", "shelved"]
+    );
+    // Plain `list` hides done and shelved items (slice 3).
+    assert_eq!(states(&["list"]), ["in-progress"]);
 
     let projects = env.json(&["project", "list"]);
     assert_eq!(
@@ -615,7 +622,10 @@ fn a_move_refuses_a_file_it_would_lose_fields_from() {
     let env = env_with_item();
     let path = env.item_path("XX-1");
     let original = fs::read_to_string(&path).unwrap();
-    let edited = original.replace("  \"created\"", "  \"labels\": [\"bug\"],\n  \"created\"");
+    let edited = original.replace(
+        "  \"created\"",
+        "  \"written\": [\"71ac3e\"],\n  \"created\"",
+    );
     assert_ne!(edited, original);
     fs::write(&path, &edited).unwrap();
 
@@ -625,7 +635,7 @@ fn a_move_refuses_a_file_it_would_lose_fields_from() {
         &["shelve", "XX-1", "--reason", "later"],
     ] {
         let message = env.error(args, 3);
-        assert!(message.contains("labels"), "{args:?}: {message}");
+        assert!(message.contains("written"), "{args:?}: {message}");
         assert_eq!(fs::read_to_string(&path).unwrap(), edited, "{args:?}");
     }
 }

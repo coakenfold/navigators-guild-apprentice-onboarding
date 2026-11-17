@@ -38,7 +38,15 @@ fn a_title_edited_by_hand_is_escaped_in_text_and_json() {
     assert!(stdout.contains("evil\\u{1b}[2K"), "{stdout}");
     // A line break in the title can't start a line of its own.
     assert!(stdout.contains("txt\\u{85}c1\\u{a}line"), "{stdout}");
-    assert_eq!(stdout.lines().count(), 2, "{stdout}");
+    assert!(
+        !stdout.lines().any(|line| line.starts_with("line")),
+        "{stdout}"
+    );
+    assert_eq!(
+        stdout.lines().filter(|line| line.contains("evil")).count(),
+        1,
+        "{stdout}"
+    );
 
     // The JSON escapes it too, and still parses to the same title.
     let output = env.cmd().args(["list", "--json"]).assert().success();

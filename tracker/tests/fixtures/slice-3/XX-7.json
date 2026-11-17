@@ -1,0 +1,39 @@
+{
+  "id": "XX-7",
+  "title": "Edited after start, then shelved",
+  "project": "XX",
+  "kind": "chore",
+  "status": "shelved",
+  "priority": "low",
+  "created": "2026-11-17T01:17:45Z",
+  "updated": "2026-11-17T01:17:45Z",
+  "history": [
+    {
+      "at": "2026-11-17T01:17:45Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-17T01:17:45Z",
+      "from": "in-progress",
+      "to": "in-progress",
+      "via": "edit",
+      "interactive": false,
+      "fields": [
+        "title",
+        "kind",
+        "labels"
+      ]
+    },
+    {
+      "at": "2026-11-17T01:17:45Z",
+      "from": "in-progress",
+      "to": "shelved",
+      "via": "shelve",
+      "interactive": false,
+      "reason": "Not needed now"
+    }
+  ]
+}

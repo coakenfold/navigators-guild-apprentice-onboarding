@@ -82,7 +82,7 @@ fn a_wrong_output_is_caught() {
 
     // A field the schema doesn't name, or a missing one.
     let mut extra = item();
-    extra["labels"] = json!(["bug"]);
+    extra["written"] = json!(["71ac3e"]);
     fails("item", extra);
     let mut missing = item();
     missing.as_object_mut().unwrap().remove("updated");
@@ -116,7 +116,12 @@ fn a_wrong_output_is_caught() {
     let mut bad = item();
     bad["status"] = json!("closed");
     fails("create", json!({ "item": bad.clone() }));
-    fails("list", json!({ "items": [item(), bad] }));
+    fails("list", json!({ "project": null, "items": [item(), bad] }));
+    // list says which project it covered: a key, or null for every one.
+    check_schema("list", &json!({ "project": "XX", "items": [item()] }));
+    check_schema("list", &json!({ "project": null, "items": [] }));
+    fails("list", json!({ "items": [item()] }));
+    fails("list", json!({ "project": "xx", "items": [] }));
     // create's item is wrapped, never bare.
     fails("create", item());
 
@@ -161,6 +166,84 @@ fn a_wrong_output_is_caught() {
     let mut bad = moved.clone();
     bad["history"] = json!([]);
     fails("item", bad);
+
+    // Labels and a design reference (slice 3, §2.1).
+    let mut organised = item();
+    organised["labels"] = json!(["bug", "needs review", "ünï"]);
+    organised["design"] = json!("DESIGN.md#2.4");
+    check_schema("item", &organised);
+    for (field, value) in [
+        ("labels", json!([])),
+        ("labels", json!(["bug", "bug"])),
+        ("labels", json!(["Bug"])),
+        ("labels", json!(["Ünï"])),
+        ("labels", json!([""])),
+        ("labels", json!([" bug"])),
+        ("labels", json!(["two\nlines"])),
+        ("labels", json!("bug")),
+        ("design", json!("")),
+        ("design", json!("a\nb")),
+    ] {
+        let mut bad = organised.clone();
+        bad[field] = value;
+        fails("item", bad);
+    }
+
+    // An edit's history entry: from equal to to, and the fields it changed.
+    let edit = json!({
+        "at": "2026-11-15T22:03:00Z", "from": "open", "to": "open", "via": "edit",
+        "interactive": false, "fields": ["priority", "labels"]
+    });
+    let mut edited = organised.clone();
+    edited["history"] = json!([edit.clone()]);
+    check_schema("item", &edited);
+    check_schema(
+        "edit",
+        &json!({ "fields": ["priority", "labels"], "item": edited.clone() }),
+    );
+    check_schema("edit", &json!({ "fields": [], "item": organised.clone() }));
+    fails("edit", json!({ "item": edited.clone() }));
+    fails(
+        "edit",
+        json!({ "fields": ["status"], "item": edited.clone() }),
+    );
+    for bad_entry in [
+        // An edit names what it changed, and has no reason.
+        {
+            let mut entry = edit.clone();
+            entry.as_object_mut().unwrap().remove("fields");
+            entry
+        },
+        {
+            let mut entry = edit.clone();
+            entry["reason"] = json!("why");
+            entry
+        },
+        {
+            let mut entry = edit.clone();
+            entry["fields"] = json!([]);
+            entry
+        },
+        {
+            let mut entry = edit.clone();
+            entry["fields"] = json!(["status"]);
+            entry
+        },
+        {
+            let mut entry = edit.clone();
+            entry["fields"] = json!(["title", "title"]);
+            entry
+        },
+        // A move has no fields.
+        json!({
+            "at": "2026-11-15T22:03:00Z", "from": "open", "to": "in-progress", "via": "start",
+            "interactive": false, "fields": ["title"]
+        }),
+    ] {
+        let mut bad = organised.clone();
+        bad["history"] = json!([bad_entry]);
+        fails("item", bad);
+    }
 
     // The error shape.
     check_schema("error", &json!({ "error": "x", "exit_code": 1 }));

@@ -2,12 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tracker.invalid/schemas/list.schema.json",
   "title": "tracker list --json",
-  "description": "Slice 3 adds project: the key list covered, or null for every project (DESIGN.md §3).",
+  "description": "The items list covered, after its filters (DESIGN.md §3).",
   "type": "object",
-  "required": ["items"],
+  "required": ["project", "items"],
   "properties": {
+    "project": {
+      "description": "The project the list covered: the key, or null for every project. Inside a project root it's that project's, unless --project or --all says otherwise.",
+      "anyOf": [{ "$ref": "item.schema.json#/$defs/key" }, { "type": "null" }]
+    },
     "items": {
-      "description": "The items, sorted by project and then by number.",
+      "description": "The items that match every filter, sorted by project, then by priority from high to low, then by number.",
       "type": "array",
       "items": { "$ref": "item.schema.json" }
     }

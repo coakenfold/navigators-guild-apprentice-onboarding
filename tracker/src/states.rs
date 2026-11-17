@@ -155,7 +155,7 @@ pub fn not_to(id: &str, from: Status, to: Status) -> Error {
 }
 
 /// "a", "a or b", "a, b or c", with `word` as "or" or "and".
-fn join(parts: &[String], word: &str) -> String {
+pub fn join(parts: &[String], word: &str) -> String {
     match parts.split_last() {
         None => String::new(),
         Some((last, [])) => last.clone(),

@@ -1,0 +1,29 @@
+{
+  "id": "XX-6",
+  "title": "Search filters bookmarks by tag",
+  "project": "XX",
+  "kind": "capability",
+  "status": "open",
+  "priority": "high",
+  "labels": [
+    "feature",
+    "needs-review"
+  ],
+  "design": "DESIGN.md#2.5",
+  "created": "2026-11-17T01:17:45Z",
+  "updated": "2026-11-17T01:17:45Z",
+  "history": [
+    {
+      "at": "2026-11-17T01:17:45Z",
+      "from": "open",
+      "to": "open",
+      "via": "edit",
+      "interactive": false,
+      "fields": [
+        "labels",
+        "description"
+      ]
+    }
+  ],
+  "description": "Has every field slice 3 adds: kind, priority, labels, design, and an edit entry. “é” 😀"
+}

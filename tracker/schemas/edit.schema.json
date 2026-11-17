@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracker.invalid/schemas/edit.schema.json",
+  "title": "tracker edit --json",
+  "description": "An edit (DESIGN.md §3). When fields isn't empty, the item's last history entry is the edit just made, with the same fields. When it's empty, nothing changed and nothing was written.",
+  "type": "object",
+  "required": ["fields", "item"],
+  "properties": {
+    "fields": {
+      "description": "The fields the edit changed, in the item file's order. Empty when the item already had every value given.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["title", "kind", "priority", "labels", "design", "description"] }
+    },
+    "item": {
+      "description": "The item after the edit, exactly as its file holds it.",
+      "$ref": "item.schema.json"
+    }
+  },
+  "additionalProperties": false
+}
