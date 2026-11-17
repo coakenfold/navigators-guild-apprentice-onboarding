@@ -198,3 +198,42 @@ fn a_history_entry_from_a_newer_tracker_still_lists() {
     assert_eq!(history[1]["via"], "unknown");
     env.json(&["project", "list"]);
 }
+
+#[test]
+fn a_move_refuses_an_item_whose_history_has_a_command_it_doesnt_know() {
+    // Writing the item back would turn `edit` into `unknown` and drop the
+    // entry's `fields`. Other items are unaffected.
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    env.create("XX", "b");
+    env.json(&["start", "XX-1"]);
+    let edited = add_edit_entry(&env, "XX-1");
+    let path = env.item_path("XX-1");
+
+    for args in [
+        &["submit", "XX-1"][..],
+        &["status", "XX-1", "done"],
+        &["shelve", "XX-1", "--reason", "later"],
+    ] {
+        let message = env.error(args, 3);
+        assert!(message.contains("history"), "{args:?}: {message}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), edited, "{args:?}");
+    }
+
+    // The text list shows it too, and the other item still moves.
+    let output = env
+        .cmd()
+        .arg("list")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(output).unwrap();
+    assert!(text.contains("XX-1  in-progress  a"), "{text}");
+    assert_eq!(
+        env.json(&["start", "XX-2"])["item"]["status"],
+        "in-progress"
+    );
+}
