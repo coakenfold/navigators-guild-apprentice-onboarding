@@ -193,6 +193,75 @@ fn a_symlink_to_a_missing_file_is_skipped_and_named_without_suggesting_init() {
     assert!(!nowhere.exists());
 }
 
+/// Runs `tracker <args> --json` with `TRACKER_HOME` set to `home`, or
+/// unset for `None`, expects exit 3, and returns the error message.
+fn store_error(env: &Env, home: Option<&Path>, args: &[&str]) -> String {
+    let mut cmd = env.cmd();
+    match home {
+        Some(home) => cmd.env("TRACKER_HOME", home),
+        None => cmd.env_remove("TRACKER_HOME"),
+    };
+    let output = cmd.args(args).arg("--json").assert().code(3);
+    let error = common::parse(&output.get_output().stdout);
+    common::check_schema("error", &error);
+    error["error"].as_str().unwrap().to_string()
+}
+
+#[test]
+fn a_store_folder_that_is_a_file_is_named_with_how_to_fix_it() {
+    let env = Env::without_store();
+    let file = env.work.path().join("f");
+    fs::write(&file, "not a store").unwrap();
+    let root = env.dir("xx");
+
+    // TRACKER_HOME naming a file, and naming a folder inside a file.
+    let mut commands = every_command(&root);
+    commands.insert(0, vec!["init".to_string()]);
+    for args in commands {
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let message = store_error(&env, Some(&file), &args);
+        assert_eq!(
+            message,
+            format!(
+                "TRACKER_HOME names {}, which is a file, not a folder, so it can't hold the \
+                 store. Point TRACKER_HOME at a folder, or move the file.",
+                file.display()
+            ),
+            "{args:?}"
+        );
+    }
+    let inside = file.join("store");
+    let message = store_error(&env, Some(&inside), &["init"]);
+    assert_eq!(
+        message,
+        format!(
+            "TRACKER_HOME names {}, but {} is a file, not a folder, so it can't hold the store. \
+             Point TRACKER_HOME at a folder, or move the file.",
+            inside.display(),
+            file.display()
+        )
+    );
+
+    // With no TRACKER_HOME, ~/.tracker being a file says the same.
+    let default = env.user_home().join(".tracker");
+    fs::write(&default, "").unwrap();
+    let message = store_error(&env, None, &["list"]);
+    assert!(
+        message.starts_with(&format!(
+            "TRACKER_HOME isn't set, so the store is {}, which is a file",
+            default.display()
+        )),
+        "{message}"
+    );
+    assert!(
+        message.ends_with("Set TRACKER_HOME to a folder, or move the file."),
+        "{message}"
+    );
+
+    // The file is left as it was.
+    assert_eq!(fs::read_to_string(&file).unwrap(), "not a store");
+}
+
 /// One run of every command, for the tests that need each of them.
 fn every_command(root: &Path) -> Vec<Vec<String>> {
     let root = root.to_str().unwrap();

@@ -41,12 +41,23 @@ impl Store {
                         .unwrap_or_else(|_| "/Users/me/.tracker".to_string())
                 )));
             }
+            check_not_a_file(
+                &home,
+                "TRACKER_HOME names",
+                "Point TRACKER_HOME at a folder",
+            )?;
             return Ok(Store { home });
         }
         match std::env::var_os("HOME") {
-            Some(home) => Ok(Store {
-                home: PathBuf::from(home).join(".tracker"),
-            }),
+            Some(home) => {
+                let home = PathBuf::from(home).join(".tracker");
+                check_not_a_file(
+                    &home,
+                    "TRACKER_HOME isn't set, so the store is",
+                    "Set TRACKER_HOME to a folder",
+                )?;
+                Ok(Store { home })
+            }
             None => Err(Error::store(
                 "Neither TRACKER_HOME nor HOME is set, so there's no store to use.".to_string(),
             )),
@@ -679,6 +690,30 @@ fn check_item(path: &Path, text: &str) -> std::result::Result<Item, Skipped> {
         ));
     }
     Ok(item)
+}
+
+/// Refuses, with exit 3, a store folder `home` that's a file, or that has a
+/// file where one of the folders above it should be. Otherwise every
+/// command would fail with "Not a directory" on a file inside it, and
+/// `init` with "File exists", neither of which says what's wrong. `named`
+/// says where `home` came from, and `instead` what else to do than move
+/// the file.
+fn check_not_a_file(home: &Path, named: &str, instead: &str) -> Result<()> {
+    let Some(file) = home
+        .ancestors()
+        .find(|path| fs::metadata(path).is_ok_and(|meta| !meta.is_dir()))
+    else {
+        return Ok(());
+    };
+    let problem = if file == home {
+        "which is a file, not a folder".to_string()
+    } else {
+        format!("but {} is a file, not a folder", file.display())
+    };
+    Err(Error::store(format!(
+        "{named} {}, {problem}, so it can't hold the store. {instead}, or move the file.",
+        home.display()
+    )))
 }
 
 /// Creates `path`, and any missing folders above it, readable only by me
