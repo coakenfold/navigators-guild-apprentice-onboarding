@@ -24,10 +24,11 @@ pub fn is_interactive() -> bool {
 /// 1. Refuses, with exit 1, unless stdin is a terminal (`is_interactive`).
 ///    `command` is how the command was run, such as `tracker delete XX-1`,
 ///    and `otherwise` says what an agent can do instead, or is empty.
-/// 2. Prints `warning`, which says what will be lost, then asks for `id`.
+/// 2. Prints `warning`, which says what will be lost, then asks for `id`:
+///    the item ID, or `ack` for `digest ack`, which acts on a project.
 /// 3. Reads one line. Anything but `id` cancels, with exit 1, and so does
-///    an empty line or the end of input. The ID's key may be typed in
-///    either case, as on the command line.
+///    an empty line or the end of input. The ID's key, or `ack`, may be
+///    typed in either case, as on the command line.
 ///
 /// The warning and question go to stderr, so a `--json` caller's stdout
 /// still holds one JSON object. Call this before taking the store's lock:

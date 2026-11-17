@@ -292,13 +292,14 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 
 - **Prompt:** "Add per-project digests as §2.6 describes:
   - `digest [--project]` lists auto-verified items, judge-passed ones first with refs, answers and reasons. It also lists every shelve, every human action (`approve`, `reject`, `delete`, `criterion accept`), mine included, and every `edit` whose history entry shows it removed `needs-review` or changed kind away from `capability`, each marked by whether it came from an interactive terminal, and says when the digest was last acknowledged.
-  - `digest ack` records what was seen in `digests.json`.
+  - `digest ack` records what was seen in `digests.json`. It confirms through `tty::confirm`, asking me to type `ack` rather than an ID (§2.7). It builds the digest before asking, then, under the lock, builds it again and compares the two. If they differ, it records nothing and exits 1, as `Store::lock_unchanged` does for an item, so an entry added while I read is never acknowledged unseen.
   - `review` flags a digest older than `every_days` as overdue.
 
   Add `audit` and `judges` (§3), and bring `--help` text and empty states up to slice 5's standard for every command added since."
 
 - **Done when:**
   - `digest` lists every item auto-verified since that project's last ack, judge-passed first. `digest ack --project XX` empties only XX's digest.
+  - From a terminal, `digest ack` asks for `ack`. Typing the project key, or anything else, cancels with exit 1. An item auto-verified in that project while the question waits makes it exit 1, record nothing, and leave that item in the next digest.
   - A shelve from piped stdin and one run under `script` (skipped where `script` isn't installed) are both listed, marked not from a terminal and from a terminal. So are a delete and an approve made since the last ack, an edit that removes `needs-review`, and one that changes kind from `capability` to `change`. An edit that only adds a label isn't listed.
   - `audit` reports a hand-edited status, a done item with no verification record, and an ID used twice.
   - `audit` reports a `deleted.json` line whose ID is at or above its project's counter in `counters.json`. Such a line can only have been written by hand, and `create`'s tripwire refuses that project until the counter is raised (slice 4 review 1, finding 7).

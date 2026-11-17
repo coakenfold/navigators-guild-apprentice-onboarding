@@ -353,15 +353,15 @@ It also lists every `edit` that removes the `needs-review` label or changes `kin
 
 ### 2.7 Human actions
 
-These must come from an interactive terminal, and I confirm each one by typing the item ID:
+These must come from an interactive terminal, and I confirm each one by typing the item ID, or `ack` for `digest ack`, which acts on a project rather than an item:
 
 - `tracker approve BM-14`: re-runs the gates, counting each judge question held under T10 or T12 as passed for this approval only, then moves the item to done with `verification.by` set to `"human"`. If the re-run fails, for example because the project now has uncommitted changes, the item stays in review and the exit code is `2`.
 - `tracker reject BM-14 --reason "…"`: sends it back to in-progress. The reason goes in history for the agent to read.
 - `tracker delete BM-12` (§2.8).
 - `tracker criterion accept BM-12`: after I edit a criterion by hand, records its new text in `written`, so T5 doesn't fire.
-- `tracker digest ack`.
+- `tracker digest ack`: records that I've seen the project's digest (§2.6). I confirm it by typing `ack`. There's no item file to read again, so under the lock it builds the digest again and compares it with the one it showed me. If anything was added or changed meanwhile, such as an item auto-verified while I read, it records nothing and exits `1`, so nothing I haven't seen is marked as seen.
 
-They share one confirmation. Without a terminal it refuses with exit code `1` and changes nothing. In one, it prints what the command will do or lose, then asks for the ID. Anything else, an empty line or the end of input cancels, also with exit code `1`. The key can be typed in either case, as on the command line. The warning and question go to stderr, so `--json` output on stdout stays one object. The store isn't locked while I read and decide, so the command reads the item again under the lock and, if it changed meanwhile, does nothing and exits `1` (§4.4).
+They share one confirmation. Without a terminal it refuses with exit code `1` and changes nothing. In one, it prints what the command will do or lose, then asks for the ID, or `ack`. Anything else, an empty line or the end of input cancels, also with exit code `1`. The key, or `ack`, can be typed in either case, as on the command line. The warning and question go to stderr, so `--json` output on stdout stays one object. The store isn't locked while I read and decide, so the command reads the item again under the lock, or for `digest ack` builds the digest again, and if it changed meanwhile, does nothing and exits `1` (§4.4).
 
 Each one is recorded so the digest can list it (§2.6): `approve` and `reject` as moves in the item's history, `criterion accept` as a history entry with `via: "criterion-accept"` (§2.1), `delete` in `deleted.json` (§2.8), and `digest ack` in `digests.json`.
 
