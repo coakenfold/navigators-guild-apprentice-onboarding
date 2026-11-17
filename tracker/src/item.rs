@@ -17,11 +17,14 @@ pub struct Item {
     pub priority: Priority,
     pub created: Timestamp,
     pub updated: Timestamp,
-    /// Filled in when the item reaches done (§2.7). Kept when the item is
-    /// reopened, as the record of its last verification, and replaced when
-    /// it reaches done again.
+    /// Filled in when the item reaches done (§2.7), and present only while
+    /// it's done: reopening moves it to `previous_verification`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verification: Option<Verification>,
+    /// The record of the item's last verification, from before it was last
+    /// reopened. Each reopen from done replaces it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_verification: Option<Verification>,
     /// One entry per move between states (§2.2), oldest first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub history: Vec<HistoryEntry>,

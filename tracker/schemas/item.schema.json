@@ -24,22 +24,12 @@
     "created": { "$ref": "#/$defs/time" },
     "updated": { "$ref": "#/$defs/time" },
     "verification": {
-      "description": "How the item reached done (DESIGN.md §2.7). Left out until it first does. Kept when the item is reopened, and replaced when it reaches done again.",
-      "type": "object",
-      "required": ["by", "at"],
-      "properties": {
-        "by": {
-          "description": "auto: the gates passed and no trigger fired. human: approved from the inbox. unchecked: done before the gates existed, so nothing checked it.",
-          "enum": ["auto", "human", "unchecked"]
-        },
-        "at": { "$ref": "#/$defs/time" },
-        "note": {
-          "description": "Why the record says what it does, such as that no gates ran.",
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "additionalProperties": false
+      "description": "How the item reached done (DESIGN.md §2.7). Present only while the item is done: reopening moves it to previous_verification. Files written by slice 2 can still hold one on a shelved item.",
+      "$ref": "#/$defs/verification"
+    },
+    "previous_verification": {
+      "description": "The item's last verification record, from before it was last reopened. Each reopen from done replaces it. Left out until the item is first reopened from done.",
+      "$ref": "#/$defs/verification"
     },
     "history": {
       "description": "One entry per move between states, oldest first. Left out while there are none.",
@@ -67,6 +57,24 @@
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
     },
     "state": { "enum": ["open", "in-progress", "review", "done", "shelved"] },
+    "verification": {
+      "description": "How an item reached done (DESIGN.md §2.7). Later slices add the commit, its ref, and the checks and judges that ran.",
+      "type": "object",
+      "required": ["by", "at"],
+      "properties": {
+        "by": {
+          "description": "auto: the gates passed and no trigger fired. human: approved from the inbox. unchecked: done before the gates existed, so nothing checked it.",
+          "enum": ["auto", "human", "unchecked"]
+        },
+        "at": { "$ref": "#/$defs/time" },
+        "note": {
+          "description": "Why the record says what it does, such as that no gates ran.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
     "move": {
       "description": "One move between states (DESIGN.md §2.2, §4.3).",
       "type": "object",

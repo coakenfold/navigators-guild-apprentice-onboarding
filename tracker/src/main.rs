@@ -494,6 +494,7 @@ fn create(
         created: now,
         updated: now,
         verification: None,
+        previous_verification: None,
         history: Vec::new(),
         description,
     };
@@ -669,6 +670,14 @@ fn apply(
         step.from.as_str(),
         step.to.as_str()
     );
+    // `verification` is only present while the item is done (§2.1). A file
+    // written by slice 2 can still hold one on a shelved item, so this
+    // doesn't check that the move starts from done.
+    if step.via == Via::Reopen
+        && let Some(record) = item.verification.take()
+    {
+        item.previous_verification = Some(record);
+    }
     if step.via == Via::Submit {
         item.verification = Some(Verification {
             by: VerifiedBy::Unchecked,

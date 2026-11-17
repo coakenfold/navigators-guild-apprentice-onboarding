@@ -65,6 +65,14 @@ fn check_unchecked(item: &Value) {
     assert!(note.contains("No gates ran"), "{note}");
 }
 
+/// Checks that `record`, the verification record the item had when it was
+/// done, has moved to `previous_verification`, and that it has no
+/// `verification` now that it isn't done.
+fn check_moved_aside(item: &Value, record: &Value) {
+    assert!(item.get("verification").is_none(), "{item}");
+    assert_eq!(&item["previous_verification"], record);
+}
+
 /// Runs a move that must be refused with exit 1, checks that the item file
 /// is byte-for-byte unchanged, and returns the error object.
 fn refused_json(env: &Env, args: &[&str]) -> Value {
@@ -126,12 +134,12 @@ fn an_item_goes_open_in_progress_done_open_through_the_commands() {
     let item = moved(&env, &["submit", "XX-1"]);
     check_last_move(&item, "in-progress", "done", "submit", None);
     check_unchecked(&item);
+    let record = item["verification"].clone();
 
     let item = moved(&env, &["reopen", "XX-1", "--reason", "  found a bug  "]);
     check_last_move(&item, "done", "open", "reopen", Some("found a bug"));
     assert_eq!(history(&item).len(), 3);
-    // The last verification record stays until the item reaches done again.
-    assert_eq!(item["verification"]["by"], "unchecked");
+    check_moved_aside(&item, &record);
 }
 
 #[test]
@@ -144,10 +152,57 @@ fn an_item_goes_open_in_progress_done_open_through_status() {
     let item = moved(&env, &["status", "XX-1", "done"]);
     check_last_move(&item, "in-progress", "done", "submit", None);
     check_unchecked(&item);
+    let record = item["verification"].clone();
 
     let item = moved(&env, &["status", "XX-1", "open", "--reason", "found a bug"]);
     check_last_move(&item, "done", "open", "reopen", Some("found a bug"));
     assert_eq!(history(&item).len(), 3);
+    check_moved_aside(&item, &record);
+}
+
+#[test]
+fn each_reopen_from_done_replaces_the_previous_verification() {
+    let env = env_with_item();
+    env.json(&["start", "XX-1"]);
+    env.json(&["submit", "XX-1"]);
+    env.json(&["reopen", "XX-1", "--reason", "r"]);
+
+    // Mark the first record, so the second can be told from it even when
+    // both were made in the same second.
+    let mut item = env.item("XX-1");
+    item["previous_verification"]["at"] = json!("2026-01-01T00:00:00Z");
+    fs::write(
+        env.item_path("XX-1"),
+        serde_json::to_string_pretty(&item).unwrap() + "\n",
+    )
+    .unwrap();
+    let first = item["previous_verification"].clone();
+
+    // Reaching done again keeps the previous record next to the new one.
+    env.json(&["start", "XX-1"]);
+    let item = moved(&env, &["submit", "XX-1"]);
+    check_unchecked(&item);
+    assert_eq!(item["previous_verification"], first);
+    let second = item["verification"].clone();
+
+    let item = moved(&env, &["reopen", "XX-1", "--reason", "r"]);
+    check_moved_aside(&item, &second);
+}
+
+#[test]
+fn reopening_a_slice_2_file_moves_its_record_aside_too() {
+    // Slice 2 kept the record on a shelved item, as fixture XX-4 shows.
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    let fixture =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/slice-2/XX-4.json");
+    fs::copy(&fixture, env.item_path("XX-4")).unwrap();
+    let record = env.item("XX-4")["verification"].clone();
+    assert!(record.is_object());
+
+    let item = moved(&env, &["reopen", "XX-4", "--reason", "r"]);
+    check_last_move(&item, "shelved", "open", "reopen", Some("r"));
+    check_moved_aside(&item, &record);
 }
 
 #[test]
