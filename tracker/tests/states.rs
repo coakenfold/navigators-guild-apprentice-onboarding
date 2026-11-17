@@ -629,3 +629,30 @@ fn a_move_refuses_a_file_it_would_lose_fields_from() {
         assert_eq!(fs::read_to_string(&path).unwrap(), edited, "{args:?}");
     }
 }
+
+#[test]
+fn a_move_changes_updated_but_never_created() {
+    // Backdated by hand, so a move that rewrote `created` with the current
+    // time would show, even within the second the item was made in.
+    let env = env_with_item();
+    let path = env.item_path("XX-1");
+    let mut item = env.item("XX-1");
+    let long_ago = "2026-01-01T00:00:00Z";
+    item["created"] = json!(long_ago);
+    item["updated"] = json!(long_ago);
+    fs::write(&path, serde_json::to_string_pretty(&item).unwrap() + "\n").unwrap();
+
+    for args in [
+        &["start", "XX-1"][..],
+        &["submit", "XX-1"],
+        &["reopen", "XX-1", "--reason", "found a bug"],
+        &["status", "XX-1", "shelved", "--reason", "later"],
+        &["status", "XX-1", "open", "--reason", "now"],
+    ] {
+        let item = moved(&env, args);
+        assert_eq!(item["created"], long_ago, "{args:?}");
+        let last = history(&item).last().unwrap();
+        assert_eq!(item["updated"], last["at"], "{args:?}");
+        assert_ne!(item["updated"], long_ago, "{args:?}");
+    }
+}
