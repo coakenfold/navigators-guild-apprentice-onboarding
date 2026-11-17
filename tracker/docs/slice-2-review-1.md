@@ -15,6 +15,27 @@ Slice 2 does what the plan asks. Every _Done when_ check passes and has a test. 
 
 No bugs in the slice's own behaviour turned up. The findings below are about the shape of the JSON output, which later slices will have to change, the `interactive` flag, which slice 16's digest depends on and which isn't tested yet, one security item from slice 1 that now affects every move, and a few decisions that DESIGN.md doesn't record.
 
+## Outcome
+
+Added after the fixes. The findings below are left as written, so their line links point at `54d8f66`, not at the fixed code. [slice-2-readme.md](slice-2-readme.md#fixes-after-review-1) describes each fix and its test.
+
+| Finding | Resolved by |
+| --- | --- |
+| Fix before slice 3, items 1–3 | One commit each: `d8a9564`, `32ef9f7` and `a370118`, each with its tests. For item 1, `item` stays next to §3's fields, and §3's example now shows it |
+| Security, item 4: symlinked `.tmp` file | Still open |
+| Security, item 5: faking `interactive` | `ee14706`: DESIGN.md §2.6 has the digest list every shelve and human action, mine included, each marked by whether it came from a terminal, and a delete leaves a line in `deleted.json`. §6 and §7 record what's left. The `audit` suggestion wasn't taken, since the digest covers it |
+| Low severity: reasons have no length limit | `6855ce9` |
+| Low severity: `--reason` shows as optional in `--help` | `529fa36` |
+| Low severity: one outcome per move, the timestamp message, an unknown `via` stopping `list`, `status <id> closed` | Still open |
+| Code and DESIGN.md, item 1 | `78c7d51`: reopening moves the record to `previous_verification`, so `verification` exists only while the item is done. `8ad15c1` adds a fixture of that shape |
+| Code and DESIGN.md, item 2 | `f817e58` |
+| Code and DESIGN.md, item 3 | `602cba8`: an `edit` or `criterion accept` entry has the move's shape, with `from` equal to `to` and a `fields` list |
+| Code and DESIGN.md, item 4 | `a568739`: a reminder in slice 9's _Done when_ |
+| Code and DESIGN.md, item 5 | `e405dad`. The tests don't start two items at once, since XX-1 is submitted first. G1's need for criteria is what will break them, and slice 6's prompt now says so |
+| Test gap 1 | Done with finding 3 |
+| Test gaps 2–5 | Still open |
+| Process | [slice-2-readme.md](slice-2-readme.md) now exists. The slice itself stays one commit, as history |
+
 ## Done when
 
 | Check                                                                                                   | Result | Tests                                                                                                                                                                                                          |
