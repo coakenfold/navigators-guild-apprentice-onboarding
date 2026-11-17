@@ -197,6 +197,14 @@ fn a_wrong_output_is_caught() {
     let mut edited = organised.clone();
     edited["history"] = json!([edit.clone()]);
     check_schema("item", &edited);
+    // An edit can also record the kind it replaced and the labels it removed.
+    let mut weakening = edit.clone();
+    weakening["fields"] = json!(["kind", "labels"]);
+    weakening["kind_before"] = json!("capability");
+    weakening["labels_removed"] = json!(["needs-review", "bug"]);
+    let mut weakened = organised.clone();
+    weakened["history"] = json!([weakening.clone()]);
+    check_schema("item", &weakened);
     check_schema(
         "edit",
         &json!({ "fields": ["priority", "labels"], "labels_not_found": [], "item": edited.clone() }),
@@ -245,10 +253,39 @@ fn a_wrong_output_is_caught() {
             entry["fields"] = json!(["title", "title"]);
             entry
         },
-        // A move has no fields.
+        // The labels it removed, each once, and a kind it could have had.
+        {
+            let mut entry = weakening.clone();
+            entry["labels_removed"] = json!(["bug", "bug"]);
+            entry
+        },
+        {
+            let mut entry = weakening.clone();
+            entry["labels_removed"] = json!([]);
+            entry
+        },
+        {
+            let mut entry = weakening.clone();
+            entry["labels_removed"] = json!([""]);
+            entry
+        },
+        {
+            let mut entry = weakening.clone();
+            entry["kind_before"] = json!("feature");
+            entry
+        },
+        // A move has no fields, kind_before or labels_removed.
         json!({
             "at": "2026-11-15T22:03:00Z", "from": "open", "to": "in-progress", "via": "start",
             "interactive": false, "fields": ["title"]
+        }),
+        json!({
+            "at": "2026-11-15T22:03:00Z", "from": "open", "to": "in-progress", "via": "start",
+            "interactive": false, "kind_before": "capability"
+        }),
+        json!({
+            "at": "2026-11-15T22:03:00Z", "from": "open", "to": "in-progress", "via": "start",
+            "interactive": false, "labels_removed": ["needs-review"]
         }),
     ] {
         let mut bad = organised.clone();
