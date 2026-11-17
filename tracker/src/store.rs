@@ -69,6 +69,11 @@ impl Store {
         self.home.join("items")
     }
 
+    /// One line per deleted item (§2.8), created by the first `delete`.
+    pub fn deleted_path(&self) -> PathBuf {
+        self.home.join("deleted.json")
+    }
+
     /// The item file for `id`. Anything that isn't an item ID, such as
     /// `../config`, is refused, so no ID can name a file outside `items/`.
     pub fn item_path(&self, id: &str) -> Result<PathBuf> {
@@ -191,21 +196,22 @@ impl Store {
     /// the number after it. IDs never come from the item files, so a deleted
     /// item's ID is never reused. Call this only while holding the lock.
     ///
-    /// The item files are a tripwire, though: a counter at or below a number
-    /// already on disk means `counters.json` was lost or reset, and handing
-    /// out its next number could reuse a deleted item's ID, whose scoped
-    /// commits would then count as the new item's work (§2.8).
+    /// The item files and `deleted.json` are a tripwire, though: a counter
+    /// at or below a number already used means `counters.json` was lost or
+    /// reset, and handing out its next number could reuse a deleted item's
+    /// ID, whose scoped commits would then count as the new item's work
+    /// (§2.8).
     pub fn next_id(&self, project: &str) -> Result<String> {
         let path = self.counters_path();
         let mut counters = self.read_counters()?;
 
         let number = counters.get(project).copied().unwrap_or(1);
-        if let Some(highest) = self.highest_number_on_disk(project)?
+        if let Some((highest, place)) = self.highest_number_used(project)?
             && number <= highest
         {
             return Err(Error::store(format!(
                 "{} says the next {project} item is {project}-{number}, but {project}-{highest} \
-                 already exists, so the counter was probably lost or reset. Set \"{project}\" in \
+                 {place}, so the counter was probably lost or reset. Set \"{project}\" in \
                  counters.json above the highest {project} number ever used: at least {}.",
                 path.display(),
                 highest.saturating_add(1)
@@ -243,14 +249,18 @@ impl Store {
         Ok(counters)
     }
 
-    /// The highest number among `project`'s item files, such as 7 when
-    /// `BM-7.json` is the highest, or `None` if it has none.
-    fn highest_number_on_disk(&self, project: &str) -> Result<Option<u64>> {
+    /// The highest number `project` has used, among its item files and the
+    /// IDs in `deleted.json`, with where it was found, such as
+    /// `(7, "already exists")` when `BM-7.json` is the highest. `None` if
+    /// it has used none.
+    fn highest_number_used(&self, project: &str) -> Result<Option<(u64, &'static str)>> {
+        let prefix = format!("{project}-");
+        let number_of = |id: &str| id.strip_prefix(&prefix).and_then(|n| n.parse::<u64>().ok());
+
         let dir = self.items_dir();
         let entries = fs::read_dir(&dir)
             .map_err(|e| Error::store(format!("Can't read {}: {e}", dir.display())))?;
-        let prefix = format!("{project}-");
-        let mut highest = None;
+        let mut on_disk = None;
         for entry in entries {
             let entry =
                 entry.map_err(|e| Error::store(format!("Can't read {}: {e}", dir.display())))?;
@@ -258,13 +268,92 @@ impl Store {
             let number = name
                 .to_str()
                 .and_then(|name| name.strip_suffix(".json"))
-                .and_then(|name| name.strip_prefix(&prefix))
-                .and_then(|n| n.parse::<u64>().ok());
-            if let Some(number) = number {
-                highest = highest.max(Some(number));
-            }
+                .and_then(number_of);
+            on_disk = on_disk.max(number);
         }
-        Ok(highest)
+
+        // A line that isn't a delete record is skipped: this is a tripwire,
+        // and `create` shouldn't stop over a bad line it doesn't need.
+        let mut deleted = None;
+        for line in self.read_deleted()?.lines() {
+            let id = serde_json::from_str::<serde_json::Value>(line)
+                .ok()
+                .and_then(|record| record["id"].as_str().and_then(number_of));
+            deleted = deleted.max(id);
+        }
+
+        // `None` counts as less than any number.
+        Ok(if deleted > on_disk {
+            deleted.map(|number| (number, "was used by an item since deleted"))
+        } else {
+            on_disk.map(|number| (number, "already exists"))
+        })
+    }
+
+    /// The text of `deleted.json`, or "" before the first delete.
+    fn read_deleted(&self) -> Result<String> {
+        let path = self.deleted_path();
+        match fs::read_to_string(&path) {
+            Ok(text) => Ok(text),
+            Err(e) if e.kind() == ErrorKind::NotFound => Ok(String::new()),
+            Err(e) => Err(Error::store(format!("Can't read {}: {e}", path.display()))),
+        }
+    }
+
+    /// The text of an item's file, exactly as it is on disk. Fails with
+    /// exit 1 if there's no such item.
+    pub fn item_text(&self, id: &str) -> Result<String> {
+        let path = self.item_path(id)?;
+        match fs::read_to_string(&path) {
+            Ok(text) => Ok(text),
+            Err(e) if e.kind() == ErrorKind::NotFound => {
+                Err(Error::input(format!("There's no item {id}.")))
+            }
+            Err(e) => Err(Error::store(format!("Can't read {}: {e}", path.display()))),
+        }
+    }
+
+    /// Deletes item `id` for good (§2.8): adds `record`, one line of JSON,
+    /// to `deleted.json`, then removes the item's file. Call this only while
+    /// holding the lock.
+    ///
+    /// The record is written first, so a crash between the two leaves a
+    /// delete that's listed but didn't happen, which I'd notice, rather than
+    /// one that happened unlisted. If the file can't be removed, the record
+    /// is taken back out.
+    pub fn delete_item(&self, id: &str, record: &str) -> Result<()> {
+        let path = self.item_path(id)?;
+        let log = self.deleted_path();
+        let before = self.read_deleted()?;
+        let mut text = before.clone();
+        if !text.is_empty() && !text.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push_str(record);
+        text.push('\n');
+        write_file(&log, &text)?;
+
+        if let Err(e) = fs::remove_file(&path) {
+            let put_back = if before.is_empty() {
+                fs::remove_file(&log).is_ok()
+            } else {
+                write_file(&log, &before).is_ok()
+            };
+            let record_note = if put_back {
+                "Nothing was deleted."
+            } else {
+                "deleted.json lists it anyway, so remove its last line by hand."
+            };
+            return Err(Error::store(format!(
+                "Can't remove {}: {e}. {record_note}",
+                path.display()
+            )));
+        }
+        // Flushing the folder keeps the removal, as in `write_file`.
+        if let Ok(dir) = File::open(self.items_dir()) {
+            let _ = dir.sync_all();
+        }
+        Ok(())
     }
 
     /// Writes a new item's file, refusing one that already exists. Call

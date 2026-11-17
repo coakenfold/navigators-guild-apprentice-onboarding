@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracker.invalid/schemas/deleted.schema.json",
+  "title": "Delete record",
+  "description": "One line of deleted.json, which delete writes and the digest lists (DESIGN.md §2.6, §2.8): the ID, title, state, time and whether it came from an interactive terminal, and nothing else of the item. Each line is one JSON object, oldest first.",
+  "type": "object",
+  "required": ["id", "title", "status", "at", "interactive"],
+  "properties": {
+    "id": {
+      "description": "The deleted item's ID. It's never handed out again.",
+      "$ref": "item.schema.json#/properties/id"
+    },
+    "title": {
+      "description": "The item's title when it was deleted.",
+      "$ref": "item.schema.json#/properties/title"
+    },
+    "status": {
+      "description": "The state the item was in when it was deleted.",
+      "$ref": "item.schema.json#/$defs/state"
+    },
+    "at": {
+      "description": "When it was deleted.",
+      "$ref": "item.schema.json#/$defs/time"
+    },
+    "interactive": {
+      "description": "Whether stdin was a terminal. delete refuses otherwise, so false means the file was written some other way (DESIGN.md §2.6).",
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

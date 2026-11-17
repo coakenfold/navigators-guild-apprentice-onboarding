@@ -128,25 +128,11 @@ impl Env {
     }
 
     /// Runs `tracker <args>` under `script`, on a pseudo-terminal as if I'd
-    /// typed it, with no pty crate (PLAN.md). Its options differ between
-    /// macOS and BSD, and util-linux. Returns `None` where `script` isn't
-    /// installed, so the test can skip.
+    /// typed it, with no pty crate (PLAN.md). Returns `None` where `script`
+    /// isn't installed, so the test can skip.
     pub fn in_terminal(&self, args: &[&str]) -> Option<std::process::Output> {
-        let tracker = env!("CARGO_BIN_EXE_tracker");
-        let mut cmd = std::process::Command::new("script");
-        if cfg!(target_os = "linux") {
-            let mut line = format!("'{tracker}'");
-            for arg in args {
-                line.push_str(&format!(" '{}'", arg.replace('\'', "'\\''")));
-            }
-            cmd.args(["-qec", &line, "/dev/null"]);
-        } else {
-            cmd.args(["-q", "/dev/null", tracker]).args(args);
-        }
-        cmd.env("TRACKER_HOME", self.home.path())
-            .env("HOME", self.user_home())
-            .current_dir(self.outside())
-            .stdin(std::process::Stdio::null());
+        let mut cmd = self.script_cmd(&tracker_argv(args));
+        cmd.stdin(std::process::Stdio::null());
         match cmd.output() {
             Ok(output) => Some(output),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -155,6 +141,108 @@ impl Env {
             }
             Err(e) => panic!("Can't run script: {e}"),
         }
+    }
+
+    /// Runs `tracker <args>` under `script`, as `in_terminal` does, and
+    /// types `answer` and Enter once its output contains `prompt`. Calls
+    /// `meanwhile` just before typing, while the command waits. Returns
+    /// the terminal's output, which mixes stdout, stderr and the echoed
+    /// answer, and whether the command succeeded. `None` where `script`
+    /// isn't installed.
+    ///
+    /// The answer is typed only once the prompt is up, and stdin stays open
+    /// until the command ends: on macOS, `script` sends end-of-input as soon
+    /// as its stdin closes, and the terminal drops input typed before the
+    /// command reads it.
+    pub fn in_terminal_typing(
+        &self,
+        args: &[&str],
+        prompt: &str,
+        answer: &str,
+        meanwhile: impl FnOnce(),
+    ) -> Option<(String, bool)> {
+        self.typing(&tracker_argv(args), prompt, answer, meanwhile)
+    }
+
+    /// The same as `in_terminal_typing`, for a line of `sh`, in which
+    /// `$TRACKER` is the binary. For redirecting stdout to a file, which
+    /// leaves stdin on the terminal.
+    pub fn in_terminal_typing_sh(
+        &self,
+        line: &str,
+        prompt: &str,
+        answer: &str,
+    ) -> Option<(String, bool)> {
+        let argv = vec!["sh".to_string(), "-c".to_string(), line.to_string()];
+        self.typing(&argv, prompt, answer, || {})
+    }
+
+    fn typing(
+        &self,
+        argv: &[String],
+        prompt: &str,
+        answer: &str,
+        meanwhile: impl FnOnce(),
+    ) -> Option<(String, bool)> {
+        use std::io::{Read, Write};
+        let mut cmd = self.script_cmd(argv);
+        cmd.stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::inherit());
+        let mut child = match cmd.spawn() {
+            Ok(child) => child,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                eprintln!("Skipped: `script` isn't installed.");
+                return None;
+            }
+            Err(e) => panic!("Can't run script: {e}"),
+        };
+        let mut stdin = child.stdin.take().unwrap();
+        let mut stdout = child.stdout.take().unwrap();
+
+        // Read until the prompt appears, or the command ends without one.
+        let mut seen = Vec::new();
+        let mut buffer = [0; 4096];
+        while !String::from_utf8_lossy(&seen).contains(prompt) {
+            let n = stdout.read(&mut buffer).unwrap();
+            if n == 0 {
+                break;
+            }
+            seen.extend_from_slice(&buffer[..n]);
+        }
+        if String::from_utf8_lossy(&seen).contains(prompt) {
+            meanwhile();
+            stdin.write_all(format!("{answer}\n").as_bytes()).unwrap();
+            stdin.flush().unwrap();
+        }
+        stdout.read_to_end(&mut seen).unwrap();
+        let status = child.wait().unwrap();
+        drop(stdin);
+        Some((
+            String::from_utf8_lossy(&seen).into_owned(),
+            status.success(),
+        ))
+    }
+
+    /// `script` running `argv` with this test's store and `HOME`, and
+    /// `TRACKER` set to the binary. Its options differ between macOS and
+    /// BSD, and util-linux.
+    fn script_cmd(&self, argv: &[String]) -> std::process::Command {
+        let mut cmd = std::process::Command::new("script");
+        if cfg!(target_os = "linux") {
+            let quoted: Vec<String> = argv
+                .iter()
+                .map(|arg| format!("'{}'", arg.replace('\'', "'\\''")))
+                .collect();
+            cmd.args(["-qec", &quoted.join(" "), "/dev/null"]);
+        } else {
+            cmd.args(["-q", "/dev/null"]).args(argv);
+        }
+        cmd.env("TRACKER", env!("CARGO_BIN_EXE_tracker"))
+            .env("TRACKER_HOME", self.home.path())
+            .env("HOME", self.user_home())
+            .current_dir(self.outside());
+        cmd
     }
 
     /// Registers project `key` with the root `<work>/<root>`, and returns
@@ -196,6 +284,13 @@ impl Env {
     }
 }
 
+/// The binary followed by `args`.
+fn tracker_argv(args: &[&str]) -> Vec<String> {
+    let mut argv = vec![env!("CARGO_BIN_EXE_tracker").to_string()];
+    argv.extend(args.iter().map(|arg| arg.to_string()));
+    argv
+}
+
 /// Parses a command's stdout as JSON, showing the output if it doesn't parse.
 pub fn parse(stdout: &[u8]) -> Value {
     let text = String::from_utf8_lossy(stdout);
@@ -217,6 +312,8 @@ pub fn schema_for(args: &[&str]) -> &'static str {
         ["list", ..] => "list",
         ["submit", ..] | ["status", _, "done", ..] => "submit",
         ["start" | "shelve" | "reopen" | "status", ..] => "move",
+        ["show", ..] => "show",
+        ["delete", ..] => "delete",
         _ => panic!(
             "No schema for `tracker {}`. Add one to schemas/.",
             args.join(" ")

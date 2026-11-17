@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracker.invalid/schemas/show.schema.json",
+  "title": "tracker show --json",
+  "description": "Everything about one item (DESIGN.md §3): its fields, verification records and history.",
+  "type": "object",
+  "required": ["item"],
+  "properties": {
+    "item": {
+      "description": "The item, exactly as its file holds it.",
+      "$ref": "item.schema.json"
+    }
+  },
+  "additionalProperties": false
+}

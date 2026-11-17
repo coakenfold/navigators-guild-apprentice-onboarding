@@ -103,6 +103,21 @@ enum Command {
         #[arg(long)]
         reason: Option<String>,
     },
+    /// Show everything about one item: its fields, verification record and history
+    Show {
+        /// The item's ID, such as BM-12
+        id: String,
+    },
+    /// Delete an item for good. Only from an interactive terminal
+    ///
+    /// Says what will be lost, then asks for the ID to be typed back.
+    /// Works on an item in any state. One line in deleted.json records the
+    /// delete, and the ID is never used again. An agent can't delete: it
+    /// shelves the item instead
+    Delete {
+        /// The item's ID, such as BM-12
+        id: String,
+    },
 }
 
 #[derive(Args)]
@@ -295,6 +310,8 @@ fn main() -> ExitCode {
             let state = Status::parse(&state).expect("clap only accepts state names");
             status(&store, &id, state, reason)
         }
+        Command::Show { id } => show(&store, &id),
+        Command::Delete { id } => delete(&store, &id),
     });
 
     match result {
@@ -382,7 +399,7 @@ fn init(store: &Store) -> Result<Output> {
                 "- counters.json is empty, so every project's IDs start again at 1. Set the \
                  counter of each project that has used IDs above the highest one, so no \
                  deleted item's ID is handed out again. `create` refuses while a counter is at \
-                 or below a number still in items/.\n"
+                 or below a number still in items/ or deleted.json.\n"
             }
             _ => "- items/ is empty. Any items that were in it are gone.\n",
         });
@@ -1291,6 +1308,236 @@ fn apply(
         json!({ "item": item })
     };
     Ok(Output { text, json })
+}
+
+/// `show`: everything about one item (§3): every field, its verification
+/// records, and its history with the time of each entry. Free text is
+/// escaped, since a file edited by hand can hold anything.
+fn show(store: &Store, id: &str) -> Result<Output> {
+    store.require_exists()?;
+    let id = normalize_id(id);
+    let item = store.load_item(&id)?;
+    let config = config::load(store)?;
+
+    let project = match config.projects.get(&item.project) {
+        Some(project) => format!("{} ({})", item.project, project.name),
+        None => format!("{} (not in config.json)", item.project),
+    };
+    let mut rows = vec![
+        vec!["  project".to_string(), project],
+        vec!["  kind".to_string(), item.kind.as_str().to_string()],
+        vec!["  status".to_string(), item.status.as_str().to_string()],
+        vec!["  priority".to_string(), item.priority.as_str().to_string()],
+    ];
+    if !item.labels.is_empty() {
+        rows.push(vec!["  labels".to_string(), item.labels.join(", ")]);
+    }
+    if let Some(design) = &item.design {
+        rows.push(vec!["  design".to_string(), design.clone()]);
+    }
+    rows.push(vec!["  created".to_string(), item.created.to_string()]);
+    rows.push(vec!["  updated".to_string(), item.updated.to_string()]);
+
+    let mut text = format!("{}  {}\n", item.id, text::for_terminal(&item.title, false));
+    text.push_str(&table(&rows));
+
+    if let Some(description) = &item.description {
+        text.push_str("\nDescription:\n");
+        // Indented, except for blank lines, which stay empty.
+        for line in text::for_terminal(description, true).lines() {
+            if !line.is_empty() {
+                text.push_str("  ");
+            }
+            text.push_str(line);
+            text.push('\n');
+        }
+    }
+
+    match &item.verification {
+        Some(record) => {
+            text.push_str("\nVerification:\n");
+            text.push_str(&verification_rows(record));
+        }
+        None => text.push_str("\nVerification: none.\n"),
+    }
+    if let Some(record) = &item.previous_verification {
+        text.push_str("\nPrevious verification, from before it was last reopened:\n");
+        text.push_str(&verification_rows(record));
+    }
+
+    if item.history.is_empty() {
+        text.push_str("\nHistory: none yet.\n");
+    } else {
+        text.push_str(&format!(
+            "\nHistory, oldest first ({}):\n",
+            entries(item.history.len())
+        ));
+        let rows: Vec<Vec<String>> = item
+            .history
+            .iter()
+            .map(|entry| {
+                let moved = if entry.from == entry.to {
+                    format!("stays {}", entry.from.as_str())
+                } else {
+                    format!("{} → {}", entry.from.as_str(), entry.to.as_str())
+                };
+                let source = if entry.interactive {
+                    "from a terminal"
+                } else {
+                    "not from a terminal"
+                };
+                vec![
+                    format!("  {}", entry.at),
+                    entry.via.as_str().to_string(),
+                    moved,
+                    source.to_string(),
+                ]
+            })
+            .collect();
+        for (entry, line) in item.history.iter().zip(table(&rows).lines()) {
+            text.push_str(line);
+            text.push('\n');
+            let mut details = Vec::new();
+            if let Some(reason) = &entry.reason {
+                details.push(format!("reason: {reason}"));
+            }
+            if !entry.fields.is_empty() {
+                details.push(format!("changed: {}", entry.fields.join(", ")));
+            }
+            if let Some(kind) = entry.kind_before {
+                details.push(format!("kind before: {}", kind.as_str()));
+            }
+            if !entry.labels_removed.is_empty() {
+                details.push(format!(
+                    "labels removed: {}",
+                    entry.labels_removed.join(", ")
+                ));
+            }
+            for detail in details {
+                text.push_str(&format!("      {}\n", text::for_terminal(&detail, false)));
+            }
+        }
+    }
+
+    Ok(Output {
+        text,
+        json: json!({ "item": item }),
+    })
+}
+
+/// A verification record's fields as indented rows.
+fn verification_rows(record: &Verification) -> String {
+    let mut rows = vec![
+        vec!["  by".to_string(), record.by.as_str().to_string()],
+        vec!["  at".to_string(), record.at.to_string()],
+    ];
+    if let Some(note) = &record.note {
+        rows.push(vec!["  note".to_string(), note.clone()]);
+    }
+    table(&rows)
+}
+
+/// "1 entry" or "6 entries".
+fn entries(count: usize) -> String {
+    if count == 1 {
+        "1 entry".to_string()
+    } else {
+        format!("{count} entries")
+    }
+}
+
+/// `delete`: removes an item for good, from an interactive terminal only,
+/// after saying what will be lost and asking for the ID (§2.8). One line
+/// in `deleted.json` records it, so the digest can list it (§2.6).
+fn delete(store: &Store, id: &str) -> Result<Output> {
+    store.require_exists()?;
+    let id = normalize_id(id);
+    // The file's text is read before the item, so a change made between
+    // the two can only make the check under the lock refuse.
+    let before = store.item_text(&id)?;
+    let item = store.load_item(&id)?;
+    let otherwise = format!(
+        "Only a human deletes items. An item that shouldn't be done is shelved instead, with \
+         `{}`, and a human decides whether to delete it.",
+        states::command(&id, Via::Shelve)
+    );
+    tty::confirm(
+        &format!("tracker delete {id}"),
+        &id,
+        &deletion_warning(&item),
+        &otherwise,
+    )?;
+
+    // The lock wasn't held while I decided, so the item is read again
+    // under it, and nothing happens if it changed (§4.4).
+    let _lock = store.lock()?;
+    let now = match store.item_text(&id) {
+        Ok(text) => text,
+        Err(err) if err.code == 1 => {
+            return Err(Error::input(format!(
+                "{id} was removed while you were deciding. Nothing was changed."
+            )));
+        }
+        Err(err) => return Err(err),
+    };
+    if now != before {
+        return Err(Error::input(format!(
+            "{id} changed while you were deciding, so it wasn't deleted. Run `tracker delete \
+             {id}` again to see what it is now."
+        )));
+    }
+
+    // The ID, title, state, time and whether it came from a terminal, and
+    // nothing else of the item (§2.8).
+    let record = json!({
+        "id": item.id,
+        "title": item.title,
+        "status": item.status.as_str(),
+        "at": item::now(),
+        "interactive": tty::is_interactive(),
+    });
+    let line = serde_json::to_string(&record).expect("JSON values always serialize");
+    store.delete_item(&id, &text::for_json(&line))?;
+
+    Ok(Output {
+        text: format!(
+            "Deleted {id}. Its line in deleted.json records the delete, and {id} won't be used \
+             again.\n"
+        ),
+        json: json!({ "deleted": record }),
+    })
+}
+
+/// What `delete` says before asking for the ID (§2.8): the item's state,
+/// and what deleting it removes.
+fn deletion_warning(item: &Item) -> String {
+    let id = &item.id;
+    let state = match (item.status, &item.verification) {
+        (Status::Done, Some(record)) => {
+            format!("done, verified {} at {}", record.by.as_str(), record.at)
+        }
+        (Status::Done, None) => "done, with no verification record".to_string(),
+        (Status::InProgress, _) => "in-progress, so someone may be working on it".to_string(),
+        (Status::Review, _) => "in review, waiting for a human's decision".to_string(),
+        (status, _) => status.as_str().to_string(),
+    };
+    // Later slices add its criteria and, for a done item, its git ref.
+    let mut lost = vec!["its file".to_string()];
+    if !item.history.is_empty() {
+        lost.push(format!("its history ({})", entries(item.history.len())));
+    }
+    if item.verification.is_some() {
+        lost.push("its verification record".to_string());
+    }
+    if item.previous_verification.is_some() {
+        lost.push("the verification record from before it was reopened".to_string());
+    }
+    format!(
+        "{id} \"{}\" is {state}.\nDeleting it removes {}.\nAny commits scoped to it stay in \
+         git, the ID won't be used again, and deleted.json records the delete for the digest.\n",
+        text::for_terminal(&item.title, false),
+        states::join(&lost, "and")
+    )
 }
 
 /// An ID as typed, with its key in capitals, so `xx-1` finds XX-1.

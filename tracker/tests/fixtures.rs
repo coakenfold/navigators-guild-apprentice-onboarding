@@ -149,3 +149,28 @@ fn the_binary_lists_every_fixture_as_it_is_on_disk() {
         assert_eq!(item, Some(&file), "{}", path.display());
     }
 }
+
+#[test]
+fn the_binary_shows_every_fixture_with_each_history_time() {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    for path in fixture_files() {
+        let to = env
+            .home
+            .path()
+            .join("items")
+            .join(path.file_name().unwrap());
+        fs::copy(&path, to).unwrap();
+        let file: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let id = file["id"].as_str().unwrap();
+
+        assert_eq!(env.json(&["show", id])["item"], file, "{}", path.display());
+        let output = env.cmd().args(["show", id]).assert().success();
+        let text = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+        assert!(text.contains(file["title"].as_str().unwrap()), "{text}");
+        for entry in file["history"].as_array().into_iter().flatten() {
+            let at = entry["at"].as_str().unwrap();
+            assert!(text.contains(at), "{at} isn't in:\n{text}");
+        }
+    }
+}

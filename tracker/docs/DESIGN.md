@@ -361,6 +361,8 @@ These must come from an interactive terminal, and I confirm each one by typing t
 - `tracker criterion accept BM-12`: after I edit a criterion by hand, records its new text in `written`, so T5 doesn't fire.
 - `tracker digest ack`.
 
+They share one confirmation. Without a terminal it refuses with exit code `1` and changes nothing. In one, it prints what the command will do or lose, then asks for the ID. Anything else, an empty line or the end of input cancels, also with exit code `1`. The key can be typed in either case, as on the command line. The warning and question go to stderr, so `--json` output on stdout stays one object. The store isn't locked while I read and decide, so the command reads the item again under the lock and, if it changed meanwhile, does nothing and exits `1` (§4.4).
+
 Each one is recorded so the digest can list it (§2.6): `approve` and `reject` as moves in the item's history, `criterion accept` as a history entry with `via: "criterion-accept"` (§2.1), `delete` in `deleted.json` (§2.8), and `digest ack` in `digests.json`.
 
 When an item reaches done, its `verification` record stores: `by` (auto or human), the commit SHA, each check with its result, duration and last 20 lines of output (§2.3), each judge question's answer and reason with the model that answered and the request fingerprint, any held judge questions I accepted on approve, and the triggers that fired, if any.
@@ -505,7 +507,7 @@ One central store at `~/.tracker/`, or wherever the `TRACKER_HOME` environment v
 ~/.tracker/
 ├── config.json          # projects, their checks and review policy
 ├── counters.json        # the next item number for each project, so IDs are never reused
-├── deleted.json         # one line per deleted item, so the digest can list deletes (§2.8)
+├── deleted.json         # one JSON object per line, per deleted item, so the digest can list deletes (§2.8)
 ├── digests.json         # when each project's digest was acknowledged, and what it covered
 ├── lock                 # locked while a command reads and writes the store (§4.4)
 ├── judge/
@@ -678,7 +680,7 @@ Each item is one JSON file, and serde maps it to Rust structs and back. The tool
 - A file that can't be parsed is reported by name, with the parser's line and reason, and skipped. The other items still list.
 - Writes go to a temporary file first, which is then renamed over the original.
 - Every command that writes takes an exclusive lock on `~/.tracker/lock` while it reads and writes files. It doesn't hold the lock while checks or judges run, so `submit` and `approve` re-read the item under the lock before writing their result. If the item changed while the gates ran, nothing is written and the command exits with code `1`, asking for a rerun. Two agents creating items at the same moment wait their turn and get different IDs. The operating system releases the lock if a command crashes, so there's never a stale lock to clear.
-- IDs come from `counters.json`, never from the files that happen to exist, so a deleted item's ID is never handed out again.
+- IDs come from `counters.json`, never from the files that happen to exist, so a deleted item's ID is never handed out again. The item files and `deleted.json` are only a tripwire: if a project's counter is at or below a number either of them has used, `counters.json` was lost or reset, and `create` refuses with exit code `3` until the counter is set above it.
 - One item at a time per project. `start` refuses while another item in the same project is in progress or in review (G1). Every item works on the project's current branch, so one item's committed, still-failing tests would fail another's project checks (G4), and its uncommitted edits would fail G5. A held item therefore pauses its project until I approve or reject it. Shelving an in-progress item frees its project (§2.8).
 - Titles, labels, project names, project keys, roots, kinds and states are validated when a command takes them in. Files can be edited by hand, so some checks run again whenever a file is read: project keys and roots in the config, each item's kind and state, and whether an item file holds the item its name says (`BM-12.json` must hold `BM-12`, in project `BM`). Free text read from a file, such as a title, isn't refused. Instead, every output escapes control characters and the marks that reorder text, so no text can change what the terminal shows.
 - If the project root isn't inside a git working tree, G5 and the triggers can't run. The submit is refused with exit code 3 and a clear message. The root doesn't have to be the top of the repository (§2.1).

@@ -339,11 +339,13 @@ fn every_command_prints_json_that_parses() {
 #[test]
 fn commands_without_a_store_say_run_tracker_init() {
     let env = Env::without_store();
-    let commands: [&[&str]; 4] = [
+    let commands: [&[&str]; 6] = [
         &["list"],
         &["project", "list"],
         &["create", "t", "--project", "XX"],
         &["project", "add", "XX", "--name", "x", "--root", "."],
+        &["show", "XX-1"],
+        &["delete", "XX-1"],
     ];
     for args in commands {
         let output = env.cmd().args(args).assert().code(1);

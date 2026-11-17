@@ -243,3 +243,21 @@ fn a_move_refuses_an_item_whose_history_has_a_command_it_doesnt_know() {
         "in-progress"
     );
 }
+
+#[test]
+fn show_prints_an_item_whose_history_has_a_command_it_doesnt_know() {
+    // Showing never writes, so the entry is shown as `unknown` and the file
+    // stays as it was.
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    env.json(&["start", "XX-1"]);
+    let edited = add_newer_entry(&env, "XX-1");
+
+    let shown = env.json(&["show", "XX-1"]);
+    assert_eq!(shown["item"]["history"][1]["via"], "unknown");
+    let output = env.cmd().args(["show", "XX-1"]).assert().success();
+    let text = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+    assert!(text.contains("unknown"), "{text}");
+    assert_eq!(fs::read_to_string(env.item_path("XX-1")).unwrap(), edited);
+}
