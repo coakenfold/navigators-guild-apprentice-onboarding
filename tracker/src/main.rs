@@ -7,6 +7,7 @@ use std::process::ExitCode;
 use clap::builder::PossibleValuesParser;
 use clap::{Args, Parser, Subcommand};
 use serde_json::{Value, json};
+use unicode_width::UnicodeWidthStr;
 
 use tracker::config::{self, Project};
 use tracker::error::{Error, Result};
@@ -1290,7 +1291,8 @@ fn normalize_id(id: &str) -> String {
 }
 
 /// Lines up rows of cells into columns two spaces apart. The last column
-/// isn't padded. Each cell is escaped first, so a title or name edited by
+/// isn't padded. Widths are counted in terminal columns, so a CJK
+/// character or an emoji, which takes two, keeps its row in line. Each cell is escaped first, so a title or name edited by
 /// hand can't break its line or change what the terminal shows.
 fn table(rows: &[Vec<String>]) -> String {
     let rows: Vec<Vec<String>> = rows
@@ -1306,7 +1308,7 @@ fn table(rows: &[Vec<String>]) -> String {
     let mut widths = vec![0; columns];
     for row in rows {
         for (i, cell) in row.iter().enumerate() {
-            widths[i] = widths[i].max(cell.chars().count());
+            widths[i] = widths[i].max(cell.width());
         }
     }
 
@@ -1317,7 +1319,8 @@ fn table(rows: &[Vec<String>]) -> String {
             if i + 1 == row.len() {
                 line.push_str(cell);
             } else {
-                line.push_str(&format!("{cell:<width$}  ", width = widths[i]));
+                line.push_str(cell);
+                line.push_str(&" ".repeat(widths[i] - cell.width() + 2));
             }
         }
         text.push_str(line.trim_end());

@@ -8,6 +8,7 @@ use std::path::Path;
 
 use common::Env;
 use serde_json::{Value, json};
+use unicode_width::UnicodeWidthStr;
 
 /// The IDs in a `list --json` output, in order.
 fn ids(list: &Value) -> Vec<String> {
@@ -951,4 +952,22 @@ fn project_lists_the_items_of_a_project_no_longer_in_config_json() {
     let list = env.json(&["list", "--project", "XX"]);
     assert_eq!(list["project"], "XX");
     assert_eq!(ids(&list), ["XX-1"]);
+}
+
+#[test]
+fn wide_characters_keep_the_list_in_line() {
+    let env = Env::new();
+    let root = env.add_project("XX", "xx");
+    create(&env, "XX", "中文标题很长", &["--label", "a"]);
+    create(&env, "XX", "plain title", &["--label", "b"]);
+    create(&env, "XX", "emoji 🎉", &["--label", "c"]);
+
+    let text = list_text(&env, &root, &[]);
+    // The terminal column each row's labels start at.
+    let columns: Vec<usize> = text
+        .lines()
+        .filter_map(|line| line.find('[').map(|at| line[..at].width()))
+        .collect();
+    assert_eq!(columns.len(), 3, "{text}");
+    assert!(columns.iter().all(|c| *c == columns[0]), "{text}");
 }

@@ -8,7 +8,7 @@ This folder is part of the guild-portfolio git repo, not a repo of its own. Slic
 
 - Rust stable. 1.99 is installed, and `File::lock` needs 1.89 or later.
 - Use the crates from §8, each added in the slice that first needs it:
-  - clap (derive), serde and serde_json, jiff, globset, sha2, regex, anstream and anstyle
+  - clap (derive), serde and serde_json, jiff, globset, sha2, regex, unicode-width, anstream and anstyle
   - dev crates: assert_cmd, tempfile, trycmd and jsonschema (with `default-features = false`, so it never fetches schemas over the network)
 - `git` and `claude` run as subprocesses.
 
