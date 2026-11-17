@@ -55,6 +55,8 @@ Always set `TRACKER_HOME` while developing. Without it, the tool uses your real 
 
 `delete` needs a terminal. Typed at one, `tracker delete BM-2` asks for the ID and waits. So that the demo can be pasted and run as it is, it types the answer through `script`, as the tests do: `script -q /dev/null …` on macOS, where the demo was run, or `script -qec "…" /dev/null` with util-linux. The `sleep`s let the question appear before the answer arrives, and keep stdin open until the command ends, since macOS's `script` sends end-of-input as soon as its stdin closes.
 
+That recipe is the way round the terminal check that [§7](DESIGN.md#7-honest-limits) describes, and an agent working in this folder can read it here. A delete made through it records `"interactive": true` and looks exactly like one typed by a person, so only a person checking the digest (slice 16) tells them apart.
+
 ```sh
 cd guild-portfolio/tracker
 cargo build
