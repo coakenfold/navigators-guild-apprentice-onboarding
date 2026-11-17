@@ -21,6 +21,28 @@
     "kind": { "enum": ["fix", "change", "capability", "chore"] },
     "status": { "$ref": "#/$defs/state" },
     "priority": { "enum": ["low", "medium", "high"] },
+    "labels": {
+      "description": "Free text, lowercased and de-duplicated (DESIGN.md §2.1). Left out while there are none.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "description": "One line, trimmed, with no capital letters.",
+        "type": "string",
+        "minLength": 1,
+        "allOf": [
+          { "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]+$" },
+          { "pattern": "^\\S(.*\\S)?$" },
+          { "pattern": "^[^\\p{Lu}\\p{Lt}]+$" }
+        ]
+      }
+    },
+    "design": {
+      "description": "A reference into a design doc, such as DESIGN.md#2.4, on one line. Left out when there isn't one.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]+$"
+    },
     "created": { "$ref": "#/$defs/time" },
     "updated": { "$ref": "#/$defs/time" },
     "verification": {
@@ -32,7 +54,7 @@
       "$ref": "#/$defs/verification"
     },
     "history": {
-      "description": "One entry per move between states, oldest first. Left out while there are none.",
+      "description": "One entry per move between states or edit, oldest first. Left out while there are none.",
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/move" }
@@ -76,7 +98,7 @@
       "additionalProperties": false
     },
     "move": {
-      "description": "One move between states (DESIGN.md §2.2, §4.3).",
+      "description": "One move between states (DESIGN.md §2.2, §4.3), or one edit, which has from equal to to and names the fields it changed (DESIGN.md §2.1).",
       "type": "object",
       "required": ["at", "from", "to", "via", "interactive"],
       "properties": {
@@ -85,7 +107,7 @@
         "to": { "$ref": "#/$defs/state" },
         "via": {
           "description": "The command that made the move. `status <id> <state>` records the command it maps onto. unknown appears only in --json output, never in a file: it stands for a command this version doesn't know, read from a file a newer tracker wrote. Such a file is listed, but this version never writes it back.",
-          "enum": ["start", "submit", "shelve", "reopen", "unknown"]
+          "enum": ["start", "submit", "shelve", "reopen", "edit", "unknown"]
         },
         "interactive": {
           "description": "Whether stdin was a terminal: true for my own moves, false for an agent's (DESIGN.md §2.6).",
@@ -97,9 +119,34 @@
           "minLength": 1,
           "maxLength": 500,
           "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]+$"
+        },
+        "fields": {
+          "description": "For an edit, the fields it changed, in the item file's order. Left out for a move.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["title", "kind", "priority", "labels", "design", "description"] }
+        },
+        "kind_before": {
+          "description": "For an edit that changed kind, the kind it replaced, so the digest can list a move away from capability (DESIGN.md §2.6). Left out otherwise.",
+          "enum": ["fix", "change", "capability", "chore"]
+        },
+        "labels_removed": {
+          "description": "For an edit, the labels it removed, so the digest can list one that removed needs-review (DESIGN.md §2.6). Left out when it removed none.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "if": { "properties": { "via": { "const": "edit" } } },
+      "then": { "required": ["fields"], "not": { "required": ["reason"] } },
+      "else": { "allOf": [
+        { "not": { "required": ["fields"] } },
+        { "not": { "required": ["kind_before"] } },
+        { "not": { "required": ["labels_removed"] } }
+      ] }
     }
   }
 }

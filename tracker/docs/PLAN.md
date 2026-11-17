@@ -32,7 +32,7 @@ The stack, where things live, the conventions and the test command are in `guild
 | --- | ------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------- | ------------- | ------ |
 | 1   | Create and list                 | create items in two projects and list them from one store                                             | —          | —             | done   |
 | 2   | States                          | start, submit, shelve and reopen items, with history kept                                             | 1          | —             | done   |
-| 3   | Organise and filter             | set priority, kind and labels, edit items, filter a sorted list                                       | 2          | —             | todo   |
+| 3   | Organise and filter             | set priority, kind and labels, edit items, filter a sorted list                                       | 2          | —             | done   |
 | 4   | Show and delete                 | see an item's full record, and delete one from a real terminal                                        | 3          | —             | todo   |
 | 5   | Bad data and polish             | keep working past a corrupt file; get help text, colour and empty states                              | 4          | —             | todo   |
 |     | _Checkpoint: course submission_ |                                                                                                       |            |               |        |
@@ -108,13 +108,14 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - Every write goes to a temporary file that is then renamed over the original.
   - An unreadable store exits 3.
 
-  Then polish: error messages that say how to fix the problem, colour (anstream/anstyle) that turns off when output isn't a terminal, `--help` text on every command and flag, and empty states such as 'No open items. Nice work!'."
+  Then polish: error messages that say how to fix the problem, colour (anstream/anstyle) that turns off when output isn't a terminal, `--help` text on every command and flag, empty states such as 'No open items. Nice work!', and a heading row naming `list`'s columns, as `project list` has. Decide whether a title needs a length limit, as a label (50) and a reason (500) have."
 
 - **Done when:**
   - A hand-corrupted item file is reported with its name, line and reason, and the other items still list.
   - With no store, commands say "Run `tracker init`." and never panic. A store with `chmod 000` exits 3.
   - No temporary files are left in the store after any command.
   - Every command has `--help` text. `tracker list | cat` contains no colour codes. An empty list prints its empty-state message.
+  - `list`'s text starts with a heading row that names each column, lined up with the rows below it.
 
 **Checkpoint: course submission.** Send slices 1–5 to #adversarial-review with a short design covering only those slices that links to the full one (§9).
 
@@ -128,13 +129,13 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - the `written` fingerprints (sha2), taken at create
   - interactive-only `criterion accept`, which adds a history entry with `via: "criterion-accept"` (§2.1)
 
-  Add gates G1 (at start: the item has criteria, and no other item in the project is in progress or review), G2 and G6. They run in a new `gates <id>` dry run and in front of `submit`. Any failure lists every reason, changes nothing and exits 2.
+  Add gates G1 (at start: the item has criteria, and no other item in the project is in progress or review), G2 and G6. G6 reads `design` relative to the project's root, and fails a file that, after following symlinks, is outside it (§7). They run in a new `gates <id>` dry run and in front of `submit`. Any failure lists every reason, changes nothing and exits 2.
 
   G1 refuses `start` for an item with no criteria, and almost every test in `tests/states.rs` starts one that has none. Give those items a criterion, for example by having the shared test helper that creates them add one, so that the move tests still test moves."
 
 - **Done when:**
   - `start` with no criteria is refused by G1 with exit 2, and so is `start` while another item in the project is in progress.
-  - A manual criterion with no evidence fails G2. A `design` naming a missing section fails G6, and a numbered section with content under it passes.
+  - A manual criterion with no evidence fails G2. A `design` naming a missing section fails G6, and a numbered section with content under it passes. A `design` whose file is a symlink to one outside the root fails G6.
   - `gates` lists every failure and leaves the item file byte-for-byte unchanged. A refused `submit` exits 2 and also changes nothing.
   - `create --done-when a --done-when b` adds two criteria and two `written` fingerprints. `evidence` on a script criterion exits 1.
   - `criterion accept` is refused outside an interactive terminal.
@@ -290,7 +291,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 ### Slice 16: Digest, audit, judge report
 
 - **Prompt:** "Add per-project digests as §2.6 describes:
-  - `digest [--project]` lists auto-verified items, judge-passed ones first with refs, answers and reasons. It also lists every shelve and every human action (`approve`, `reject`, `delete`, `criterion accept`), mine included, each marked by whether it came from an interactive terminal, and says when the digest was last acknowledged.
+  - `digest [--project]` lists auto-verified items, judge-passed ones first with refs, answers and reasons. It also lists every shelve, every human action (`approve`, `reject`, `delete`, `criterion accept`), mine included, and every `edit` whose history entry shows it removed `needs-review` or changed kind away from `capability`, each marked by whether it came from an interactive terminal, and says when the digest was last acknowledged.
   - `digest ack` records what was seen in `digests.json`.
   - `review` flags a digest older than `every_days` as overdue.
 
@@ -298,7 +299,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 
 - **Done when:**
   - `digest` lists every item auto-verified since that project's last ack, judge-passed first. `digest ack --project XX` empties only XX's digest.
-  - A shelve from piped stdin and one run under `script` (skipped where `script` isn't installed) are both listed, marked not from a terminal and from a terminal. So are a delete and an approve made since the last ack.
+  - A shelve from piped stdin and one run under `script` (skipped where `script` isn't installed) are both listed, marked not from a terminal and from a terminal. So are a delete and an approve made since the last ack, an edit that removes `needs-review`, and one that changes kind from `capability` to `change`. An edit that only adds a label isn't listed.
   - `audit` reports a hand-edited status, a done item with no verification record, and an ID used twice.
   - `judges` shows the approve and reject counts for each question.
 

@@ -108,8 +108,11 @@ fn update_item_refuses_a_file_it_would_lose_fields_from() {
     // version would write back as `Z` instead of `+00:00`.
     for (field, edited) in [
         (
-            "labels",
-            original.replace("  \"created\"", "  \"labels\": [\"bug\"],\n  \"created\""),
+            "written",
+            original.replace(
+                "  \"created\"",
+                "  \"written\": [\"71ac3e\"],\n  \"created\"",
+            ),
         ),
         ("created", original.replacen("Z\",", "+00:00\",", 1)),
     ] {
@@ -152,10 +155,10 @@ fn save_item_never_overwrites_a_file() {
     assert_eq!(fs::read_to_string(env.item_path("XX-1")).unwrap(), original);
 }
 
-/// Adds a history entry the way slice 3's `edit` will write one, with a
-/// `via` and a `fields` this version doesn't know, and returns the file's
-/// new text.
-fn add_edit_entry(env: &Env, id: &str) -> String {
+/// Adds a history entry the way slice 6's `criterion accept` will write
+/// one, with a `via` this version doesn't know, and returns the file's new
+/// text.
+fn add_newer_entry(env: &Env, id: &str) -> String {
     let path = env.item_path(id);
     let mut item: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
@@ -164,9 +167,8 @@ fn add_edit_entry(env: &Env, id: &str) -> String {
         "at": "2026-11-16T12:00:00Z",
         "from": status,
         "to": status,
-        "via": "edit",
-        "interactive": false,
-        "fields": ["priority"],
+        "via": "criterion-accept",
+        "interactive": true,
     });
     match item["history"].as_array_mut() {
         Some(history) => history.push(entry),
@@ -184,7 +186,7 @@ fn a_history_entry_from_a_newer_tracker_still_lists() {
     env.create("XX", "a");
     env.create("XX", "b");
     env.json(&["start", "XX-1"]);
-    add_edit_entry(&env, "XX-1");
+    add_newer_entry(&env, "XX-1");
 
     let items = env.json(&["list"])["items"].clone();
     let ids: Vec<&str> = items
@@ -201,20 +203,21 @@ fn a_history_entry_from_a_newer_tracker_still_lists() {
 
 #[test]
 fn a_move_refuses_an_item_whose_history_has_a_command_it_doesnt_know() {
-    // Writing the item back would turn `edit` into `unknown` and drop the
-    // entry's `fields`. Other items are unaffected.
+    // Writing the item back would turn `criterion-accept` into `unknown`.
+    // Other items are unaffected.
     let env = Env::new();
     env.add_project("XX", "xx");
     env.create("XX", "a");
     env.create("XX", "b");
     env.json(&["start", "XX-1"]);
-    let edited = add_edit_entry(&env, "XX-1");
+    let edited = add_newer_entry(&env, "XX-1");
     let path = env.item_path("XX-1");
 
     for args in [
         &["submit", "XX-1"][..],
         &["status", "XX-1", "done"],
         &["shelve", "XX-1", "--reason", "later"],
+        &["edit", "XX-1", "--priority", "high"],
     ] {
         let message = env.error(args, 3);
         assert!(message.contains("history"), "{args:?}: {message}");
@@ -231,7 +234,10 @@ fn a_move_refuses_an_item_whose_history_has_a_command_it_doesnt_know() {
         .stdout
         .clone();
     let text = String::from_utf8(output).unwrap();
-    assert!(text.contains("XX-1  in-progress  a"), "{text}");
+    assert!(
+        text.contains("XX-1  medium  change  in-progress  a"),
+        "{text}"
+    );
     assert_eq!(
         env.json(&["start", "XX-2"])["item"]["status"],
         "in-progress"

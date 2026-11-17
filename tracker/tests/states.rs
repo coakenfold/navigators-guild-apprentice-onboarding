@@ -462,28 +462,9 @@ fn an_item_in_review_is_refused_by_every_move() {
 
 #[test]
 fn a_move_from_a_terminal_records_interactive_true() {
-    // `script` runs the command on a pseudo-terminal, as if I'd typed it,
-    // with no pty crate (PLAN.md). Its options differ between macOS and BSD,
-    // and util-linux.
     let env = env_with_item();
-    let tracker = env!("CARGO_BIN_EXE_tracker");
-    let mut cmd = std::process::Command::new("script");
-    if cfg!(target_os = "linux") {
-        cmd.args(["-qec", &format!("'{tracker}' start XX-1"), "/dev/null"]);
-    } else {
-        cmd.args(["-q", "/dev/null", tracker, "start", "XX-1"]);
-    }
-    cmd.env("TRACKER_HOME", env.home.path())
-        .env("HOME", env.user_home())
-        .current_dir(env.outside())
-        .stdin(std::process::Stdio::null());
-    let output = match cmd.output() {
-        Ok(output) => output,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            eprintln!("Skipped: `script` isn't installed.");
-            return;
-        }
-        Err(e) => panic!("Can't run script: {e}"),
+    let Some(output) = env.in_terminal(&["start", "XX-1"]) else {
+        return;
     };
     assert!(output.status.success(), "{output:?}");
 
@@ -573,14 +554,21 @@ fn list_and_project_list_show_the_new_states() {
     env.json(&["start", "XX-2"]);
     env.json(&["shelve", "XX-3", "--reason", "r"]);
 
-    let list = env.json(&["list"]);
-    let states: Vec<&str> = list["items"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|item| item["status"].as_str().unwrap())
-        .collect();
-    assert_eq!(states, ["done", "in-progress", "shelved"]);
+    let states = |args: &[&str]| -> Vec<String> {
+        env.json(args)["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["status"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let every_state = "open,in-progress,review,done,shelved";
+    assert_eq!(
+        states(&["list", "--status", every_state]),
+        ["done", "in-progress", "shelved"]
+    );
+    // Plain `list` hides done and shelved items (slice 3).
+    assert_eq!(states(&["list"]), ["in-progress"]);
 
     let projects = env.json(&["project", "list"]);
     assert_eq!(
@@ -615,7 +603,10 @@ fn a_move_refuses_a_file_it_would_lose_fields_from() {
     let env = env_with_item();
     let path = env.item_path("XX-1");
     let original = fs::read_to_string(&path).unwrap();
-    let edited = original.replace("  \"created\"", "  \"labels\": [\"bug\"],\n  \"created\"");
+    let edited = original.replace(
+        "  \"created\"",
+        "  \"written\": [\"71ac3e\"],\n  \"created\"",
+    );
     assert_ne!(edited, original);
     fs::write(&path, &edited).unwrap();
 
@@ -625,7 +616,7 @@ fn a_move_refuses_a_file_it_would_lose_fields_from() {
         &["shelve", "XX-1", "--reason", "later"],
     ] {
         let message = env.error(args, 3);
-        assert!(message.contains("labels"), "{args:?}: {message}");
+        assert!(message.contains("written"), "{args:?}: {message}");
         assert_eq!(fs::read_to_string(&path).unwrap(), edited, "{args:?}");
     }
 }

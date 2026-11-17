@@ -40,3 +40,42 @@ fn a_failed_write_leaves_no_temporary_file() {
     assert_eq!(names(&dir), ["XX-1.json"]);
     assert!(path.join("inside").exists());
 }
+
+/// Someone with write access to the store plants a symlink where the
+/// temporary file would go, pointing at a file outside it.
+#[cfg(unix)]
+fn plant_symlink(dir: &TempDir, name: &str) -> std::path::PathBuf {
+    let victim = dir.path().join("victim");
+    fs::write(&victim, "mine\n").unwrap();
+    std::os::unix::fs::symlink(&victim, dir.path().join(name)).unwrap();
+    victim
+}
+
+#[cfg(unix)]
+#[test]
+fn a_planted_tmp_symlink_is_not_written_through() {
+    let dir = TempDir::new().unwrap();
+    let victim = plant_symlink(&dir, "XX-1.json.tmp");
+    let path = dir.path().join("XX-1.json");
+
+    write_file(&path, "{}\n").unwrap();
+
+    assert_eq!(fs::read_to_string(&victim).unwrap(), "mine\n");
+    assert_eq!(fs::read_to_string(&path).unwrap(), "{}\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_planted_at_this_process_tmp_name_is_refused() {
+    let dir = TempDir::new().unwrap();
+    let name = format!("XX-1.json.{}.tmp", std::process::id());
+    let victim = plant_symlink(&dir, &name);
+    let path = dir.path().join("XX-1.json");
+
+    let error = write_file(&path, "{}\n").unwrap_err();
+
+    assert_eq!(error.code, 3);
+    assert!(error.message.contains(&name), "{}", error.message);
+    assert_eq!(fs::read_to_string(&victim).unwrap(), "mine\n");
+    assert!(!path.exists());
+}

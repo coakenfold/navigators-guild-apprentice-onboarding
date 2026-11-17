@@ -66,6 +66,45 @@ fn slice_2_wrote_three_fixtures_with_history() {
     assert_eq!(vias, ["start", "submit", "reopen", "shelve"]);
 }
 
+/// XX-6 has every field slice 3 adds: a kind and priority other than the
+/// defaults, labels, a design reference and an edit entry. XX-7 was edited
+/// while in progress, which records `from` equal to `to`, and then shelved.
+/// XX-8's edit, written after review 1, records the kind it replaced and
+/// the labels it removed.
+#[test]
+fn slice_3_wrote_three_fixtures_with_edits() {
+    assert_eq!(names_in("slice-3"), ["XX-6.json", "XX-7.json", "XX-8.json"]);
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/slice-3");
+    let read = |name: &str| -> Value {
+        serde_json::from_str(&fs::read_to_string(root.join(name)).unwrap()).unwrap()
+    };
+
+    let item = read("XX-6.json");
+    assert_eq!(item["kind"], "capability");
+    assert_eq!(item["priority"], "high");
+    assert_eq!(
+        item["labels"],
+        serde_json::json!(["feature", "needs-review"])
+    );
+    assert_eq!(item["design"], "DESIGN.md#2.5");
+    assert_eq!(item["history"][0]["via"], "edit");
+
+    let item = read("XX-7.json");
+    let edit = &item["history"][1];
+    assert_eq!(edit["via"], "edit");
+    assert_eq!(edit["from"], "in-progress");
+    assert_eq!(edit["to"], "in-progress");
+    assert_eq!(
+        edit["fields"],
+        serde_json::json!(["title", "kind", "labels"])
+    );
+
+    let item = read("XX-8.json");
+    let edit = &item["history"][0];
+    assert_eq!(edit["kind_before"], "capability");
+    assert_eq!(edit["labels_removed"], serde_json::json!(["needs-review"]));
+}
+
 #[test]
 fn every_fixture_loads_and_comes_back_byte_for_byte() {
     for path in fixture_files() {
@@ -99,11 +138,14 @@ fn the_binary_lists_every_fixture_as_it_is_on_disk() {
         fs::copy(path, to).unwrap();
     }
 
-    let list = env.json(&["list"]);
+    // Every state, since plain `list` hides done and shelved items. `list`
+    // sorts by priority, so each item is found by its ID.
+    let list = env.json(&["list", "--status", "open,in-progress,review,done,shelved"]);
     let listed = list["items"].as_array().unwrap();
     assert_eq!(listed.len(), files.len());
-    for (item, path) in listed.iter().zip(&files) {
+    for path in &files {
         let file: Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
-        assert_eq!(item, &file, "{}", path.display());
+        let item = listed.iter().find(|item| item["id"] == file["id"]);
+        assert_eq!(item, Some(&file), "{}", path.display());
     }
 }

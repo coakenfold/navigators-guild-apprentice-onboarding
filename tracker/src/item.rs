@@ -15,6 +15,12 @@ pub struct Item {
     pub kind: Kind,
     pub status: Status,
     pub priority: Priority,
+    /// Free text, lowercased and de-duplicated (§2.1).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
+    /// A reference into a design doc, such as `DESIGN.md#2.4`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub design: Option<String>,
     pub created: Timestamp,
     pub updated: Timestamp,
     /// Filled in when the item reaches done (§2.7), and present only while
@@ -25,7 +31,7 @@ pub struct Item {
     /// reopened. Each reopen from done replaces it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous_verification: Option<Verification>,
-    /// One entry per move between states (§2.2), oldest first.
+    /// One entry per move between states (§2.2) or `edit`, oldest first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub history: Vec<HistoryEntry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -54,7 +60,25 @@ pub enum VerifiedBy {
     Unchecked,
 }
 
-/// One move between states.
+impl VerifiedBy {
+    pub const ALL: [VerifiedBy; 3] = [VerifiedBy::Auto, VerifiedBy::Human, VerifiedBy::Unchecked];
+
+    /// The name used on the command line, in item files and in `--json`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            VerifiedBy::Auto => "auto",
+            VerifiedBy::Human => "human",
+            VerifiedBy::Unchecked => "unchecked",
+        }
+    }
+
+    /// The way named `text`, such as `auto`.
+    pub fn parse(text: &str) -> Option<VerifiedBy> {
+        VerifiedBy::ALL.into_iter().find(|by| by.as_str() == text)
+    }
+}
+
+/// One move between states, or one `edit`, which has `from` equal to `to`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HistoryEntry {
     pub at: Timestamp,
@@ -69,9 +93,23 @@ pub struct HistoryEntry {
     /// Why, for the moves that need a reason: shelve and reopen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// For an entry that doesn't change the state, such as an `edit`, the
+    /// names of the fields it changed (§2.1).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fields: Vec<String>,
+    /// For an `edit` that changed `kind`, the kind it replaced, so the
+    /// digest can list a move away from `capability`, which T1 relies on
+    /// (§2.6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind_before: Option<Kind>,
+    /// For an `edit`, the labels it removed, so the digest can list one
+    /// that removed `needs-review`, which T9 relies on (§2.6).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels_removed: Vec<String>,
 }
 
-/// The commands that move an item between states (§2.2, §3).
+/// The commands that add a history entry: the ones that move an item
+/// between states (§2.2, §3), and `edit`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Via {
@@ -79,7 +117,9 @@ pub enum Via {
     Submit,
     Shelve,
     Reopen,
-    /// A command this version doesn't know, such as `edit`, in a file
+    /// Changes an item's details without moving it, so no move has it.
+    Edit,
+    /// A command this version doesn't know, such as `approve`, in a file
     /// written by a newer tracker. The file still loads and lists, but the
     /// command's name is lost, so `Store::update_item` refuses to write the
     /// file back. No move has it.
@@ -95,6 +135,7 @@ impl Via {
             Via::Submit => "submit",
             Via::Shelve => "shelve",
             Via::Reopen => "reopen",
+            Via::Edit => "edit",
             Via::Unknown => "unknown",
         }
     }
@@ -110,8 +151,28 @@ impl Via {
 pub enum Kind {
     Fix,
     Change,
+    /// Adds something the system couldn't do before.
     Capability,
     Chore,
+}
+
+impl Kind {
+    pub const ALL: [Kind; 4] = [Kind::Fix, Kind::Change, Kind::Capability, Kind::Chore];
+
+    /// The name used on the command line, in item files and in `--json`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Kind::Fix => "fix",
+            Kind::Change => "change",
+            Kind::Capability => "capability",
+            Kind::Chore => "chore",
+        }
+    }
+
+    /// The kind named `text`, such as `fix`.
+    pub fn parse(text: &str) -> Option<Kind> {
+        Kind::ALL.into_iter().find(|kind| kind.as_str() == text)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -167,6 +228,35 @@ pub enum Priority {
     Low,
     Medium,
     High,
+}
+
+impl Priority {
+    /// Every priority, highest first, which is the order `list` sorts by.
+    pub const ALL: [Priority; 3] = [Priority::High, Priority::Medium, Priority::Low];
+
+    /// The name used on the command line, in item files and in `--json`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Priority::Low => "low",
+            Priority::Medium => "medium",
+            Priority::High => "high",
+        }
+    }
+
+    /// The priority named `text`, such as `high`.
+    pub fn parse(text: &str) -> Option<Priority> {
+        Priority::ALL
+            .into_iter()
+            .find(|priority| priority.as_str() == text)
+    }
+
+    /// Where `list` puts it: 0 for high, which comes first.
+    pub fn rank(self) -> usize {
+        Priority::ALL
+            .iter()
+            .position(|priority| *priority == self)
+            .expect("ALL holds every priority")
+    }
 }
 
 impl Item {

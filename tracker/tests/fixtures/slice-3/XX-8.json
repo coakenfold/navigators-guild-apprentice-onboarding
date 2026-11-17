@@ -1,0 +1,31 @@
+{
+  "id": "XX-8",
+  "title": "Built inside existing files",
+  "project": "XX",
+  "kind": "change",
+  "status": "open",
+  "priority": "high",
+  "labels": [
+    "search"
+  ],
+  "created": "2026-11-17T02:53:30Z",
+  "updated": "2026-11-17T02:53:30Z",
+  "history": [
+    {
+      "at": "2026-11-17T02:53:30Z",
+      "from": "open",
+      "to": "open",
+      "via": "edit",
+      "interactive": false,
+      "fields": [
+        "kind",
+        "priority",
+        "labels"
+      ],
+      "kind_before": "capability",
+      "labels_removed": [
+        "needs-review"
+      ]
+    }
+  ]
+}
