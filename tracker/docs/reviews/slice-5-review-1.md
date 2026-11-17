@@ -24,6 +24,8 @@ I found no bug that loses data, and no new security hole. The findings that matt
 - **Test gap 4:** PLAN.md's integration risks ask for a test of "an item file saved by slice 5", and there's none. Slice 6 is the next change to the item file.
 - **Finding 4:** §3 says exit code 3 means "a file … is unreadable", but a `list` that skipped one exits 0, and DESIGN.md doesn't say so.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -102,3 +104,22 @@ There's no earlier review of slice 5. The readme's [Still open](../slice-5-readm
 - **How a refusal of several lines is printed.** §2.4's gate refusal is several lines, and exits 2. Today every error goes through `report` ([main.rs:418](../../src/main.rs#L418)), which escapes line breaks so one error is one line. Slice 6 has to choose between printing the refusal as the command's output, with exit 2, or letting `report` keep the line breaks of a message tracker wrote itself.
 - **Help, colour and empty states for the new commands.** `criterion`, `evidence` and `gates` need help text, which [main.rs:1912](../../src/main.rs#L1912) enforces, and entries in [polish.rs](../../tests/polish.rs)'s `COMMANDS`, which nothing enforces. `criterion accept`'s question should stay uncoloured on stderr, like `delete`'s.
 - **The fixture.** If test gap 4 isn't fixed here, slice 6 should save `tests/fixtures/slice-5/` with this binary before it changes the item file.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `9765c91`, not at the fixed code. Each fix is in its own commit, with its tests, and the readme's [Fixes after review 1](../slice-5-readme.md#fixes-after-review-1) lists them too.
+
+Seen failing: bug 1's integration test was run against the source before `e76eabb`, bug 2's against `e76eabb` and bug 3's against `a99f678`, and each failed. Bug 1's unit test calls the new `read_listed`, so it can't build against the old code. Test gap 1's check was run with `--unlabel`'s description removed from `src/main.rs`, and failed under `--help`, which it couldn't before.
+
+After the fixes, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and all 194 tests pass, 5 more than at `9765c91`. In one full run, `lock_unchanged_holds_the_lock_only_while_the_file_is_as_it_was` in `tests/item_files.rs` failed at the `try_lock` after the lock is dropped, and passed on every rerun. That test and the lock are unchanged here. The likeliest cause is another test in the same binary spawning a process that briefly holds a copy of the lock's file descriptor. It's in the readme's [Still open](../slice-5-readme.md#still-open).
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: a broken symlink, or a file deleted mid-listing, stops the whole list and suggests `tracker init` | `e76eabb`: `load_items` reads each file through `read_listed`, which skips and reports a broken symlink ("it's a symlink to a file that doesn't exist", "Remove it from items/.") and leaves out a file that's gone. `item_text`, which `load_item`, `load_item_with_text` and `update_item` now all read through, refuses a broken symlink with exit 3 rather than "There's no item". `error::io` no longer adds "Run `tracker init`"; `error::io_in_store` does, and is used only for the parts `init` creates. The security section's broader idea, skipping every symlink, wasn't taken: it would hide a working symlinked item, so it's in the readme's Still open. Tests: `a_symlink_to_a_missing_file_is_skipped_and_named_without_suggesting_init`, and the unit test `a_file_removed_after_listing_is_left_out_without_a_word` |
+| Bug 2: `TRACKER_HOME` naming a file | `a99f678`: `Store::locate` calls `check_not_a_file`, which refuses with exit 3 a store folder that's a file, or that has a file above it, naming the file, for `TRACKER_HOME` and for `~/.tracker`. Test: `a_store_folder_that_is_a_file_is_named_with_how_to_fix_it` |
+| Bug 3: four errors that don't say how to fix the problem | `f43eb23`: each now ends with the fix the review suggested. The project root's says "Check the path, or create the folder first.", since the error can be other than "not found". No `HOME` gives an absolute example, `/Users/me/.tracker`, since a relative `TRACKER_HOME` is refused. Test: `common_errors_say_how_to_fix_the_problem` |
+| Finding 4: the exit code of a listing that skipped a file | `8ab514c`: §3 and §4.4 say it exits 0 and that an agent reads `skipped`. §4.4 also names the broken symlink and the file deleted mid-listing |
+| Test gap 1: `--help`'s per-option check always passed | `b1da69f`: under `--help`, each option and argument line must have its description beside it, or on the next line indented further. Arguments (`<ID>`) are now checked too |
+| Test gap 2: no test of a vanished file or a broken symlink | `e76eabb`, with bug 1 |
+| Test gap 3: no test of `TRACKER_HOME` naming a file, or of bug 3's messages | `a99f678` and `f43eb23`, with bugs 2 and 3 |
+| Test gap 4: no fixture saved by slice 5 | `af02b3b`: `tests/fixtures/slice-5/`, XX-9 to XX-12, written by this binary: one open with every field and an edit with `fields`, `kind_before` and `labels_removed`, one in progress, one done and one shelved after a reopen, with `previous_verification`. Review can't be reached before slice 9. Test: `slice_5_wrote_four_fixtures_one_in_each_state`. "Slice 6 must decide"'s last point is settled by this |
