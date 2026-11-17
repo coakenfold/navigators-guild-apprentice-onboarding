@@ -35,7 +35,7 @@ After slice 2 you can **move an item through its lifecycle**: start it, submit i
 - `verification`: the record `submit` writes. Until the gates exist it says `unchecked`, with a note that nothing checked the work. Reopening moves it to `previous_verification`.
 - Item files written by this slice, in `tests/fixtures/slice-2/`.
 
-**Not built yet:** review and the moves into and out of it (`approve` and `reject` in slice 9, with the triggers that hold an item), kind, priority, labels, `edit` and filters (slice 3), `show` and `delete` (slice 4), and the gates (slice 6), which will decide whether a submit reaches done.
+**Not built yet:** review and the moves into and out of it (`approve` and `reject` in slice 9, with the triggers that hold an item), kind, priority, labels, `edit` and filters (slice 3), `show` and `delete` (slice 4), the gates (slice 6), which will decide whether a submit reaches done, and §2.8's rules for shelving an in-progress item (slice 8). Until slice 8, `shelve` moves an in-progress item without checking that the working tree is clean or that the project checks pass.
 
 ## Try it
 
@@ -363,6 +363,7 @@ These weren't fixed in this round.
 - **Slice 4**'s helper for human-only commands calls `tty::is_interactive`, and `delete` writes its line to `deleted.json`.
 - **Slice 5** skips files it can't parse. A history entry whose `via` this version doesn't know, such as slice 3's `edit` or slice 9's `approve`, doesn't stop the file from loading: `Via::Unknown` reads it, `--json` prints it as `unknown`, and `Store::update_item` refuses to write the file back, because that would lose the command's name.
 - **Slice 6**'s G1 refuses `start` without criteria, so the move tests need items with one. Its gates fill in `submit`'s `gates`, and a refused submit exits 2 with `id`, `result`, `gates` and `failures` added to the error.
+- **Slice 8** makes shelving an in-progress item follow §2.8: it's refused with exit 2 unless the project's working tree is clean and its project checks pass. Shelving an open item stays as it is.
 - **Slice 9** adds review, `approve` and `reject`. `states::find` returns the first move for a command and state, but `submit` from in-progress will lead to done or review depending on the triggers, so the table will need to name both outcomes and let the command pick one. Refusals for an item in review must then name approve and reject.
 - **Slice 16**'s digest reads `interactive` and lists every shelve and human action.
 - **Item files change shape again later.** Each new field needs a serde default and `skip_serializing_if`, its place in §4.3's order, an entry in `item.schema.json`, and a `tests/fixtures/slice-<n>/` folder of files written by that slice's binary.
