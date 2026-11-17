@@ -294,6 +294,35 @@ fn delete_refused_without_a_terminal_suggests_shelve_only_where_it_works() {
 }
 
 #[test]
+fn delete_refuses_a_file_from_a_newer_tracker_before_asking() {
+    // The warning can't say what a field it doesn't know holds, and a
+    // newer tracker may have more to remove, so this version won't delete.
+    let env = env_with_project();
+    env.create("XX", "a");
+    env.json(&["start", "XX-1"]);
+    env.json(&["submit", "XX-1"]);
+    edit_file(&env, "XX-1", |item| {
+        item["criteria"] = json!([{ "kind": "script", "run": "cargo test" }]);
+    });
+    let before = fs::read(env.item_path("XX-1")).unwrap();
+
+    let message = env.error(&["delete", "XX-1"], 3);
+    assert!(message.contains(": criteria."), "{message}");
+    assert!(message.contains("newer tracker"), "{message}");
+    assert!(message.contains("Nothing was deleted"), "{message}");
+
+    // From a terminal too, without asking for the ID.
+    if let Some(output) = env.in_terminal(&["delete", "XX-1"]) {
+        let text = String::from_utf8_lossy(&output.stdout);
+        assert_eq!(output.status.code(), Some(3), "{text}");
+        assert!(text.contains(": criteria."), "{text}");
+        assert!(!text.contains("Type XX-1"), "{text}");
+    }
+    assert_eq!(fs::read(env.item_path("XX-1")).unwrap(), before);
+    assert!(!env.home.path().join("deleted.json").exists());
+}
+
+#[test]
 fn delete_of_a_missing_id_exits_1_and_writes_nothing() {
     let env = env_with_project();
     env.error(&["delete", "XX-1"], 1);

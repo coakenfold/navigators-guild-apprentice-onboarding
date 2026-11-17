@@ -1497,10 +1497,21 @@ fn entries(count: usize) -> String {
 fn delete(store: &Store, id: &str) -> Result<Output> {
     store.require_exists()?;
     let id = normalize_id(id);
-    // The file's text is read before the item, so a change made between
-    // the two can only make the check under the lock refuse.
-    let before = store.item_text(&id)?;
-    let item = store.load_item(&id)?;
+    let (item, before) = store.load_item_with_text(&id)?;
+    // A newer tracker's file can hold more than this version would say is
+    // lost, or know to clean up, such as a git ref. A delete can't be
+    // undone, so it's left to the tracker that wrote the file, as
+    // `Store::update_item` does for a rewrite.
+    let unknown = unknown_fields(&before);
+    if !unknown.is_empty() {
+        return Err(Error::store(format!(
+            "{} has fields this version of tracker doesn't know, or can't show in full: {}. \
+             It was probably written by a newer tracker, which knows what deleting it must \
+             remove, so use that one. Nothing was deleted.",
+            store.item_path(&id)?.display(),
+            unknown.join(", ")
+        )));
+    }
     // Shelving is the agent's way to put an item aside, but only open and
     // in-progress items can be shelved (§2.8), so only they get that advice.
     let otherwise = if states::find(Via::Shelve, item.status).is_some() {
