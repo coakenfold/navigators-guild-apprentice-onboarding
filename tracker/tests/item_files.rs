@@ -267,6 +267,55 @@ fn show_prints_an_item_whose_history_has_a_command_it_doesnt_know() {
 }
 
 #[test]
+fn lost_on_rewrite_tells_unknown_fields_from_values_written_differently() {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    env.json(&["start", "XX-1"]);
+    env.json(&["submit", "XX-1"]);
+    let mut item = env.item("XX-1");
+    // Written differently: an empty list, a null, a time with an offset,
+    // and a null inside a history entry.
+    item["labels"] = serde_json::json!([]);
+    item["description"] = serde_json::Value::Null;
+    let at = item["updated"].as_str().unwrap().replace('Z', "+00:00");
+    item["updated"] = serde_json::json!(at);
+    item["history"][0]["reason"] = serde_json::Value::Null;
+    // Unknown: a field inside a record, and one at the top level.
+    item["verification"]["commit"] = serde_json::json!("abc123");
+    item["criteria"] = serde_json::json!([]);
+    item["owner"] = serde_json::json!("me");
+    let text = serde_json::to_string_pretty(&item).unwrap();
+
+    let lost = tracker::item::lost_on_rewrite(&text).unwrap();
+    assert_eq!(lost.unknown, ["verification", "owner"]);
+    assert_eq!(
+        lost.respelled,
+        ["updated", "history", "labels", "description", "criteria"]
+    );
+    assert_eq!(
+        lost.fields(),
+        [
+            "verification",
+            "owner",
+            "updated",
+            "history",
+            "labels",
+            "description",
+            "criteria"
+        ]
+    );
+
+    // A history entry made by a command this version doesn't know.
+    let mut item = env.item("XX-1");
+    item["history"][0]["via"] = serde_json::json!("approve");
+    let text = serde_json::to_string_pretty(&item).unwrap();
+    let lost = tracker::item::lost_on_rewrite(&text).unwrap();
+    assert_eq!(lost.unknown, ["history"]);
+    assert!(lost.respelled.is_empty());
+}
+
+#[test]
 fn lock_unchanged_holds_the_lock_only_while_the_file_is_as_it_was() {
     // What every human-only command calls after its question (§2.7).
     let env = Env::new();

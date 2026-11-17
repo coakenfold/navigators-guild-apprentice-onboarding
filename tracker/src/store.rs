@@ -423,7 +423,7 @@ impl Store {
                  {}. It was probably written by a newer tracker, so use that one. Nothing was \
                  written.",
                 path.display(),
-                lost.join(", ")
+                lost.fields().join(", ")
             )));
         }
         write_file(&path, &item::to_json(item))

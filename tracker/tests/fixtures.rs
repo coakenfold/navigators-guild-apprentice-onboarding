@@ -120,7 +120,7 @@ fn every_fixture_loads_and_comes_back_byte_for_byte() {
         check_schema("item", &serde_json::from_str(&text).unwrap());
         // So a later slice's binary can rewrite it without losing anything.
         let lost = tracker::item::lost_on_rewrite(&text).unwrap();
-        assert!(lost.is_empty(), "{} would lose {lost:?}", path.display());
+        assert!(lost.is_empty(), "{} would change {lost:?}", path.display());
     }
 }
 

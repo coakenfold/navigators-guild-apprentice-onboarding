@@ -1464,10 +1464,14 @@ fn show(store: &Store, id: &str) -> Result<Output> {
 
 /// The top-level fields of an item file that this version doesn't know, or
 /// would read as something else, such as a field a newer tracker added or a
-/// history entry made by a command it doesn't have. `text` has already been
-/// parsed as an item, so it parses again here.
+/// history entry made by a command it doesn't have. A value that's only
+/// written differently, such as `"labels": []` or a time ending `+00:00`,
+/// comes from a hand edit and hides nothing, so it isn't counted. `text`
+/// has already been parsed as an item, so it parses again here.
 fn unknown_fields(text: &str) -> Vec<String> {
-    item::lost_on_rewrite(text).unwrap_or_default()
+    item::lost_on_rewrite(text)
+        .map(|lost| lost.unknown)
+        .unwrap_or_default()
 }
 
 /// A verification record's fields as indented rows.

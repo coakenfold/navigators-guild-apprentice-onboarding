@@ -355,6 +355,48 @@ fn delete_refuses_a_file_from_a_newer_tracker_before_asking() {
 }
 
 #[test]
+fn show_and_delete_accept_a_file_whose_values_are_only_written_differently() {
+    // Hand edits that this version would write another way, but which hide
+    // nothing, so they aren't blamed on a newer tracker (review 2's bug 1).
+    let env = env_with_project();
+    type HandEdit = fn(&mut Value);
+    let cases: [(&str, HandEdit); 3] = [
+        ("labels", |item| item["labels"] = json!([])),
+        ("design", |item| item["design"] = Value::Null),
+        ("created", |item| {
+            let at = item["created"].as_str().unwrap().replace('Z', "+00:00");
+            item["created"] = json!(at);
+        }),
+    ];
+    for (n, (field, change)) in cases.iter().enumerate() {
+        let id = env.create("XX", field);
+        edit_file(&env, &id, change);
+        let file = fs::read_to_string(env.item_path(&id)).unwrap();
+        assert!(
+            file.contains(&format!("\"{field}\": "))
+                && (file.contains("[]") || file.contains("null") || file.contains("+00:00")),
+            "{file}"
+        );
+
+        let shown = env.json(&["show", &id]);
+        assert!(shown.get("warning").is_none(), "{field}: {shown}");
+        let shown = text(&env, &["show", &id]);
+        assert!(!shown.contains("newer tracker"), "{field}: {shown}");
+
+        let Some((output, ok)) = env.in_terminal_typing(&["delete", &id], PROMPT, &id, || {})
+        else {
+            return;
+        };
+        assert!(ok, "{field}: {output}");
+        assert!(output.contains(&format!("Deleted {id}.")), "{output}");
+        assert!(!env.item_path(&id).exists(), "{field}");
+        let records = deleted(&env);
+        assert_eq!(records.len(), n + 1);
+        assert_eq!(records[n]["id"], id);
+    }
+}
+
+#[test]
 fn the_terminal_harness_fails_rather_than_hangs_when_the_prompt_never_comes() {
     // A question reworded, or a second question, would leave the command
     // waiting for an answer the harness never types.
