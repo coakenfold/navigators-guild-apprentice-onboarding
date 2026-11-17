@@ -124,7 +124,9 @@ struct CreateArgs {
     /// lowercased, and each is kept once
     #[arg(long = "label", value_name = "LABEL")]
     labels: Vec<String>,
-    /// A reference into the project's design doc, such as DESIGN.md#2.4
+    /// A reference into the project's design doc, such as DESIGN.md#2.4. The file is named
+    /// relative to the current folder and must be inside the project's root. It's stored
+    /// relative to the root
     #[arg(long)]
     design: Option<String>,
 }
@@ -148,7 +150,8 @@ struct EditArgs {
     /// A label to remove. Repeat it for more than one
     #[arg(long = "unlabel", value_name = "LABEL")]
     unlabels: Vec<String>,
-    /// A new reference into the design doc, or "" to remove it
+    /// A new reference into the design doc, or "" to remove it. The file is named relative to
+    /// the current folder and must be inside the project's root
     #[arg(long)]
     design: Option<String>,
     /// A new description, which replaces the old one, or "" to remove it
@@ -581,6 +584,10 @@ fn create(store: &Store, args: CreateArgs) -> Result<Output> {
         }
     };
 
+    let design = design
+        .map(|design| resolve_design(&design, &config, &key))
+        .transpose()?;
+
     let id = store.next_id(&key)?;
     let now = item::now();
     let item = Item {
@@ -685,6 +692,98 @@ fn check_design(design: &str) -> Result<Option<String>> {
     Ok(Some(design.to_string()))
 }
 
+/// A design reference as it's stored: the file relative to project `key`'s
+/// root, with `/` between folders, then the `#section` as given (§2.1). The
+/// file is named relative to the current folder, and must be inside the
+/// root, so G6 never reads a file outside it (§7). The file needn't exist
+/// yet: G6 checks that. The folders above it that do exist are followed
+/// through any symlinks, so a symlink can't lead outside the root either,
+/// but G6 must check again, since a folder can change later.
+fn resolve_design(design: &str, config: &config::Config, key: &str) -> Result<String> {
+    let (file, section) = match design.split_once('#') {
+        Some((file, section)) => (file, Some(section)),
+        None => (design, None),
+    };
+    if file.is_empty() {
+        return Err(Error::input(format!(
+            "The --design reference \"{design}\" names no file. Name the design doc and \
+             section, relative to the current folder, such as DESIGN.md#2.4."
+        )));
+    }
+    let Some(project) = config.projects.get(key) else {
+        return Err(Error::input(format!(
+            "{key} isn't in config.json, so there's no root to check the --design reference \
+             against. Register it again with `tracker project add`."
+        )));
+    };
+    let root = std::fs::canonicalize(project.root_path()).map_err(|e| {
+        Error::input(format!(
+            "Can't read {key}'s root, {}, to check the --design reference against: {e}",
+            project.root
+        ))
+    })?;
+    let cwd = std::env::current_dir()
+        .and_then(std::fs::canonicalize)
+        .map_err(|e| Error::input(format!("Can't read the current folder: {e}")))?;
+
+    // `..` and `.` are taken away by hand, since the file needn't exist yet.
+    let mut path = PathBuf::new();
+    for part in cwd.join(file).components() {
+        match part {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                path.pop();
+            }
+            other => path.push(other),
+        }
+    }
+    let path = follow_symlinks(&path);
+    let inside = path
+        .strip_prefix(&root)
+        .ok()
+        .filter(|relative| !relative.as_os_str().is_empty());
+    let Some(relative) = inside else {
+        return Err(Error::input(format!(
+            "The --design reference \"{design}\" names {}, which isn't a file inside {key}'s \
+             root, {}. The file is named relative to the current folder, {}.",
+            path.display(),
+            root.display(),
+            cwd.display()
+        )));
+    };
+    let parts: Vec<&str> = relative
+        .components()
+        .map(|part| part.as_os_str().to_str().expect("built from a String"))
+        .collect();
+    let mut stored = parts.join("/");
+    if let Some(section) = section {
+        stored.push('#');
+        stored.push_str(section);
+    }
+    Ok(stored)
+}
+
+/// `path` with its longest part that exists followed through symlinks,
+/// and the rest, which doesn't exist yet, added back as it was.
+fn follow_symlinks(path: &Path) -> PathBuf {
+    let mut missing = Vec::new();
+    let mut existing = path;
+    loop {
+        if let Ok(real) = std::fs::canonicalize(existing) {
+            let mut path = real;
+            path.extend(missing.iter().rev());
+            return path;
+        }
+        match (existing.parent(), existing.file_name()) {
+            (Some(parent), Some(name)) => {
+                missing.push(name);
+                existing = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
 /// `edit`: changes an item's details and adds one history entry that names
 /// the fields it changed (§2.1). Refused for a done item, whose verification
 /// record is about the item as it was verified, and for an item in review
@@ -693,7 +792,8 @@ fn edit(store: &Store, args: EditArgs) -> Result<Output> {
     store.require_exists()?;
     let id = normalize_id(&args.id);
     // Every value is checked before the lock is taken, so bad input never
-    // waits for another command.
+    // waits for another command. Only a design reference's place in the
+    // project's root waits for the item, which names the project.
     let title = args.title.as_deref().map(check_title).transpose()?;
     let kind = args
         .kind
@@ -745,6 +845,14 @@ fn edit(store: &Store, args: EditArgs) -> Result<Output> {
              edited from an interactive terminal. Wait for the decision."
         )));
     }
+
+    let design = match design {
+        Some(Some(design)) => {
+            let config = config::load(store)?;
+            Some(Some(resolve_design(&design, &config, &item.project)?))
+        }
+        other => other,
+    };
 
     // The fields that change, in the item file's order.
     let mut fields = Vec::new();

@@ -48,9 +48,14 @@ fn create(env: &Env, project: &str, title: &str, flags: &[&str]) -> String {
 /// Runs `edit` with `--json` and returns its output, after checking that
 /// the file on disk holds the item it prints.
 fn edit(env: &Env, args: &[&str]) -> Value {
+    edit_in(env, &env.outside(), args)
+}
+
+/// The same as `edit`, run from `dir`.
+fn edit_in(env: &Env, dir: &Path, args: &[&str]) -> Value {
     let mut all = vec!["edit"];
     all.extend_from_slice(args);
-    let output = env.json(&all);
+    let output = env.json_in(dir, &all);
     let id = output["item"]["id"].as_str().unwrap();
     assert_eq!(env.item(id), output["item"], "{args:?}");
     output
@@ -76,23 +81,26 @@ fn create_defaults_to_a_medium_change_with_no_labels_or_design() {
 #[test]
 fn create_takes_kind_priority_labels_and_design() {
     let env = Env::new();
-    env.add_project("XX", "xx");
-    let item = env.json(&[
-        "create",
-        "a",
-        "--project",
-        "XX",
-        "--kind",
-        "capability",
-        "--priority",
-        "high",
-        "--label",
-        "search",
-        "--label",
-        "ui",
-        "--design",
-        " DESIGN.md#2.5 ",
-    ])["item"]
+    let root = env.add_project("XX", "xx");
+    let item = env.json_in(
+        &root,
+        &[
+            "create",
+            "a",
+            "--project",
+            "XX",
+            "--kind",
+            "capability",
+            "--priority",
+            "high",
+            "--label",
+            "search",
+            "--label",
+            "ui",
+            "--design",
+            " DESIGN.md#2.5 ",
+        ],
+    )["item"]
         .clone();
     assert_eq!(item["kind"], "capability");
     assert_eq!(item["priority"], "high");
@@ -238,11 +246,12 @@ fn edit_priority_and_unlabel_changes_the_item_and_adds_one_history_entry() {
 #[test]
 fn edit_changes_every_detail_and_names_each_field() {
     let env = Env::new();
-    env.add_project("XX", "xx");
+    let root = env.add_project("XX", "xx");
     let id = create(&env, "XX", "a", &["--description", "old"]);
 
-    let output = edit(
+    let output = edit_in(
         &env,
+        &root,
         &[
             &id,
             "--description",
@@ -285,6 +294,52 @@ fn edit_changes_every_detail_and_names_each_field() {
     assert!(output["item"].get("design").is_none());
     assert!(output["item"].get("description").is_none());
     assert_eq!(history(&output["item"]).len(), 2);
+}
+
+#[test]
+fn a_design_reference_is_named_from_the_current_folder_and_stored_from_the_root() {
+    let env = Env::new();
+    let root = env.add_project("XX", "xx");
+    let docs = env.dir("xx/docs");
+    let design = |dir: &Path, reference: &str| {
+        let args = ["create", "a", "--project", "XX", "--design", reference];
+        env.json_in(dir, &args)["item"]["design"].clone()
+    };
+
+    assert_eq!(design(&docs, "DESIGN.md#2.4"), "docs/DESIGN.md#2.4");
+    assert_eq!(design(&root, "./docs/../docs/DESIGN.md"), "docs/DESIGN.md");
+    assert_eq!(design(&env.outside(), "../xx/DESIGN.md#1"), "DESIGN.md#1");
+    let absolute = format!("{}/docs/DESIGN.md#3", root.display());
+    assert_eq!(design(&env.outside(), &absolute), "docs/DESIGN.md#3");
+
+    // Anything that isn't a file inside the root is refused, and creates
+    // nothing, including a file reached through a symlink that leads out.
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(env.outside(), root.join("out")).unwrap();
+    for (dir, reference) in [
+        #[cfg(unix)]
+        (&root, "out/DESIGN.md#1"),
+        (&root, "../../../etc/passwd#1"),
+        (&root, "/etc/passwd"),
+        (&root, "../yy/DESIGN.md"),
+        (&root, "."),
+        (&docs, ".."),
+        (&root, "#2.4"),
+        (&env.outside(), "DESIGN.md#2.4"),
+    ] {
+        let args = ["create", "a", "--project", "XX", "--design", reference];
+        let message = env.error_in(dir, &args, 1);
+        assert!(message.contains("--design"), "{reference}: {message}");
+    }
+    assert_eq!(listed(&env, &["--all"]).len(), 4);
+
+    // `edit` names the file the same way.
+    let output = edit_in(&env, &docs, &["XX-1", "--design", "../README.md#1"]);
+    assert_eq!(output["item"]["design"], "README.md#1");
+    let before = fs::read(env.item_path("XX-1")).unwrap();
+    let message = env.error_in(&docs, &["edit", "XX-1", "--design", "../../x.md"], 1);
+    assert!(message.contains("inside XX's root"), "{message}");
+    assert_eq!(fs::read(env.item_path("XX-1")).unwrap(), before);
 }
 
 #[test]
