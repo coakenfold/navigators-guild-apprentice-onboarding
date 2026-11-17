@@ -462,28 +462,9 @@ fn an_item_in_review_is_refused_by_every_move() {
 
 #[test]
 fn a_move_from_a_terminal_records_interactive_true() {
-    // `script` runs the command on a pseudo-terminal, as if I'd typed it,
-    // with no pty crate (PLAN.md). Its options differ between macOS and BSD,
-    // and util-linux.
     let env = env_with_item();
-    let tracker = env!("CARGO_BIN_EXE_tracker");
-    let mut cmd = std::process::Command::new("script");
-    if cfg!(target_os = "linux") {
-        cmd.args(["-qec", &format!("'{tracker}' start XX-1"), "/dev/null"]);
-    } else {
-        cmd.args(["-q", "/dev/null", tracker, "start", "XX-1"]);
-    }
-    cmd.env("TRACKER_HOME", env.home.path())
-        .env("HOME", env.user_home())
-        .current_dir(env.outside())
-        .stdin(std::process::Stdio::null());
-    let output = match cmd.output() {
-        Ok(output) => output,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            eprintln!("Skipped: `script` isn't installed.");
-            return;
-        }
-        Err(e) => panic!("Can't run script: {e}"),
+    let Some(output) = env.in_terminal(&["start", "XX-1"]) else {
+        return;
     };
     assert!(output.status.success(), "{output:?}");
 

@@ -127,6 +127,36 @@ impl Env {
         self.error_in(&self.outside(), args, code)
     }
 
+    /// Runs `tracker <args>` under `script`, on a pseudo-terminal as if I'd
+    /// typed it, with no pty crate (PLAN.md). Its options differ between
+    /// macOS and BSD, and util-linux. Returns `None` where `script` isn't
+    /// installed, so the test can skip.
+    pub fn in_terminal(&self, args: &[&str]) -> Option<std::process::Output> {
+        let tracker = env!("CARGO_BIN_EXE_tracker");
+        let mut cmd = std::process::Command::new("script");
+        if cfg!(target_os = "linux") {
+            let mut line = format!("'{tracker}'");
+            for arg in args {
+                line.push_str(&format!(" '{}'", arg.replace('\'', "'\\''")));
+            }
+            cmd.args(["-qec", &line, "/dev/null"]);
+        } else {
+            cmd.args(["-q", "/dev/null", tracker]).args(args);
+        }
+        cmd.env("TRACKER_HOME", self.home.path())
+            .env("HOME", self.user_home())
+            .current_dir(self.outside())
+            .stdin(std::process::Stdio::null());
+        match cmd.output() {
+            Ok(output) => Some(output),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                eprintln!("Skipped: `script` isn't installed.");
+                None
+            }
+            Err(e) => panic!("Can't run script: {e}"),
+        }
+    }
+
     /// Registers project `key` with the root `<work>/<root>`, and returns
     /// that root.
     pub fn add_project(&self, key: &str, root: &str) -> PathBuf {
