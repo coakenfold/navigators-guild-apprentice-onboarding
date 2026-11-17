@@ -221,9 +221,19 @@ fn submit_prints_the_shape_section_3_gives_it() {
                 "result": "done",
                 "status": "done",
                 "gates": [],
+                "triggers": [],
                 "holds": [],
                 "item": item,
             }),
+            "{args:?}"
+        );
+        // In the order §3 gives them, with `item` last.
+        let fields: Vec<&String> = output.as_object().unwrap().keys().collect();
+        assert_eq!(
+            fields,
+            [
+                "id", "result", "status", "gates", "triggers", "holds", "item"
+            ],
             "{args:?}"
         );
         assert_eq!(env.item("XX-1"), item, "{args:?}");

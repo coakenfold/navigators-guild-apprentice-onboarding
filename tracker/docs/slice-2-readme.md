@@ -244,11 +244,11 @@ It's a convention, not security. A command run under `script` gets a terminal an
 | Command                                                         | Output                                                                                                       | Schema                                              |
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
 | `start`, `shelve`, `reopen`, and `status` to any state but done | `{"item": {…}}`, the item after the move, as its file holds it                                               | [move.schema.json](../schemas/move.schema.json)     |
-| `submit`, `status <id> done`                                    | `{"id", "result": "done", "status": "done", "gates": [], "holds": [], "item": {…}}`, §3's shape              | [submit.schema.json](../schemas/submit.schema.json) |
+| `submit`, `status <id> done`                                    | `{"id", "result": "done", "status": "done", "gates": [], "triggers": [], "holds": [], "item": {…}}`, §3's shape | [submit.schema.json](../schemas/submit.schema.json) |
 | A move the diagram doesn't draw                                 | `{"error", "exit_code": 1, "allowed": [{"via", "to", "command"}]}`. `allowed` is empty for an item in review | [error.schema.json](../schemas/error.schema.json)   |
 | Any other failure                                               | `{"error", "exit_code"}`                                                                                     | [error.schema.json](../schemas/error.schema.json)   |
 
-`submit`'s `gates` and `holds` are always empty for now, and `result` is always `done`. Slice 6 fills in `gates`, and slice 9 fills in `holds` and adds `"result": "held"` with `"status": "review"`. Agents that parse `submit` now won't break when they do, because no field is renamed or removed.
+`submit`'s `gates`, `triggers` and `holds` are always empty for now, and `result` is always `done`. Slice 6 fills in `gates`, and slice 9 fills in `triggers` and `holds` and adds `"result": "held"` with `"status": "review"`. Agents that parse `submit` now won't break when they do, because no field is renamed or removed.
 
 `item.schema.json` gains `verification`, `previous_verification` and `history`, with a `move` definition for each entry.
 

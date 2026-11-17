@@ -696,13 +696,15 @@ fn apply(
     });
     store.update_item(&item)?;
     let json = if step.via == Via::Submit {
-        // §3's shape for a submit. The gates (slice 6) and triggers (slice 9)
-        // fill in `gates` and `holds`, and can make the result `held`.
+        // §3's shape for a submit. The gates (slice 6) fill in `gates`, and
+        // the triggers (slice 9) fill in `triggers` and `holds` and can make
+        // the result `held`.
         json!({
             "id": item.id,
             "result": "done",
             "status": item.status.as_str(),
             "gates": [],
+            "triggers": [],
             "holds": [],
             "item": item,
         })
