@@ -4,6 +4,7 @@
 mod common;
 
 use std::fs;
+use std::time::{Duration, Instant};
 
 use common::Env;
 use tracker::store::Store;
@@ -386,6 +387,27 @@ fn lost_on_rewrite_tells_unknown_fields_from_values_written_differently() {
     assert!(lost.respelled.is_empty());
 }
 
+/// Whether `file` can be locked within `limit`, trying again until then.
+/// Each lock is released when its file is closed, but a process that
+/// another test in this binary starts meanwhile gets a copy of every file
+/// this one has open, the lock's included, until its program runs. So for
+/// a moment after the lock is dropped, it can still be held: about 1 drop
+/// in 100 while processes are being started, for at most 0.2 ms, measured
+/// on macOS. A tracker command has one thread, so this can't happen there.
+fn locks_within(file: &fs::File, limit: Duration) -> bool {
+    let start = Instant::now();
+    loop {
+        match file.try_lock() {
+            Ok(()) => return true,
+            Err(fs::TryLockError::WouldBlock) if start.elapsed() < limit => {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            Err(fs::TryLockError::WouldBlock) => return false,
+            Err(fs::TryLockError::Error(e)) => panic!("Can't lock {file:?}: {e}"),
+        }
+    }
+}
+
 #[test]
 fn lock_unchanged_holds_the_lock_only_while_the_file_is_as_it_was() {
     // What every human-only command calls after its question (§2.7).
@@ -398,7 +420,8 @@ fn lock_unchanged_holds_the_lock_only_while_the_file_is_as_it_was() {
 
     // Unchanged: it returns the lock, which is held until it's dropped. The
     // lock file opened a second time can't be locked meanwhile, as another
-    // command's couldn't (review 2's test gap 1).
+    // command's couldn't (review 2's test gap 1). Once it's dropped, it can,
+    // though not always at once (`locks_within`).
     let lock = store.lock_unchanged("XX-1", &before, command).unwrap();
     let other = fs::File::open(store.lock_path()).unwrap();
     assert!(
@@ -406,7 +429,10 @@ fn lock_unchanged_holds_the_lock_only_while_the_file_is_as_it_was() {
         "lock_unchanged returned without holding the lock"
     );
     drop(lock);
-    other.try_lock().unwrap();
+    assert!(
+        locks_within(&other, Duration::from_secs(5)),
+        "the lock was still held 5 seconds after it was dropped"
+    );
     other.unlock().unwrap();
 
     // Changed, even by one byte.
