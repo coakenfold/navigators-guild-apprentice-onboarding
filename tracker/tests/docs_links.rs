@@ -120,16 +120,55 @@ fn relative_links_in_the_docs_resolve() {
     }
 }
 
+/// The commit a review's line links point at, from its `| Line references |`
+/// row, such as `54d8f66` from "Point at `54d8f66`". `None` for a doc with no
+/// such row, or one whose row names no commit, such as slice 1 review 1's
+/// "the uncommitted working tree".
+fn pinned_commit(markdown: &str) -> Option<String> {
+    let row = markdown
+        .lines()
+        .find(|line| line.starts_with("| Line references"))?;
+    let (_, rest) = row.split_once('`')?;
+    let (commit, _) = rest.split_once('`')?;
+    let is_sha = commit.len() >= 7 && commit.chars().all(|c| c.is_ascii_hexdigit());
+    is_sha.then(|| commit.to_string())
+}
+
+/// How many lines `file`, relative to the crate root, has at `commit`.
+fn lines_at(commit: &str, file: &str) -> usize {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let output = std::process::Command::new("git")
+        .args(["show", &format!("{commit}:./{file}")])
+        .current_dir(crate_root)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "can't read {file} at {commit}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).unwrap().lines().count()
+}
+
 #[test]
 fn line_anchors_name_lines_that_exist() {
     // Only that the lines exist: whether they still hold what the doc
-    // means can't be checked. Reviews name the commit their lines point at.
+    // means can't be checked. A review's line links point at the commit
+    // it names, so they're checked against the files at that commit,
+    // and later changes to the code can't break them. A review that names
+    // no commit can't be checked.
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let canonical_root = fs::canonicalize(crate_root).unwrap();
     let mut checked = 0;
     for doc in docs() {
         let path = crate_root.join(&doc);
         let text = fs::read_to_string(&path).unwrap();
         let folder = path.parent().unwrap();
+        let is_review = doc.starts_with("docs/reviews/");
+        let commit = pinned_commit(&text);
+        if is_review && commit.is_none() {
+            continue;
+        }
         for (link, anchor) in relative_links_with_anchors(&text) {
             let Some(anchor) = anchor else { continue };
             // GitHub's heading anchors are lower case, so `L` means lines.
@@ -139,10 +178,14 @@ fn line_anchors_name_lines_that_exist() {
             let Some((first, last)) = line_range(&anchor) else {
                 panic!("{doc} links to {link}#{anchor}, which isn't a line anchor");
             };
-            let lines = fs::read_to_string(folder.join(&link))
-                .unwrap()
-                .lines()
-                .count();
+            let target = fs::canonicalize(folder.join(&link)).unwrap();
+            let lines = match &commit {
+                Some(commit) if is_review => {
+                    let file = target.strip_prefix(&canonical_root).unwrap();
+                    lines_at(commit, file.to_str().unwrap())
+                }
+                _ => fs::read_to_string(&target).unwrap().lines().count(),
+            };
             assert!(
                 1 <= first && first <= last && last <= lines,
                 "{doc} links to {link}#{anchor}, but {link} has {lines} lines"
@@ -151,6 +194,24 @@ fn line_anchors_name_lines_that_exist() {
         }
     }
     assert!(checked > 0, "no line anchors were found to check");
+}
+
+#[test]
+fn a_review_names_the_commit_its_lines_point_at() {
+    assert_eq!(
+        pinned_commit("| Date | x |\n| Line references | Point at `54d8f66` |\n"),
+        Some("54d8f66".to_string())
+    );
+    assert_eq!(
+        pinned_commit("| Line references | Point at the uncommitted working tree |\n"),
+        None
+    );
+    assert_eq!(pinned_commit("# Slice 2\n"), None);
+    let review = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/reviews/slice-2-review-1.md"),
+    )
+    .unwrap();
+    assert_eq!(pinned_commit(&review), Some("54d8f66".to_string()));
 }
 
 #[test]
