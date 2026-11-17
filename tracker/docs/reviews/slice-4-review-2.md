@@ -24,6 +24,8 @@ I found no bug that loses data, and no new security hole. The findings that matt
 - **Test gap 1:** no test notices if `lock_unchanged` stops holding the lock. With it changed to give the lock up before returning, every test still passes.
 - **Review 1's bug 3 is still open**, and affects more titles than it said: an empty title also breaks `deleted.schema.json` ([below](#still-open-carried-forward)).
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -106,3 +108,28 @@ Review 1's [list](slice-4-review-1.md#slice-5-must-decide) still applies: a corr
 
 - **What a hand edit that only respells a value means**, as against a newer tracker's field (bug 1). Slice 5 handles bad data, so it should decide this for `show`, `delete`, the moves and `edit` together, and close slice 2 review 2's item 4 at the same time.
 - **Whether every command refuses a broken `config.json`** (finding 3). §4.4's "a missing store or config gives a clear message" is in slice 5's prompt, so that's where the rule §3 now states gets enforced, or §3 gets corrected.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `3880bf9`, not at the fixed code. Each fix is in its own commit, with its tests, and the readme's [Fixes after review 2](../slice-4-readme.md#fixes-after-review-2) lists them too.
+
+Seen failing: the tests for bugs 1 and 2 and findings 3 and 4 were each run against their fix's parent, and failed. Bug 1's test in `tests/item_files.rs` uses the new `Lost`, so it can't build against the old code, and only its test in `tests/show_and_delete.rs` was run. Test gap 1's check was run against a copy of `lock_unchanged` changed to drop the lock and return an unlocked `lock` file, as the review did, and failed.
+
+After the fixes, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and all 170 tests pass, 4 more than at `3880bf9`.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: a hand-edited item file is treated as a newer tracker's | `9d16c32`: `item::lost_on_rewrite` returns a `Lost` with `unknown` fields (a field this version doesn't know, at the top level or inside a record or the history) and `respelled` ones (`[]`, `null`, or a time with another offset for the same instant). `show` warns and `delete` refuses only for `unknown`. `Store::update_item` still refuses both, as slice 5 must decide. Tests: `show_and_delete_accept_a_file_whose_values_are_only_written_differently`, one row per line of the table, and `lost_on_rewrite_tells_unknown_fields_from_values_written_differently` |
+| Bug 2: a delete run again after a crash adds a second line | `62d6bc9`: fixed in the code rather than in slice 16's prompt. `delete_item` adds no line when `deleted.json` already has one with the ID, anywhere in the file. Test: `a_delete_run_again_after_a_crash_doesnt_list_it_twice` |
+| Design 3: most commands that take an ID never read `config.json` | `6f22b81`: option (a). `Store::require_exists` ends with `config::load`, so every command but `init`, which already checked it, exits 3 on a config that can't be parsed. Test: `every_command_refuses_a_config_json_that_cant_be_parsed`, which also covers `delete` at a terminal |
+| Design 4: `tty::confirm`'s refusal speaks only of an ID | `0dd432c`: "who types {id} to confirm it". The readme's Try it shows the new text. `echo_the_id_into_delete_is_refused_and_the_file_remains` checks it |
+| Test gap 1: nothing checks that `lock_unchanged` holds the lock | `803c83c`: `lock_unchanged_holds_the_lock_only_while_the_file_is_as_it_was` checks that a second `try_lock` gives `WouldBlock` while the guard lives, and succeeds after it's dropped |
+| Test gap 2: no test of a hand-edited file in `show` or `delete` | `9d16c32`: bug 1's tests |
+| Test gap 3: no test of a command against a broken `config.json` | `6f22b81`: finding 3's test |
+| Process: the readme is out of date in three places | `f4df32e`: the Branch row lists every commit range, `show`'s step 2 names `load_item_with_text`, and the coverage table has the renamed test. The readme also gets Fixes after review 2 and new test counts |
+| Process: review 1's fixes were made as asked | Unchanged. This round's fixes are one commit each, too |
+| Process: `3880bf9` puts an unrelated change on the branch | Still open, for the pull request. The readme's Still open lists it |
+| Carried forward: review 1's bug 3, a hand-edited title breaks `deleted.schema.json` | Still open. The readme's entry now includes the empty title and control characters |
+| Carried forward: review 1's test gap 5, the terminal tests have only run on macOS | Still open |
+| Carried forward: PLAN.md marks slice 4 `done` before its reviews | Still open |
+| Slice 5 must decide | Unchanged, for slice 5. Bug 1 leaves the moves and `edit` refusing a respelled file, and finding 3's rule is now enforced, so slice 5's message for a broken config builds on `Store::require_exists` |
