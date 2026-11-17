@@ -41,7 +41,7 @@ Added after the fixes. The findings below are left as written, so their line lin
 | Test gap 3: concurrent edits | `4321762`: ten `edit --label` commands at once all land. Slice 2's concurrent moves are still untested |
 | Test gap 4: an edit from a terminal records `interactive: true` | `e8b3ac4`. `213c9e0` moved the `script` runner into `tests/common/mod.rs` first, so both tests share it |
 | Test gaps 1, 5 and 6 | Not taken |
-| Process | Still open: no `slice-3-readme.md` yet, the `unchecked` note's tense, and PLAN.md's Status column |
+| Process | `901bea6` adds `docs/slice-3-readme.md`, which carries the open items forward. Still open: the `unchecked` note's tense, and PLAN.md's Status column |
 
 ## Done when
 
