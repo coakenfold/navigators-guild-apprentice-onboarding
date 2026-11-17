@@ -247,13 +247,14 @@ Labels are matched exactly. A label written into a file by hand with a capital, 
 2. Checks every value given: title, labels to add and remove, design and description. A label given to both `--label` and `--unlabel`, or no flag at all, is refused here. All of this happens before the lock, so bad input never waits for another command.
 3. Takes the store's exclusive lock, and reads the item under it with `Store::load_item`.
 4. Refuses a done item, pointing to `reopen`, and an item in review unless `tty::is_interactive()` says stdin is a terminal.
-5. Compares each value with the item's, in the item file's field order: title, kind, priority, labels, design, description. Each that differs is changed and its name added to `fields`. The labels are rebuilt as the old ones minus `--unlabel`, plus `--label`.
-6. If `fields` is empty, stops there: the file isn't touched, and the output says nothing changed.
-7. Otherwise sets `updated`, adds one history entry, and writes the item with `Store::update_item`, which refuses with exit 3 if the file holds something this version would lose.
+5. For `--design`, reads `config.json` and stores the reference relative to the item's project root, refusing one outside it.
+6. Compares each value with the item's, in the item file's field order: title, kind, priority, labels, design, description. Each that differs is changed and its name added to `fields`. The labels are rebuilt as the old ones minus `--unlabel`, plus `--label`.
+7. If `fields` is empty, stops there: the file isn't touched, and the output says nothing changed.
+8. Otherwise sets `updated`, adds one history entry, and writes the item with `Store::update_item`, which refuses with exit 3 if the file holds something this version would lose.
 
 Because the item is read and written under one lock, edits on one item happen one after another. Ten `edit --label` commands started at once all land, each with its own history entry (`concurrent_edits_all_land`).
 
-`edit` doesn't read `config.json`, so it works on an item whose project is no longer registered, as the moves do (§3: "a command that takes an item ID needs no project").
+`edit` reads `config.json` only for `--design`, which needs the project's root, so it works on an item whose project is no longer registered, as the moves do (§3: "a command that takes an item ID needs no project"), unless it's given a design reference.
 
 ### What an edit records
 
