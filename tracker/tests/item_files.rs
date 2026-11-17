@@ -14,25 +14,64 @@ fn store(env: &Env) -> Store {
     }
 }
 
+/// The files `list --json` skipped, as (file name, line, reason).
+fn skipped(list: &serde_json::Value) -> Vec<(String, serde_json::Value, String)> {
+    list["skipped"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|file| {
+            let path = file["file"].as_str().unwrap();
+            let name = path.rsplit('/').next().unwrap().to_string();
+            (
+                name,
+                file["line"].clone(),
+                file["reason"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect()
+}
+
+/// The IDs `list --json` listed.
+fn ids(list: &serde_json::Value) -> Vec<String> {
+    list["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["id"].as_str().unwrap().to_string())
+        .collect()
+}
+
 #[test]
-fn a_file_whose_name_and_id_disagree_is_refused() {
+fn a_file_whose_name_and_id_disagree_is_skipped() {
     let env = Env::new();
     env.add_project("XX", "xx");
     env.create("XX", "a");
     // A copy made by hand: XX-9.json still says it's XX-1.
     fs::copy(env.item_path("XX-1"), env.item_path("XX-9")).unwrap();
 
-    for args in [&["list"][..], &["project", "list"]] {
-        let message = env.error(args, 3);
-        assert!(message.contains("XX-9.json"), "{args:?}: {message}");
-        assert!(message.contains("XX-1"), "{args:?}: {message}");
-    }
+    let list = env.json(&["list"]);
+    assert_eq!(ids(&list), ["XX-1"]);
+    let skipped = skipped(&list);
+    assert_eq!(skipped.len(), 1, "{skipped:?}");
+    assert_eq!(skipped[0].0, "XX-9.json");
+    assert_eq!(skipped[0].1, serde_json::Value::Null);
+    assert!(skipped[0].2.contains("XX-1"), "{skipped:?}");
+    // project list doesn't count it either.
+    let projects = env.json(&["project", "list"]);
+    assert_eq!(projects["projects"][0]["counts"]["open"], 1);
+    assert_eq!(projects["skipped"].as_array().unwrap().len(), 1);
+
+    // A command that names it still refuses.
     let error = store(&env).load_item("XX-9").unwrap_err();
     assert_eq!(error.code, 3);
+    let message = env.error(&["show", "XX-9"], 3);
+    assert!(message.contains("XX-9.json"), "{message}");
+    assert!(message.contains("Rename the file"), "{message}");
 }
 
 #[test]
-fn a_file_whose_project_and_id_disagree_is_refused() {
+fn a_file_whose_project_and_id_disagree_is_skipped() {
     let env = Env::new();
     env.add_project("XX", "xx");
     env.add_project("YY", "yy");
@@ -45,13 +84,16 @@ fn a_file_whose_project_and_id_disagree_is_refused() {
     )
     .unwrap();
 
-    let message = env.error(&["list"], 3);
-    assert!(message.contains("XX-1.json"), "{message}");
-    assert!(message.contains("\"project\""), "{message}");
+    let list = env.json(&["list"]);
+    assert_eq!(ids(&list), Vec::<String>::new());
+    let skipped = skipped(&list);
+    assert_eq!(skipped.len(), 1, "{skipped:?}");
+    assert_eq!(skipped[0].0, "XX-1.json");
+    assert!(skipped[0].2.contains("\"YY\""), "{skipped:?}");
 }
 
 #[test]
-fn a_json_file_not_named_after_an_id_is_refused() {
+fn a_json_file_not_named_after_an_id_is_skipped() {
     let env = Env::new();
     env.add_project("XX", "xx");
     let text = {
@@ -60,8 +102,11 @@ fn a_json_file_not_named_after_an_id_is_refused() {
     };
     fs::write(env.home.path().join("items/notes.json"), text).unwrap();
 
-    let message = env.error(&["list"], 3);
-    assert!(message.contains("notes.json"), "{message}");
+    let list = env.json(&["list"]);
+    assert_eq!(ids(&list), ["XX-1"]);
+    let skipped = skipped(&list);
+    assert_eq!(skipped.len(), 1, "{skipped:?}");
+    assert_eq!(skipped[0].0, "notes.json");
 }
 
 #[test]
@@ -104,28 +149,47 @@ fn update_item_refuses_a_file_it_would_lose_fields_from() {
     let item = store.load_item("XX-1").unwrap();
     let original = fs::read_to_string(&path).unwrap();
 
-    // A field from a newer tracker, and a time written by hand that this
-    // version would write back as `Z` instead of `+00:00`.
-    for (field, edited) in [
-        (
-            "written",
-            original.replace(
-                "  \"created\"",
-                "  \"written\": [\"71ac3e\"],\n  \"created\"",
-            ),
-        ),
-        ("created", original.replacen("Z\",", "+00:00\",", 1)),
-    ] {
-        assert_ne!(edited, original);
-        fs::write(&path, &edited).unwrap();
-        // Still listed: only rewriting it would lose something.
-        assert_eq!(store.load_items().unwrap().len(), 1);
+    // A field from a newer tracker: rewriting the file would lose it.
+    let edited = original.replace(
+        "  \"created\"",
+        "  \"written\": [\"71ac3e\"],\n  \"created\"",
+    );
+    assert_ne!(edited, original);
+    fs::write(&path, &edited).unwrap();
+    // Still listed: only rewriting it would lose something.
+    assert_eq!(store.load_items().unwrap().0.len(), 1);
 
-        let error = store.update_item(&item).unwrap_err();
-        assert_eq!(error.code, 3, "{field}");
-        assert!(error.message.contains(field), "{field}: {}", error.message);
-        assert_eq!(fs::read_to_string(&path).unwrap(), edited, "{field}");
-    }
+    let error = store.update_item(&item).unwrap_err();
+    assert_eq!(error.code, 3);
+    assert!(error.message.contains("written"), "{}", error.message);
+    assert!(error.message.contains("newer tracker"), "{}", error.message);
+    assert_eq!(fs::read_to_string(&path).unwrap(), edited);
+}
+
+#[test]
+fn update_item_rewrites_a_value_only_written_differently() {
+    // A time written by hand with `+00:00`, and an empty list, which this
+    // version writes as `Z` and leaves out. Nothing is lost, so slice 5
+    // lets a move or an edit rewrite them, rather than blame a newer
+    // tracker (slice 2 review 2, item 4).
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    let path = env.item_path("XX-1");
+    let original = fs::read_to_string(&path).unwrap();
+    let edited = original
+        .replacen("Z\",", "+00:00\",", 1)
+        .replace("  \"created\"", "  \"labels\": [],\n  \"created\"");
+    fs::write(&path, &edited).unwrap();
+
+    let message = env
+        .json(&["edit", "XX-1", "--priority", "high"])
+        .to_string();
+    assert!(!message.contains("newer tracker"), "{message}");
+    let rewritten = fs::read_to_string(&path).unwrap();
+    assert!(!rewritten.contains("+00:00"), "{rewritten}");
+    assert!(!rewritten.contains("\"labels\""), "{rewritten}");
+    assert_eq!(env.item("XX-1")["priority"], "high");
 }
 
 #[test]
@@ -234,8 +298,15 @@ fn a_move_refuses_an_item_whose_history_has_a_command_it_doesnt_know() {
         .stdout
         .clone();
     let text = String::from_utf8(output).unwrap();
-    assert!(
-        text.contains("XX-1  medium  change  in-progress  a"),
+    let row: Vec<&str> = text
+        .lines()
+        .find(|line| line.contains("XX-1"))
+        .unwrap()
+        .split_whitespace()
+        .collect();
+    assert_eq!(
+        row,
+        ["XX-1", "medium", "change", "in-progress", "a"],
         "{text}"
     );
     assert_eq!(

@@ -779,9 +779,16 @@ fn the_text_list_marks_priority_kind_and_labels() {
 
     let text = list_text(&env, &env.outside(), &[]);
     let lines: Vec<&str> = text.lines().collect();
-    assert_eq!(lines[0], "XX  XX project");
-    assert_eq!(lines[1], "  XX-1  high  fix    open  Fix the crash  [bug]");
-    assert_eq!(lines[2], "  XX-2  low   chore  open  Tidy up");
+    assert_eq!(
+        lines[0],
+        "  ID    PRIORITY  KIND   STATUS  TITLE          LABELS"
+    );
+    assert_eq!(lines[1], "XX  XX project");
+    assert_eq!(
+        lines[2],
+        "  XX-1  high      fix    open    Fix the crash  [bug]"
+    );
+    assert_eq!(lines[3], "  XX-2  low       chore  open    Tidy up");
 }
 
 #[test]
@@ -1018,7 +1025,7 @@ fn the_scope_is_reported_even_when_nothing_matches() {
     assert_eq!(list["project"], "XX");
     assert_eq!(ids(&list), Vec::<String>::new());
     let text = list_text(&env, &xx, &[]);
-    assert!(text.contains("No items match."), "{text}");
+    assert!(text.contains("No XX items yet."), "{text}");
     assert!(text.contains("XX only."), "{text}");
 }
 

@@ -6,7 +6,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 
-use crate::error::{Error, Result};
+use crate::error::{self, Error, Result};
 use crate::item::{self, Item};
 
 pub struct Store {
@@ -91,8 +91,7 @@ impl Store {
     /// there are checked first, so a store that can't be used isn't
     /// reported as fine, and nothing is written to it.
     pub fn init(&self) -> Result<Init> {
-        create_private_dir(&self.home)
-            .map_err(|e| Error::store(format!("Can't create {}: {e}", self.home.display())))?;
+        create_private_dir(&self.home).map_err(|e| error::io("create", &self.home, &e))?;
         let _lock = self.lock()?;
 
         let config_missing = is_missing(&self.config_path())?;
@@ -116,8 +115,7 @@ impl Store {
         }
         if items_missing {
             let items = self.items_dir();
-            fs::create_dir(&items)
-                .map_err(|e| Error::store(format!("Can't create {}: {e}", items.display())))?;
+            fs::create_dir(&items).map_err(|e| error::io("create", &items, &e))?;
             put_back.push("items/");
         }
 
@@ -151,8 +149,15 @@ impl Store {
                         path.display()
                     )));
                 }
-                // No config.json means no store at all.
-                Err(e) if e.kind() == ErrorKind::NotFound && i == 0 => {
+                // No config.json, and none of the rest, means no store at
+                // all. A store with only config.json missing gets the
+                // message below, since init puts it back.
+                Err(e)
+                    if e.kind() == ErrorKind::NotFound
+                        && i == 0
+                        && !self.counters_path().exists()
+                        && !self.items_dir().exists() =>
+                {
                     return Err(Error::input(format!(
                         "There's no tracker store at {}. Run `tracker init`.",
                         self.home.display()
@@ -165,13 +170,15 @@ impl Store {
                         path.display()
                     )));
                 }
-                Err(e) => {
+                Err(e) if e.kind() == ErrorKind::PermissionDenied => {
+                    let home = self.home.display();
                     return Err(Error::store(format!(
-                        "Can't read the store at {}: {e}. Check that you can read and write \
-                         that folder.",
-                        self.home.display()
+                        "Can't read the store at {home}: {e}. Check its permissions with \
+                         `ls -ld {home}`. If it's yours, `chmod u+rwx {home}` lets you read and \
+                         write it again."
                     )));
                 }
+                Err(e) => return Err(error::io("read", path, &e)),
             }
         }
         crate::config::load(self)?;
@@ -190,9 +197,8 @@ impl Store {
             .create(true)
             .truncate(false)
             .open(&path)
-            .map_err(|e| Error::store(format!("Can't open {}: {e}", path.display())))?;
-        file.lock()
-            .map_err(|e| Error::store(format!("Can't lock {}: {e}", path.display())))?;
+            .map_err(|e| error::io("open", &path, &e))?;
+        file.lock().map_err(|e| error::io("lock", &path, &e))?;
         Ok(file)
     }
 
@@ -272,8 +278,15 @@ impl Store {
     fn read_counters(&self) -> Result<BTreeMap<String, u64>> {
         let path = self.counters_path();
         let text = read_file(&path)?;
-        let counters: BTreeMap<String, u64> = serde_json::from_str(&text)
-            .map_err(|e| Error::store(format!("Can't parse {}: {e}", path.display())))?;
+        let counters: BTreeMap<String, u64> = serde_json::from_str(&text).map_err(|e| {
+            error::parse(
+                &path,
+                &e,
+                "It maps each project key to its next item number, such as {\"BM\": 13}, so \
+                 fix it by hand. Set each counter above the highest number that project has \
+                 used, in items/ or deleted.json, so no ID is handed out twice.",
+            )
+        })?;
         if let Some((key, _)) = counters.iter().find(|(_, next)| **next == 0) {
             return Err(Error::store(format!(
                 "{} gives {key} the counter 0, but IDs start at 1. Set it above the highest \
@@ -293,12 +306,10 @@ impl Store {
         let number_of = |id: &str| id.strip_prefix(&prefix).and_then(|n| n.parse::<u64>().ok());
 
         let dir = self.items_dir();
-        let entries = fs::read_dir(&dir)
-            .map_err(|e| Error::store(format!("Can't read {}: {e}", dir.display())))?;
+        let entries = fs::read_dir(&dir).map_err(|e| error::io("read", &dir, &e))?;
         let mut on_disk = None;
         for entry in entries {
-            let entry =
-                entry.map_err(|e| Error::store(format!("Can't read {}: {e}", dir.display())))?;
+            let entry = entry.map_err(|e| error::io("read", &dir, &e))?;
             let name = entry.file_name();
             let number = name
                 .to_str()
@@ -331,7 +342,7 @@ impl Store {
         match fs::read_to_string(&path) {
             Ok(text) => Ok(text),
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(String::new()),
-            Err(e) => Err(Error::store(format!("Can't read {}: {e}", path.display()))),
+            Err(e) => Err(error::io("read", &path, &e)),
         }
     }
 
@@ -344,7 +355,8 @@ impl Store {
             Err(e) if e.kind() == ErrorKind::NotFound => {
                 Err(Error::input(format!("There's no item {id}.")))
             }
-            Err(e) => Err(Error::store(format!("Can't read {}: {e}", path.display()))),
+            Err(e) if e.kind() == ErrorKind::InvalidData => Err(not_utf8(&path).error()),
+            Err(e) => Err(error::io("read", &path, &e)),
         }
     }
 
@@ -427,8 +439,11 @@ impl Store {
     /// holding the lock, after reading the item under it.
     ///
     /// Refuses, with exit 3, when the file on disk holds something this
-    /// version would lose or change by rewriting it, such as a field a newer
-    /// tracker added. Writing it back would drop that field without a word.
+    /// version doesn't know, such as a field a newer tracker added. Writing
+    /// it back would drop that field without a word. A value that's only
+    /// written differently, such as `"labels": []` or a time ending
+    /// `+00:00` from a hand edit, is rewritten the way tracker writes it,
+    /// since nothing is lost (`item::Lost::respelled`).
     pub fn update_item(&self, item: &Item) -> Result<()> {
         let path = self.item_path(&item.id)?;
         if let Err(e) = fs::metadata(&path)
@@ -437,15 +452,14 @@ impl Store {
             return Err(Error::input(format!("There's no item {}.", item.id)));
         }
         let text = read_file(&path)?;
-        let lost = item::lost_on_rewrite(&text)
-            .map_err(|e| Error::store(format!("Can't parse {}: {e}", path.display())))?;
-        if !lost.is_empty() {
+        let lost = item::lost_on_rewrite(&text).map_err(|e| error::parse(&path, &e, ITEM_FIX))?;
+        if !lost.unknown.is_empty() {
             return Err(Error::store(format!(
-                "{} has fields this version of tracker would lose or change by rewriting it: \
-                 {}. It was probably written by a newer tracker, so use that one. Nothing was \
-                 written.",
+                "{} has fields this version of tracker doesn't know, so rewriting it would lose \
+                 them: {}. It was probably written by a newer tracker, so use that one. Nothing \
+                 was written.",
                 path.display(),
-                lost.fields().join(", ")
+                lost.unknown.join(", ")
             )));
         }
         write_file(&path, &item::to_json(item))
@@ -471,25 +485,97 @@ impl Store {
         }
     }
 
-    /// Reads every item file, sorted by project and then by number.
-    pub fn load_items(&self) -> Result<Vec<Item>> {
+    /// Reads every item file, sorted by project and then by number, and
+    /// the files it skipped (§4.4). A file that can't be read as the item
+    /// its name says, such as one that isn't valid JSON, costs that one
+    /// item, not the whole list, so it's skipped and reported instead.
+    /// A folder or file the store can't read at all, such as one without
+    /// permission, still fails, with exit 3: that's the store, not one item.
+    pub fn load_items(&self) -> Result<(Vec<Item>, Vec<Skipped>)> {
         let dir = self.items_dir();
-        let entries = fs::read_dir(&dir)
-            .map_err(|e| Error::store(format!("Can't read {}: {e}", dir.display())))?;
+        let entries = fs::read_dir(&dir).map_err(|e| error::io("read", &dir, &e))?;
 
         let mut items = Vec::new();
+        let mut skipped = Vec::new();
         for entry in entries {
-            let path = entry
-                .map_err(|e| Error::store(format!("Can't read {}: {e}", dir.display())))?
-                .path();
+            let path = entry.map_err(|e| error::io("read", &dir, &e))?.path();
             // Skips anything that isn't an item file, such as `XX-1.json.4242.tmp`.
             if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
                 continue;
             }
-            items.push(read_item(&path)?);
+            if path.is_dir() {
+                skipped.push(Skipped {
+                    file: path,
+                    line: None,
+                    column: None,
+                    reason: "it's a folder, not a file".to_string(),
+                    fix: "Move it out of items/.".to_string(),
+                });
+                continue;
+            }
+            let text = match fs::read_to_string(&path) {
+                Ok(text) => text,
+                Err(e) if e.kind() == ErrorKind::InvalidData => {
+                    skipped.push(not_utf8(&path));
+                    continue;
+                }
+                Err(e) => return Err(error::io("read", &path, &e)),
+            };
+            match check_item(&path, &text) {
+                Ok(item) => items.push(item),
+                Err(problem) => skipped.push(problem),
+            }
         }
         items.sort_by(|a, b| (&a.project, a.number()).cmp(&(&b.project, b.number())));
-        Ok(items)
+        skipped.sort_by(|a, b| a.file.cmp(&b.file));
+        Ok((items, skipped))
+    }
+}
+
+/// What to do about an item file that isn't valid JSON, or isn't an item.
+const ITEM_FIX: &str = "It's JSON, laid out as in DESIGN.md §4.3, so fix it by hand, or move \
+                        it out of items/ to set it aside.";
+
+/// An item file that can't be read as the item its name says (§4.4):
+/// where, and why. `load_items` skips it and reports it, and a command
+/// that names its item, such as `show`, refuses with it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Skipped {
+    pub file: PathBuf,
+    /// Where the JSON parser stopped, if it did.
+    pub line: Option<usize>,
+    pub column: Option<usize>,
+    /// Why, without the line and column, such as ``expected `,` or `}` ``.
+    pub reason: String,
+    /// What to do about it.
+    pub fix: String,
+}
+
+impl Skipped {
+    /// The file, where in it and why, such as
+    /// ``…/XX-2.json, line 3, column 5: expected `,` or `}`.``
+    pub fn describe(&self) -> String {
+        format!(
+            "{}: {}.",
+            error::at(&self.file, self.line, self.column),
+            self.reason
+        )
+    }
+
+    /// The refusal for a command that names this item: exit 3.
+    pub fn error(&self) -> Error {
+        Error::store(format!("Can't read {} {}", self.describe(), self.fix))
+    }
+}
+
+/// A file that isn't UTF-8, so it can't even be parsed.
+fn not_utf8(path: &Path) -> Skipped {
+    Skipped {
+        file: path.to_path_buf(),
+        line: None,
+        column: None,
+        reason: "it isn't UTF-8 text".to_string(),
+        fix: ITEM_FIX.to_string(),
     }
 }
 
@@ -498,41 +584,69 @@ impl Store {
 /// or renamed by hand would otherwise list one ID twice, and a later write
 /// to `item_path(&item.id)` would overwrite the other item's file.
 fn read_item(path: &Path) -> Result<Item> {
-    parse_item(path, &read_file(path)?)
+    match fs::read_to_string(path) {
+        Ok(text) => parse_item(path, &text),
+        Err(e) if e.kind() == ErrorKind::InvalidData => Err(not_utf8(path).error()),
+        Err(e) => Err(error::io("read", path, &e)),
+    }
 }
 
-/// Parses `text`, read from `path`, with `read_item`'s checks.
+/// Parses `text`, read from `path`, with `read_item`'s checks. Fails with
+/// exit 3, naming the file, the line and the reason.
 fn parse_item(path: &Path, text: &str) -> Result<Item> {
-    let item = item::from_json(text)
-        .map_err(|e| Error::store(format!("Can't parse {}: {e}", path.display())))?;
+    check_item(path, text).map_err(|problem| problem.error())
+}
+
+/// `parse_item`'s checks, returning what's wrong as a `Skipped`.
+fn check_item(path: &Path, text: &str) -> std::result::Result<Item, Skipped> {
+    let problem = |line, column, reason: String, fix: &str| Skipped {
+        file: path.to_path_buf(),
+        line,
+        column,
+        reason,
+        fix: fix.to_string(),
+    };
+    let item = item::from_json(text).map_err(|e| {
+        let (line, column, reason) = error::json_problem(&e);
+        problem(line, column, reason, ITEM_FIX)
+    })?;
     let named = path
         .file_stem()
         .and_then(|stem| stem.to_str())
         .unwrap_or_default();
     if !item::is_valid_id(named) {
-        return Err(Error::store(format!(
-            "{} isn't named after an item ID, such as BM-12.json. Move it out of items/.",
-            path.display()
-        )));
+        return Err(problem(
+            None,
+            None,
+            "it isn't named after an item ID, such as BM-12.json".to_string(),
+            "Move it out of items/.",
+        ));
     }
     if item.id != named {
-        return Err(Error::store(format!(
-            "{} holds the item \"{}\", but its name says {named}. Rename the file or fix its \
-             \"id\", and check that no other file holds the same ID.",
-            path.display(),
-            item.id
-        )));
+        return Err(problem(
+            None,
+            None,
+            format!(
+                "it holds the item \"{}\", but its name says {named}",
+                item.id
+            ),
+            "Rename the file or fix its \"id\", and check that no other file holds the same ID.",
+        ));
     }
     let key = named
         .split_once('-')
         .map(|(key, _)| key)
         .unwrap_or_default();
     if item.project != key {
-        return Err(Error::store(format!(
-            "{} is in project \"{}\", but its ID {named} says {key}. Fix its \"project\".",
-            path.display(),
-            item.project
-        )));
+        return Err(problem(
+            None,
+            None,
+            format!(
+                "it's in project \"{}\", but its ID {named} says {key}",
+                item.project
+            ),
+            "Fix its \"project\".",
+        ));
     }
     Ok(item)
 }
@@ -562,13 +676,12 @@ fn is_missing(path: &Path) -> Result<bool> {
     match fs::symlink_metadata(path) {
         Ok(_) => Ok(false),
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(true),
-        Err(e) => Err(Error::store(format!("Can't read {}: {e}", path.display()))),
+        Err(e) => Err(error::io("read", path, &e)),
     }
 }
 
 pub fn read_file(path: &Path) -> Result<String> {
-    fs::read_to_string(path)
-        .map_err(|e| Error::store(format!("Can't read {}: {e}", path.display())))
+    fs::read_to_string(path).map_err(|e| error::io("read", path, &e))
 }
 
 /// Writes `contents` to a temporary file beside `path`, then renames it over
@@ -594,7 +707,7 @@ pub fn write_file(path: &Path, contents: &str) -> Result<()> {
                 tmp.display()
             )));
         }
-        Err(e) => return Err(Error::store(format!("Can't write {}: {e}", tmp.display()))),
+        Err(e) => return Err(error::io("write", &tmp, &e)),
     };
     // Flushed to disk before the rename. Otherwise a crash could keep the
     // rename but lose the data, leaving an empty file in place of the old one.
@@ -603,11 +716,11 @@ pub fn write_file(path: &Path, contents: &str) -> Result<()> {
         .and_then(|()| file.sync_all());
     if let Err(e) = written {
         let _ = fs::remove_file(&tmp);
-        return Err(Error::store(format!("Can't write {}: {e}", tmp.display())));
+        return Err(error::io("write", &tmp, &e));
     }
     if let Err(e) = fs::rename(&tmp, path) {
         let _ = fs::remove_file(&tmp);
-        return Err(Error::store(format!("Can't write {}: {e}", path.display())));
+        return Err(error::io("write", path, &e));
     }
     // Flushing the folder keeps the rename itself. This is best effort,
     // because not every system lets a folder be opened and flushed.

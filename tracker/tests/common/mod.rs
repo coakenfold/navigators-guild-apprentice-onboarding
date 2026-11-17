@@ -70,6 +70,7 @@ impl Env {
         cmd.env("TRACKER_HOME", self.home.path())
             .env("HOME", self.user_home())
             .current_dir(self.outside());
+        without_colour_settings(&mut cmd);
         cmd
     }
 
@@ -282,7 +283,10 @@ impl Env {
         cmd.env("TRACKER", env!("CARGO_BIN_EXE_tracker"))
             .env("TRACKER_HOME", self.home.path())
             .env("HOME", self.user_home())
+            // A terminal that shows colour, wherever the tests run.
+            .env("TERM", "xterm-256color")
             .current_dir(self.outside());
+        without_colour_settings(&mut cmd);
         cmd
     }
 
@@ -322,6 +326,16 @@ impl Env {
     pub fn read_store_file(&self, name: &str) -> Value {
         let text = fs::read_to_string(self.home.path().join(name)).unwrap();
         serde_json::from_str(&text).unwrap()
+    }
+}
+
+/// Removes the settings that turn colour on or off whatever the output is
+/// (anstream reads them), so a developer's own `NO_COLOR` or
+/// `CLICOLOR_FORCE` can't change what a test sees. A test that wants one
+/// sets it after this.
+fn without_colour_settings(cmd: &mut std::process::Command) {
+    for name in ["NO_COLOR", "CLICOLOR", "CLICOLOR_FORCE"] {
+        cmd.env_remove(name);
     }
 }
 
