@@ -6,7 +6,7 @@ After slice 3 you can **set an item's priority, kind and labels, edit its detail
 
 | | |
 | --- | --- |
-| Status | Every _Done when_ check passes, and so does the test command. From [review 1](reviews/slice-3-review-1.md), two security items, three low-severity items, all five DESIGN.md questions and three test gaps are done ([below](#fixes-after-review-1)). **Its one fix before slice 4 is still open:** a label such as `ℂ`, which has no lower-case form, is stored as it is, so `create`, `edit` and `list --json` can print output that breaks `item.schema.json`. That and the rest are listed under [Still open](#still-open). The branch isn't merged into `main` yet. |
+| Status | Every _Done when_ check passes, and so does the test command. From [review 1](reviews/slice-3-review-1.md), two security items, three low-severity items, all five DESIGN.md questions and three test gaps are done ([below](#fixes-after-review-1)). From [review 2](reviews/slice-3-review-2.md), one security item, three low-severity items, one DESIGN.md question, one process point and one test gap are done ([below](#fixes-after-review-2)). **Both reviews' fixes before slice 4 are still open:** a label such as `ℂ`, which has no lower-case form, is stored as it is (review 1's finding 1, raised again as review 2's finding 1), and `--unlabel` on a file that holds a label twice records it twice in `labels_removed` (review 2's finding 2). Either way, `create`, `edit` and `list --json` can print output that breaks `item.schema.json`, and the second leaves the bad value in history for good. These and the rest are listed under [Still open](#still-open). The branch isn't merged into `main` yet. |
 | Branch | `feat/tracker/slice-3` |
 | Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/` |
 | Tests | 138: 38 in `tests/create_and_list.rs`, 32 in `tests/organise.rs`, 27 in `tests/states.rs`, 11 in `tests/docs_links.rs`, 10 in `tests/item_files.rs`, 6 in `tests/output.rs`, 5 in `tests/fixtures.rs`, 4 in `tests/store_writes.rs`, 3 in `tests/schemas.rs` and 2 in `tests/item_ids.rs` |
@@ -22,6 +22,7 @@ After slice 3 you can **set an item's priority, kind and labels, edit its detail
 - [Testing](#testing)
 - [Decisions worth knowing](#decisions-worth-knowing)
 - [Fixes after review 1](#fixes-after-review-1)
+- [Fixes after review 2](#fixes-after-review-2)
 - [Still open](#still-open)
 - [Limits, and what later slices change](#limits-and-what-later-slices-change)
 
@@ -29,10 +30,10 @@ After slice 3 you can **set an item's priority, kind and labels, edit its detail
 
 **Built:**
 
-- `create` takes `--kind`, `--priority`, repeatable `--label` and `--design`, with §2.1's defaults: `change` and `medium`. Labels are trimmed, lowercased, kept once, and at most 50 characters.
-- `edit <id>`, which changes the title, kind, priority, labels (`--label` and `--unlabel`), design and description. It adds one history entry with `via: "edit"`, `from` equal to `to`, and `fields` naming what changed. It's refused for done items, and for items in review unless it comes from an interactive terminal.
+- `create` takes `--kind`, `--priority`, repeatable `--label` and `--design`, with §2.1's defaults: `change` and `medium`. Labels are trimmed, lowercased, kept once, at most 50 characters, and free of commas. A `--design` file is named relative to the current folder, refused if it isn't inside the project's root, and stored relative to the root.
+- `edit <id>`, which changes the title, kind, priority, labels (`--label` and `--unlabel`), design and description. It adds one history entry with `via: "edit"`, `from` equal to `to`, and `fields` naming what changed. It names each `--unlabel` label the item didn't have. It's refused for done items, and for items in review unless it comes from an interactive terminal.
 - An edit's history entry also records `kind_before` when it changes the kind, and `labels_removed` when it removes labels, so slice 16's digest can list the edits that weaken T1 and T9.
-- `list` sorts by priority within each project, and marks each item's priority, kind and status. Its filters combine: `--project`, `--all`, `--status` (comma-separated), `--priority`, repeatable `--label`, `--kind` and `--by`.
+- `list` sorts by priority within each project, and marks each item's priority, kind and status, in columns lined up by terminal width. Its filters combine: `--project`, `--all`, `--status` (comma-separated), `--priority`, repeatable `--label`, `--kind` and `--by`.
 - Plain `list` shows open, in-progress and review items. Inside a project root it shows only that project, and both its text and its JSON (`project`) say which it covered.
 - The temporary file a write goes through is named with the process ID and opened only if it doesn't exist yet, so a planted symlink can't redirect a write. This closes an item slice 1 and slice 2 left open.
 - `edit.schema.json`, and `labels`, `design` and the edit entry in `item.schema.json`.
@@ -70,9 +71,12 @@ tracker create "Tidy the README" --kind chore --priority low
 tracker create "Sync notes" --project nt --priority high --label bug
 tracker create "Export" --priority urgent                 # exit 1: names the priorities
 tracker create "Export" --label a-label-much-too-long-to-print-in-every-single-list-row   # exit 1
+tracker create "Export" --label "a, b"                    # exit 1: a comma
+tracker create "Export" --design ../DESIGN.md#1          # exit 1: outside the root
 tracker edit BM-2 --priority low --description "Newest first."
 tracker edit BM-1 --kind change --unlabel needs-review
 tracker edit bm-2 --priority low                          # nothing to change
+tracker edit BM-3 --unlabel needs-reveiw                 # names the label it lacks
 tracker edit BM-2                                         # exit 1: no flag given
 tracker edit BM-2 --label UI --unlabel ui                 # exit 1: both
 tracker start BM-4
@@ -104,9 +108,13 @@ error: invalid value 'urgent' for '--priority <PRIORITY>'
 
 For more information, try '--help'.
 error: A label can be at most 50 characters, and "a-label-much-too-long-to-print-in-every-single-list-row" has 55. Use a word or two, and put the details in --description.
+error: A label can't hold a comma, and "a, b" does: `list` separates labels with commas. Give each label its own --label, such as --label a --label b.
+error: The --design reference "../DESIGN.md#1" names $DEMO/DESIGN.md, which isn't a file inside BM's root, $DEMO/bookmarks. The file is named relative to the current folder, $DEMO/bookmarks.
 Edited BM-2: changed priority and description.
 Edited BM-1: changed kind and labels.
 BM-2 already has those details. Nothing changed.
+BM-3 already has those details. Nothing changed.
+BM-3 had no label "needs-reveiw", so it wasn't removed.
 error: Say what to change, with at least one of --title, --kind, --priority, --label, --unlabel, --design and --description, such as `tracker edit BM-2 --priority high`.
 error: "ui" is given to both --label and --unlabel. Keep the one you mean.
 BM-4: open → in-progress
@@ -145,8 +153,8 @@ Filters: verified by unchecked (done items only).
       "labels": [
         "bug"
       ],
-      "created": "2026-11-17T03:01:53Z",
-      "updated": "2026-11-17T03:01:53Z"
+      "created": "2026-11-17T03:48:26Z",
+      "updated": "2026-11-17T03:48:26Z"
     }
   ]
 }
@@ -168,11 +176,11 @@ Open, in-progress and review items. `--status done,shelved` for the others.
     "search"
   ],
   "design": "DESIGN.md#2.5",
-  "created": "2026-11-17T03:01:53Z",
-  "updated": "2026-11-17T03:01:53Z",
+  "created": "2026-11-17T03:48:26Z",
+  "updated": "2026-11-17T03:48:26Z",
   "history": [
     {
-      "at": "2026-11-17T03:01:53Z",
+      "at": "2026-11-17T03:48:26Z",
       "from": "open",
       "to": "open",
       "via": "edit",
@@ -193,7 +201,9 @@ Open, in-progress and review items. `--status done,shelved` for the others.
 Notes on the output:
 
 - `Search` and `search` became one label, `search`. `edit bm-2` found BM-2, because an ID's key is put in capitals.
-- The second `create "Export"` was refused, so no BM-5 exists. A refused `create` uses no ID.
+- Every `create "Export"` was refused, so no BM-5 exists. A refused `create` uses no ID.
+- `--design ../DESIGN.md#1` names a file in `$DEMO`, outside BM's root. `--design DESIGN.md#2.5`, typed in BM's root, names `$DEMO/bookmarks/DESIGN.md`, so it's stored as `DESIGN.md#2.5`. The file doesn't have to exist yet.
+- `edit BM-3 --unlabel needs-reveiw` changes nothing, so it writes nothing, but it names the misspelt label so the typo isn't missed.
 - Every `list` but `--all` and `--json` ran inside BM's root, so it covered BM only. The plain `list` at the end hides BM-2 (shelved) and BM-4 (done).
 - `--by unchecked` needs no `--status done`: `--by` lists done items on its own.
 - BM-1's edit records `kind_before` and `labels_removed`, because it moved the item away from `capability` and took off `needs-review`, the two edits slice 16's digest will list.
@@ -225,7 +235,7 @@ Every command takes `--json`. The kinds are `fix`, `change`, `capability` and `c
 | Code | Meaning |
 | --- | --- |
 | `0` | Success, including an edit that changes nothing and a list that matches nothing |
-| `1` | Bad input: an unknown kind, priority, state or way of verifying, a bad label, title or design, an `edit` with no flag, a label given to both `--label` and `--unlabel`, a missing or malformed ID, an unknown project, `--project` with `--all`, an edit of a done item, or an edit of an item in review from outside a terminal |
+| `1` | Bad input: an unknown kind, priority, state or way of verifying, a bad label, title or design, a design reference outside the project's root, an `edit --design` on an item whose project isn't in `config.json`, an `edit` with no flag, a label given to both `--label` and `--unlabel`, a missing or malformed ID, an unknown project, `--project` with `--all`, an edit of a done item, or an edit of an item in review from outside a terminal |
 | `2` | Not used yet. It's reserved for "refused by a gate" (slice 6) |
 | `3` | The store or an item file can't be read or rewritten: for `edit`, a file it would lose fields from, such as one a newer tracker wrote, and a temporary file name that's already taken |
 
@@ -233,11 +243,24 @@ Every command takes `--json`. The kinds are `fix`, `change`, `capability` and `c
 
 ### Labels
 
-`check_label` in [src/main.rs](../src/main.rs) trims and lowercases a label with Rust's `to_lowercase`, and refuses an empty one or one that `check_printable` refuses. `check_new_labels` adds the 50-character limit (`MAX_LABEL`) for labels being added, and `add_labels` appends each label that isn't already there, so the order is the order labels were first given.
+`check_label` in [src/main.rs](../src/main.rs) trims and lowercases a label with Rust's `to_lowercase`, and refuses an empty one or one that `check_printable` refuses. `check_new_labels` adds two rules for labels being added: the 50-character limit (`MAX_LABEL`), and no comma, because `list` prints labels as `[a, b]`, so a label `a, b` would read as two. `add_labels` appends each label that isn't already there, so the order is the order labels were first given.
 
 `item.schema.json` describes a stored label as one line, trimmed, with no character in Unicode's uppercase (`Lu`) or titlecase (`Lt`) categories. Lowercasing doesn't guarantee that: a few `Lu` characters, such as `ℂ` (U+2102), have no lower-case form, and come through unchanged. That's [review 1's finding 1](reviews/slice-3-review-1.md#fix-before-slice-4), still open ([below](#still-open)).
 
-Labels are matched exactly. A label written into a file by hand with a capital, such as `Bug`, isn't found by `list --label bug` and can't be removed by `--unlabel bug` (review 1's finding 4, also open).
+Labels are matched exactly. A label written into a file by hand with a capital, such as `Bug`, isn't found by `list --label bug` and can't be removed by `--unlabel bug` (review 1's finding 4, also open). Labels are compared as exact strings in every other way too, so a label that only looks like `needs-review`, such as one with a Unicode hyphen or a Cyrillic `е`, isn't `needs-review` (review 2's finding 3, open).
+
+### Design references
+
+`resolve_design` in [src/main.rs](../src/main.rs) turns a `--design` reference into the form stored in the item, after `check_design` has trimmed it and checked that it fits on one line:
+
+1. It splits the reference at the first `#`. The part before is the file, which can't be empty. The section after it is kept as given, and a reference with no `#` has no section.
+2. It finds the project's root in `config.json` and canonicalizes it. `create` does this under the lock, once it knows the project. `edit` does it under the lock after reading the item, since the item names the project, so an edit with `--design` on an item whose project isn't registered exits 1.
+3. It joins the file to the canonical current folder and takes out `.` and `..` by hand, since the file needn't exist.
+4. `follow_symlinks` canonicalizes the longest part of that path that exists, so a symlinked folder that leads out of the root is caught, and adds back the rest as it was.
+5. If the result isn't inside the root, or is the root itself, the reference is refused with exit 1, naming the path it led to, the root and the current folder.
+6. Otherwise the reference is stored as the path relative to the root, with `/` between folders, then `#` and the section.
+
+So `DESIGN.md#2.4` typed in TR's `docs/` folder is stored as `docs/DESIGN.md#2.4` (§2.1). Neither the file nor the section is checked to exist: that's G6, in slice 6. A folder can be replaced by a symlink after the reference is stored, so [§7](DESIGN.md#7-honest-limits) has G6 check again, after following symlinks, when it reads the file.
 
 ### An edit, step by step
 
@@ -268,13 +291,13 @@ An edit adds one entry to `history`, in the same shape as a move ([slice 2's rea
 | `interactive` | Whether stdin was a terminal. |
 | `fields` | The fields that changed, in the file's order, whatever order the flags came in. Never empty: an edit that changes nothing adds no entry. |
 | `kind_before` | Only when the kind changed: the kind it replaced. |
-| `labels_removed` | Only when labels were removed: the ones that were on the item and aren't now. `--unlabel` of a label the item didn't have isn't recorded. |
+| `labels_removed` | Only when labels were removed: the ones that were on the item and aren't now. `--unlabel` of a label the item didn't have isn't recorded here: the command's output names it, in `labels_not_found`. A label a hand edit put on the item twice is recorded twice, which breaks the schema (review 2's finding 2, open). |
 
 `kind_before` is written for every change of kind, and `labels_removed` for every removed label. [§2.6](DESIGN.md#26-digest-auditing-the-auto-verifications) has slice 16's digest pick out the two that weaken a trigger: removing `needs-review`, which switches off T9, and moving away from `capability`, which leaves T1 firing only on a new file. `item.schema.json` allows `fields`, `kind_before` and `labels_removed` only on an edit entry, requires `fields` there, and forbids `reason`.
 
 ### An edit to an item in review
 
-[§2.2](DESIGN.md#22-states) calls a held item mine to decide, so an agent can't change it while I do: `edit` on an item in review exits 1 unless stdin is a terminal. It calls the same `tty::is_interactive()` that sets history's `interactive`, so the two can't disagree. It doesn't ask for the ID to be typed back, as slice 4's helper for human-only commands will: an edit isn't one of [§2.7](DESIGN.md#27-human-actions)'s human actions, only one that waits for the human to finish deciding. Like those actions, it's a convention, not security ([§7](DESIGN.md#7-honest-limits)): a command run under `script` gets a terminal.
+[§2.2](DESIGN.md#22-states) calls a held item mine to decide, so an agent can't change it while I do: `edit` on an item in review exits 1 unless stdin is a terminal. It calls the same `tty::is_interactive()` that sets history's `interactive`, so the two can't disagree. It doesn't ask for the ID to be typed back, as slice 4's helper for human-only commands will: an edit isn't one of [§2.7](DESIGN.md#27-human-actions)'s human actions, only one that waits for the human to finish deciding. Like those actions, it's a convention, not security (§7): a command run under `script` gets a terminal.
 
 ### Listing
 
@@ -304,19 +327,20 @@ An edit adds one entry to `history`, in the same shape as a move ([slice 2's rea
 
 [item.schema.json](../schemas/item.schema.json) gains `labels` (at least one, unique, each trimmed, one line and with no capitals) and `design` (one line), and its history entry gains `via: "edit"`, `fields`, `kind_before` and `labels_removed`, with an `if`/`then`/`else` that allows the last three only on an edit and requires `fields` there.
 
-`list`'s `project` is new and required. An agent that read `items` before isn't affected. Later slices add item fields such as `written` and `criteria` (slice 6), which `create`, `edit` and `list` will then print, without renaming or removing any field here. A new field `edit` can change must be added to the `fields` enum in both `edit.schema.json` and `item.schema.json`.
+`list`'s `project` and `edit`'s `labels_not_found` are new and required. `labels_not_found` lists each label once, in the order given, and is empty when every `--unlabel` label was there. An agent that read `items`, `fields` or `item` before isn't affected. Later slices add item fields such as `written` and `criteria` (slice 6), which `create`, `edit` and `list` will then print, without renaming or removing any field here. A new field `edit` can change must be added to the `fields` enum in both `edit.schema.json` and `item.schema.json`.
 
 ## Code tour
 
 | File | What changed |
 | --- | --- |
-| [src/main.rs](../src/main.rs) | `CreateArgs`, `EditArgs` and `ListArgs`, with `kinds`, `priorities` and `state_name` as their value parsers. `create` sets kind, priority, labels and design. `edit`, with `check_label`, `check_labels`, `check_new_labels`, `MAX_LABEL`, `add_labels`, `check_design`, and `resolve_design` with `follow_symlinks`, which store a design reference relative to the root. `list`, with `ACTIVE`. `apply` writes the new entry fields as empty for a move. |
+| [src/main.rs](../src/main.rs) | `CreateArgs`, `EditArgs` and `ListArgs`, with `kinds`, `priorities` and `state_name` as their value parsers. `create` sets kind, priority, labels and design. `edit`, with `check_label`, `check_labels`, `check_new_labels`, `MAX_LABEL`, `add_labels`, `check_design`, and `resolve_design` with `follow_symlinks`, which store a design reference relative to the root. `edit` collects the `--unlabel` labels the item lacks as `labels_not_found`. `list`, with `ACTIVE`. `table` measures cells with `unicode-width`'s `UnicodeWidthStr::width` and pads by hand. `apply` writes the new entry fields as empty for a move. |
+| [Cargo.toml](../Cargo.toml), [CLAUDE.md](../CLAUDE.md) | `unicode-width` 0.2.3, the slice's one new dependency, which [§8](DESIGN.md#8-technology) and CLAUDE.md's crate list now name. |
 | [src/item.rs](../src/item.rs) | `Item` gains `labels` and `design`, between `priority` and `created`. `HistoryEntry` gains `fields`, `kind_before` and `labels_removed`, each with a serde default and `skip_serializing_if`. `Via::Edit`. `Kind`, `Priority` and `VerifiedBy` gain `ALL`, `as_str` and `parse`, which give clap its allowed values, and `Priority::rank` gives the sort order. |
 | [src/states.rs](../src/states.rs) | `join` ("a, b or c") is now public, for `edit`'s and `list`'s messages. |
 | [src/store.rs](../src/store.rs) | `write_file` names its temporary file with the process ID and opens it with `create_new`. |
-| [schemas/edit.schema.json](../schemas/edit.schema.json) | New: `edit --json`. |
+| [schemas/edit.schema.json](../schemas/edit.schema.json) | New: `edit --json`, with `fields`, `labels_not_found` and `item`. |
 | [schemas/item.schema.json](../schemas/item.schema.json), [schemas/list.schema.json](../schemas/list.schema.json) | As described under [JSON output](#json-output). |
-| [tests/organise.rs](../tests/organise.rs) | Every test for `create`'s new flags, `edit` and `list`. `env_with_every_state` builds a store with one XX item in each state, putting XX-3 in review by hand. `edit` checks that the file on disk holds the item the command printed. |
+| [tests/organise.rs](../tests/organise.rs) | Every test for `create`'s new flags, `edit` and `list`. `env_with_every_state` builds a store with one XX item in each state, putting XX-3 in review by hand. `edit` checks that the file on disk holds the item the command printed, and `edit_in` does the same from a given folder, for design references. |
 | [tests/common/mod.rs](../tests/common/mod.rs) | `Env::in_terminal`, and `schema_for` maps `edit` to its schema. |
 | [tests/fixtures/slice-3/](../tests/fixtures/slice-3/), [tests/fixtures.rs](../tests/fixtures.rs) | Three item files written by this slice's binary, and `slice_3_wrote_three_fixtures_with_edits`. `the_binary_lists_every_fixture_as_it_is_on_disk` now lists every state and finds each item by ID, since `list` hides done and shelved items and sorts by priority. |
 | [tests/store_writes.rs](../tests/store_writes.rs) | `a_planted_tmp_symlink_is_not_written_through`, `a_symlink_planted_at_this_process_tmp_name_is_refused`. |
@@ -358,13 +382,13 @@ Every _Done when_ check in [PLAN.md's slice 3](PLAN.md#slice-3-organise-and-filt
 | _Prompt:_ `--by` checks that the item is done as well as its `verification` | `by_keeps_done_items_verified_that_way`, `by_ignores_a_record_left_on_a_shelved_item_by_slice_2` |
 | _Integration risk:_ files saved by slice 3 load and come back byte for byte | `tests/fixtures.rs`: `slice_3_wrote_three_fixtures_with_edits`, `every_fixture_loads_and_comes_back_byte_for_byte`, `the_binary_lists_every_fixture_as_it_is_on_disk` |
 
-Further tests cover the edges: `an_edit_that_changes_nothing_writes_nothing`, `edit_refuses_bad_input_and_changes_nothing`, `edit_finds_an_id_typed_in_lower_case`, `a_move_after_an_edit_still_works`, `two_label_filters_keep_items_with_both`, `project_lists_the_items_of_a_project_no_longer_in_config_json`, and in `tests/item_files.rs`, `a_move_refuses_an_item_whose_history_has_a_command_it_doesnt_know`, which now includes `edit`. The tests added after review 1 are listed with their fixes [below](#fixes-after-review-1).
+Further tests cover the edges: `an_edit_that_changes_nothing_writes_nothing`, `edit_refuses_bad_input_and_changes_nothing`, `edit_finds_an_id_typed_in_lower_case`, `a_move_after_an_edit_still_works`, `two_label_filters_keep_items_with_both`, `project_lists_the_items_of_a_project_no_longer_in_config_json`, and in `tests/item_files.rs`, `a_move_refuses_an_item_whose_history_has_a_command_it_doesnt_know`, which now includes `edit`. The tests added after each review are listed with their fixes: [review 1](#fixes-after-review-1) and [review 2](#fixes-after-review-2).
 
 **Tests read the JSON, not the wording**, except where the text is the subject: `the_text_list_marks_priority_kind_and_labels` checks the rows line for line, and the scope and filter tests look for "XX only.", "Every project." and "Filters:" phrases. Refusals with no field of their own are checked for a word, such as "review" and "terminal" for an edit in review, or "50" and "51" for a long label.
 
 **`edit` checks the file against its output.** The `edit` helper in `tests/organise.rs` asserts that the file on disk equals the item the command printed, so every edit test also checks that `--json` reports what was written.
 
-**Seen failing.** The first pass landed as one commit with its tests (`1296661`), so there's no record of its tests failing before the code. Review 1's [outcome](reviews/slice-3-review-1.md#outcome) records that each test added with a fix was seen failing first, and that `concurrent_edits_all_land` and `an_edit_from_a_terminal_records_interactive_true`, which cover behaviour that already worked, were each checked by breaking the code on purpose.
+**Seen failing.** The first pass landed as one commit with its tests (`1296661`), so there's no record of its tests failing before the code. Review 1's [outcome](reviews/slice-3-review-1.md#outcome) records that each test added with a fix was seen failing first, and that `concurrent_edits_all_land` and `an_edit_from_a_terminal_records_interactive_true`, which cover behaviour that already worked, were each checked by breaking the code on purpose. Review 2 has no outcome section yet, so nothing records whether the tests added after it were seen failing first.
 
 **The fixtures.** `tests/fixtures/slice-3/` holds three files written by this slice's binary:
 
@@ -376,7 +400,13 @@ Further tests cover the edges: `an_edit_that_changes_nothing_writes_nothing`, `e
 
 ### Checks done by hand
 
-Review 1 checked two things by hand that are now automated: ten concurrent edits on one item (`concurrent_edits_all_land`), and `edit` on a file with a history command this version doesn't know (`a_move_refuses_an_item_whose_history_has_a_command_it_doesnt_know`). The Try it demo above was run against the debug binary, and its output is pasted unchanged apart from the temporary folder. Finding 1 was reproduced on the branch the same way: `tracker create a --project XX --label 'ℂ' --json` exits 0 and stores `"labels": ["ℂ"]`.
+Review 1 checked two things by hand that are now automated: ten concurrent edits on one item (`concurrent_edits_all_land`), and `edit` on a file with a history command this version doesn't know (`a_move_refuses_an_item_whose_history_has_a_command_it_doesnt_know`). The Try it demo above was run against the debug binary, and its output is pasted unchanged apart from the temporary folder. The open findings were reproduced at `b2cab77` against the debug binary in a temporary store:
+
+- Review 1's finding 1: `tracker create a --project XX --label 'ℂ' --json` exits 0 and stores `"labels": ["ℂ"]`.
+- Review 2's finding 2: with `"labels": ["bug", "bug"]` written into XX-1's file, `tracker edit XX-1 --unlabel bug --json` exits 0 and records `"labels_removed": ["bug", "bug"]`.
+- Review 2's finding 3: `--label $'needs‐review'`, with a Unicode hyphen, exits 0.
+
+`--label 'a, b'` exits 1, which confirms review 2's finding 8 is fixed.
 
 ## Decisions worth knowing
 
@@ -391,7 +421,12 @@ Review 1 checked two things by hand that are now automated: ten concurrent edits
 - **Repeated `--label` filters mean every label named**, like the other filters, which all combine. §3's `list` row shows `[--label]…`.
 - **`list --project` takes an unregistered key while items still use it**, so `list` and `project list` agree. §3 says so since review 1.
 - **`list` reads every item before filtering**, and takes no lock. One bad file anywhere stops it until slice 5.
-- **`edit` doesn't need the item's project to be registered**, like the moves. Slice 2's still-open item 7 asks which commands should keep working without one.
+- **`edit` doesn't need the item's project to be registered**, like the moves, unless it's given `--design`, which needs the project's root. Slice 2's still-open item 7 asks which commands should keep working without one.
+- **A design reference names a file from the current folder, and is stored from the project's root.** DESIGN.md left open what the path was relative to (review 2's finding 5). Read from the root, the examples' `DESIGN.md#2.4` would fail G6 for TR, whose design doc is `docs/DESIGN.md`. Read from the current folder, the reference is a path you can tab-complete, and storing it from the root gives G6 one fixed place to read from. §2.1 says so.
+- **A design reference must stay inside the project's root**, so G6 never reads a file outside it (§7). A reference that leads outside is refused, whether it gets there by an absolute path, `..` or a symlinked folder. An absolute path inside the root is fine, and is stored relative to it. The file needn't exist yet.
+- **A comma is refused in a new label**, because `list` separates labels with `, `. It also leaves room for a comma-separated `--label` later, as `--status` has. `--unlabel` and `list --label` don't refuse one, so a hand-written label with a comma can still be found and removed.
+- **An `--unlabel` of a label the item doesn't have is named, not refused.** The rest of the edit still happens, and the text and `labels_not_found` say which labels weren't there, so a typo in `needs-review` isn't missed. §3 says so.
+- **`list` lines up its columns by terminal width**, with `unicode-width`, so a CJK title or an emoji, which takes two columns, doesn't push its row out of line. It's the slice's one new dependency, listed in §8.
 - **`env_with_every_state` puts an item in review by editing its file**, since nothing reaches review until slice 9. Its tests of an item in review will need a real hold then.
 - **clap refuses an unknown kind, priority, state or `--by` value** through `PossibleValuesParser`, which names the allowed values. Slice 1's error path makes that exit 1, not clap's 2.
 
@@ -447,30 +482,82 @@ A few consequences:
 - **A new label over 50 characters is refused**, with exit 1. Labels already stored keep working.
 - **A leftover `<file>.<pid>.tmp` can block a write.** If a process with the same ID left one behind, the write exits 3 and names the file to remove. Process IDs are rarely reused that soon, and a write that fails removes its own temporary file.
 
+## Fixes after review 2
+
+[slice-3-review-2.md](reviews/slice-3-review-2.md) reviewed the branch at `901bea6`, after review 1's fixes and this readme. It confirmed that review 1's claimed fixes are real and that the readme's test counts were right. It found review 1's fix before slice 4 still open (finding 1), one new bug of the same kind (finding 2), a lookalike-label problem that review 1's suggested fix wouldn't close (finding 3), a stronger option for T9 now that edits record `labels_removed` (finding 4), design references that could point anywhere (finding 5), three low-severity items, two places the docs disagreed with the code, and three test gaps. `5d85d0f` saves the review. Each fix below is in its own commit, and the commits that change behaviour also update DESIGN.md and this readme. The review has no outcome section yet, so nothing records whether each new test was seen failing first.
+
+### Low severity
+
+| Finding | Commit | Fix | Tests |
+| --- | --- | --- | --- |
+| 6. `--unlabel` of a label the item doesn't have is silently ignored | `49685aa` | The edit goes ahead, and the text ends "XX-4 had no label \"needs-reveiw\", so it wasn't removed." `edit --json` gains `labels_not_found`, required by `edit.schema.json`. §3 says so. | `an_unlabel_of_a_label_the_item_lacks_is_named` |
+| 7. Wide characters push `list`'s columns out of line | `f8a1978` | `table` measures each cell in terminal columns with `unicode-width`, which §8 and CLAUDE.md now list. | `wide_characters_keep_the_list_in_line` |
+| 8. A label holding `, ` can't be told apart in `list` | `6c14ee2` | `create` and `edit --label` refuse a comma. §2.1 and `--help` say so. | `a_label_cant_hold_a_comma`, which also checks that a hand-written one can still be found and removed |
+
+### Security items
+
+| Finding | Commit | Fix | Tests |
+| --- | --- | --- | --- |
+| 5. A design reference can point anywhere, and DESIGN.md doesn't say what it's relative to | `d8a2144`, `a7406ef` | The file is named relative to the current folder, refused unless it's inside the project's root, and stored relative to the root ([above](#design-references)). §2.1 and §7 say so, and PLAN.md's slice 6 has G6 read it from the root and fail one that, after following symlinks, is outside it, with a _Done when_ check for a symlink. `a7406ef` corrects this readme: `edit` reads `config.json` for a design reference. | `a_design_reference_is_named_from_the_current_folder_and_stored_from_the_root`, which covers references typed in a subfolder and outside every root, an absolute path inside the root and one outside it, `..`, a symlink that leads out, a reference that names no file or only the root, and `edit` from a subfolder |
+
+### Design decisions
+
+| Question | Decision | Commits |
+| --- | --- | --- |
+| 9. §3 says `list`'s text "ends by saying which" project it covered, but the filters follow it | The code's order stays. §3 now says the text names the scope after the rows, followed by the hidden-states hint and the filters. | `30ae978` |
+
+### Test gaps
+
+| Gap | Commit | Test |
+| --- | --- | --- |
+| 1. Only an edit entry may carry `kind_before` and `labels_removed` | `b2cab77` | `a_wrong_output_is_caught` now checks that an edit entry can carry both, that a move can carry neither, and that `labels_removed: ["bug", "bug"]` fails |
+
+### Process
+
+| Finding | Commit | Fix |
+| --- | --- | --- |
+| 10. Review 1's outcome table still says there's no `slice-3-readme.md` | `3c47fa5` | The Process row now points at `901bea6`, which adds this readme, and lists what's still open. |
+
+A few consequences:
+
+- **A design reference typed in a subfolder is stored with the subfolder's path.** In TR's `docs/` folder, `--design DESIGN.md#2.4` is stored as `docs/DESIGN.md#2.4`, and the same text typed in TR's root names a file that doesn't exist there. References written before `d8a2144`, such as fixture `XX-6`'s `DESIGN.md#2.5`, were stored as typed, unchecked.
+- **`edit --design` now needs the item's project in `config.json`.** Every other edit still works without it.
+- **A new label with a comma is refused**, with exit 1. Labels already stored keep working.
+- **`edit --json` always has `labels_not_found`**, empty when every `--unlabel` label was there.
+
 ## Still open
 
-Where review 1 and slice 2's readme raised the same thing, it's listed once.
+Where two reviews, or a review and slice 2's readme, raised the same thing, it's listed once.
 
-**Fix before slice 4** (review 1)
+**Fix before slice 4**
 
-- **1. Labels with no lower-case form break the schema.** `check_label` stores `label.trim().to_lowercase()`, which leaves characters such as `ℂ` (U+2102), `ϒ` (U+03D2) and `𝐀` unchanged, though `item.schema.json` forbids `Lu` and `Lt` characters. `create … --label 'ℂ' --json` exits 0, and from then on `create`, `edit` and `list --json` print output that breaks its schema. The review suggests refusing such a label after lowercasing, and adding `ℂ` to `labels_are_lowercased_and_stored_once` (test gap 1).
+- **Labels with no lower-case form break the schema** (review 1's finding 1, and review 2's finding 1). `check_label` stores `label.trim().to_lowercase()`, which leaves characters such as `ℂ` (U+2102), `ϒ` (U+03D2) and `𝐀` unchanged, though `item.schema.json` forbids `Lu` and `Lt` characters. `create … --label 'ℂ' --json` exits 0, and from then on `create`, `edit` and `list --json` print output that breaks its schema. Review 1 suggests refusing such a label after lowercasing, and adding `ℂ` to `labels_are_lowercased_and_stored_once`. Review 2 suggests deciding it together with the lookalike labels below, since making labels ASCII would make that check unnecessary. Slice 4's `show` adds another output that prints labels.
+- **An edit can write a history entry that breaks the schema for good** (review 2's finding 2). Neither the label rebuild in `edit` nor `labels_removed` drops duplicates, so on a file holding `"labels": ["bug", "bug"]`, `--unlabel bug` records `"labels_removed": ["bug", "bug"]`, which `uniqueItems` forbids. No command rewrites a history entry, so every later `list --json` and `edit --json` on the item breaks its schema. Review 2 suggests rebuilding the labels with `add_labels`, which keeps each once, and a test that runs `--unlabel bug` on such a file through `Env::json`.
+
+**Security** (review 2)
+
+- **3. Lookalike labels.** Refusing the zero-width characters that review 1's finding 5 names wouldn't stop a label that only looks like `needs-review`: one with a Unicode hyphen (U+2010) or a Cyrillic `е` is stored without complaint, looks the same in a terminal, and T9 won't fire on it. Nor would it stop `café` with a precomposed `é` and `café` with a combining accent being stored as two labels. The review offers two choices: make labels ASCII, which closes the class and makes the `ℂ` check unnecessary, or record in §7 that labels are compared as exact strings. Neither is taken yet.
+- **4. T9 could keep holding an item whose `needs-review` an edit removed.** The digest lists such an edit only after the item has auto-verified. With `labels_removed` stored, slice 9's T9 could also fire if any edit since `start` removed `needs-review`. Review 2 asks for this to go into slice 9's prompt, or for a note of why the digest alone is enough. PLAN.md's slice 9 says neither yet.
 
 **Low severity** (review 1)
 
-- **4. Hand-edited labels aren't matched case-insensitively.** A file holding `"Bug"` isn't found by `list --label bug`, can't be changed by `--unlabel bug`, and breaks the schema in `list --json`. A hand-written `["bug", "bug"]` keeps both through `edit`, since the rebuild filters but doesn't de-duplicate.
-- **5. Invisible characters are accepted in labels and titles.** `check_printable` doesn't refuse zero-width characters (U+200B–U+200D, U+2060, U+FEFF), so a label can look exactly like `needs-review` and not be it, and T9 won't fire on it.
+- **4. Hand-edited labels aren't matched case-insensitively.** A file holding `"Bug"` isn't found by `list --label bug`, can't be changed by `--unlabel bug`, and breaks the schema in `list --json`. A hand-written `["bug", "bug"]` keeps both through `edit`, since the rebuild filters but doesn't de-duplicate, which is what leads to review 2's finding 2 above.
+- **5. Invisible characters are accepted in labels and titles.** `check_printable` doesn't refuse zero-width characters (U+200B–U+200D, U+2060, U+FEFF). For labels, review 2's finding 3 above covers this and more. For titles, refusing them is still worth doing.
 
-**Test gaps** (review 1)
+**Test gaps**
 
-- **1.** `ℂ` among the refused labels, with finding 1.
-- **5.** Two projects in the text list. `the_text_list_marks_priority_kind_and_labels` has one project, so nothing checks the heading line before each project or that the columns line up across them.
-- **6.** Hand-edited labels, once finding 4 is decided.
+- `ℂ` among the refused labels (review 1's gap 1, review 2's gap 3), with the first fix above.
+- A regression test for review 2's finding 2 (review 2's gap 2).
+- Two projects in the text list (review 1's gap 5). `the_text_list_marks_priority_kind_and_labels` has one project, so nothing checks the heading line before each project, or that the columns line up across them.
+- Hand-edited labels, once review 1's finding 4 is decided (review 1's gap 6).
 
-**Process** (review 1)
+**Process**
 
-- **The `unchecked` note is still in the present tense.** `states::UNCHECKED_NOTE` reads "No gates ran: this version of tracker has none yet…" and stays in item files after slice 6 adds gates. It's cheapest to change before self-tracking starts after slice 6, while only the test fixtures hold the old text. Also slice 2 review 2's item 9.
-- **PLAN.md marks slice 3 `done` in its first-pass commit**, before any review, as slice 2's did. So the Status column means "built", not "built and reviewed". PLAN.md's intro should say so, or the status should change only after the review's fixes.
-- **The slice landed as one commit** (`1296661`, 1518 lines added across 16 files), as slice 2 did. That's in the history and stays.
+- **Review 2 has no outcome section**, unlike review 1, so the review file doesn't record what was fixed. This readme's [Fixes after review 2](#fixes-after-review-2) does.
+
+- **The `unchecked` note is still in the present tense.** `states::UNCHECKED_NOTE` reads "No gates ran: this version of tracker has none yet…" and stays in item files after slice 6 adds gates. It's cheapest to change before self-tracking starts after slice 6, while only the test fixtures hold the old text. From review 1, and slice 2 review 2's item 9.
+- **PLAN.md marks slice 3 `done` in its first-pass commit**, before any review, as slice 2's did (review 1). So the Status column means "built", not "built and reviewed". PLAN.md's intro should say so, or the status should change only after the review's fixes.
+- **The slice landed as one commit** (`1296661`, 1518 lines added across 16 files), as slice 2 did (review 1). That's in the history and stays.
 
 **Carried over from slice 2** ([slice 2's readme](slice-2-readme.md#still-open)), untouched by this slice:
 
@@ -485,9 +572,9 @@ Where review 1 and slice 2's readme raised the same thing, it's listed once.
 
 - **Slice 4**'s `show` prints `labels`, `design`, `description` and every history entry, including an edit's `fields`, `kind_before` and `labels_removed`, escaping their control characters. Its helper for human-only commands must not be applied to `edit` in review, which needs a terminal but not a typed ID. `delete` must work on items with any of slice 3's fields.
 - **Slice 5** adds `list`'s column heading row (now in its _Done when_), lined up with the rows across projects by `table`, which counts terminal columns with `unicode-width`, and empty states such as "No open items. Nice work!" in place of today's "No items match.", which must still say what the list covered. Skipping unparseable files changes `list`, which today stops at the first bad file in any project. It also decides whether titles need a length limit, and is the natural place for review 1's finding 5, invisible characters.
-- **Slice 6** adds `written` and `criteria`, which go between `updated` and `verification` in §4.3's order. Several tests use `written` as the field "a newer tracker added": `update_item_refuses_a_file_it_would_lose_fields_from` in `tests/item_files.rs`, `a_move_refuses_a_file_it_would_lose_fields_from` in `tests/states.rs`, and `a_wrong_output_is_caught` in `tests/schemas.rs`. And `add_newer_entry` in `tests/item_files.rs` uses `criterion-accept` as the command this version doesn't know. Slice 6 must move each to a field and a command it still doesn't know. G1 refuses `start` without criteria, so `env_with_every_state`, which starts XX-2 and XX-4, needs items with one. G6 reads the `design` that `create` and `edit` set, which they check only for a file inside the root, so G6 must check again after following symlinks.
-- **Slice 9** makes review reachable through the triggers, and T9 holds an item labelled `needs-review`, matched exactly after lowercasing. The tests that put XX-3 in review by hand can then use a real hold. An agent's edit to a held item stays refused.
+- **Slice 6** adds `written` and `criteria`, which go between `updated` and `verification` in §4.3's order. Several tests use `written` as the field "a newer tracker added": `update_item_refuses_a_file_it_would_lose_fields_from` in `tests/item_files.rs`, `a_move_refuses_a_file_it_would_lose_fields_from` in `tests/states.rs`, and `a_wrong_output_is_caught` in `tests/schemas.rs`. And `add_newer_entry` in `tests/item_files.rs` uses `criterion-accept` as the command this version doesn't know. Slice 6 must move each to a field and a command it still doesn't know. G1 refuses `start` without criteria, so `env_with_every_state`, which starts XX-2 and XX-4, needs items with one. G6 reads the `design` that `create` and `edit` set, which they check only for a file inside the root, so G6 must check again after following symlinks. It reads the file relative to the root. A reference may have no `#` section, and one written before `d8a2144`, such as fixture `XX-6`'s, was stored as typed and never checked, so G6 must fail either one cleanly rather than assume the form.
+- **Slice 9** makes review reachable through the triggers, and T9 holds an item labelled `needs-review`, matched exactly after lowercasing. The tests that put XX-3 in review by hand can then use a real hold. An agent's edit to a held item stays refused. Slice 9 should also decide review 2's finding 4: whether T9 keeps firing when an edit since `start` removed `needs-review`, which `labels_removed` now makes a single check.
 - **Slice 10**'s T1 fires for `kind: capability`, which `create --kind` and `edit --kind` set.
 - **Slice 11**'s T5 fingerprints kind and design at `start`, so `edit --kind` or `--design` after start fires T5 (§2.5). An edit of title, priority, labels or description must not change the fingerprint.
-- **Slice 16**'s digest lists every edit whose entry has `labels_removed` containing `needs-review`, or `kind_before: "capability"` with a new kind, marked by `interactive`, and not an edit that only adds a label. It reads these fields from files written since `f2f07de`: an edit made by the first pass (`1296661`) has neither, as fixtures `XX-6` and `XX-7` show. `audit` could also report labels that aren't in their stored form (review 1's finding 4). Slice 16 brings `--help` and empty states up to slice 5's standard for every command added since.
+- **Slice 16**'s digest lists every edit whose entry has `labels_removed` containing `needs-review`, or `kind_before: "capability"` with a new kind, marked by `interactive`, and not an edit that only adds a label. It reads these fields from files written since `f2f07de`: an edit made by the first pass (`1296661`) has neither, as fixtures `XX-6` and `XX-7` show. `audit` could also report labels that aren't in their stored form (review 1's finding 4). If that finding is fixed by matching labels case-insensitively, `labels_removed` can hold a hand-written `Needs-Review`, so the digest must compare lowercased forms (review 2's finding 4). Slice 16 brings `--help` and empty states up to slice 5's standard for every command added since.
 - **Item files change shape again later.** Each new field needs a serde default and `skip_serializing_if`, its place in §4.3's order, an entry in `item.schema.json`, and a `tests/fixtures/slice-<n>/` folder of files written by that slice's binary. A new field `edit` can change also goes in both `fields` enums.
