@@ -23,6 +23,8 @@ I found no bug that loses data. The findings that matter most:
 - **Security 4:** a named pipe in `items/` makes a writing command that names it hang while it holds the store's lock, so every other writing command waits behind it.
 - **Finding 5:** §4.4 lists the skipped cases one at a time, and says nothing about the others, so the code handled exactly the ones it names.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -120,3 +122,34 @@ Three more from this review:
 - **G6 reads a file from the project's root, and should follow the same rule as `items/`.** `design` names a file that G6 opens. If that's a pipe, or a symlink that leads nowhere, `gates` and `submit` hang or fail with a bare I/O error, as bug 1's entries do. Whatever rule bug 1's fix and finding 5 settle should apply there: a design file that isn't a regular file fails G6 with a reason, rather than being read.
 - **Length limits for a criterion's text and an evidence note.** This slice settled a title's limit (200) as the course's last decision about free text that's printed among other lines. A criterion's text is printed in `show` and in every gate refusal, and an evidence note is free text "saying where to look" (§2.3). Slice 6 should say whether each is one line, and how long it can be, as §2.1 does for a title and a label and §3 for a reason.
 - **A fixture saved by slice 6.** Slice 6 adds `criteria` and `written`. `tests/fixtures/slice-5/` is the shape before them, and slice 6 needs its own folder after them, with a criterion of each kind it adds, so slice 7 can check it loads them unchanged.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `9434db1`, not at the fixed code. Each fix is in its own commit, with its tests, and the readme's [Fixes after review 2](../slice-5-readme.md#fixes-after-review-2) lists them too.
+
+All three bugs, finding 4, finding 5 and all three test gaps are resolved. The process notes and the carried-forward items weren't part of this round. The commits after this review (`a335a8d`), in order:
+
+- **Fixes:** `d13574a` (bug 1, finding 4 and test gap 1), `e6dea25` (finding 5), `4999b7f` (bug 2 and test gap 2), `6781f4e` (bug 3) and `0168196` (test gap 3).
+- **Docs:** `50d40ca` (the readme) and the commit that adds this Outcome.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: a symlink loop stops the whole list, and a pipe hangs it | `d13574a`: a new `entry_at` looks at each entry in `items/`, following symlinks, without opening it. `read_listed` and `item_text` read only a regular file. A folder, a pipe, a device, or a symlink whose target is missing or loops is skipped by a listing, and refused with exit 3 by a command that names it. A missing target keeps review 1's reason, "it's a symlink to a file that doesn't exist", and other symlinks get "it's a symlink that can't be followed" with the system's reason. A symlink whose target is behind a folder without permission still exits 3, like any file without permission. Test: `an_entry_that_isnt_a_regular_file_is_skipped_and_never_read` |
+| Bug 2: `TRACKER_HOME` as a symlink to nowhere | `4999b7f`: the message, rather than creating the target, as the review suggested. `check_not_a_file` refuses, with exit 3, a store folder that is, or sits under, a symlink that can't be followed, naming the link and its target and saying to create the target, for `TRACKER_HOME` and for `~/.tracker`. Test: `a_store_folder_that_is_a_symlink_to_nothing_is_named_with_how_to_fix_it` |
+| Bug 3: the suggested `ls -ld` and `chmod` don't quote the path | `6781f4e`: `error::shell_quote` single-quotes a path that holds anything but letters, digits and `/._-+@,:`, writing `'` as `'\''`. The test runs each suggested command through `sh`, which showed one more problem: with `items/` locked, `show XX-1` suggested `ls -ld` on the item file, which the locked folder hides. `error::io` now names the deepest part of the path that can be looked at. Test: `the_commands_a_permission_message_suggests_work_when_pasted` |
+| Finding 4 (security): a pipe makes a writing command hang holding the lock | `d13574a`, with bug 1: `item_text` refuses the pipe before opening it, so `start` and `edit` exit 3 instead of hanging, and `submit` (slice 8) and `approve` (slice 9) get the same through it |
+| Finding 5: §4.4 lists the skipped cases one at a time | `e6dea25`: §4.4 gives the rule, "anything in `items/` that isn't a regular file once symlinks are followed, such as a folder, a pipe, or a symlink whose target is missing or loops", and says those are never opened |
+| Test gap 1: no test of a loop or a pipe | `d13574a`: a self-loop, a two-link loop, a link to `/dev/null` and a pipe, through `list`, `project list`, `show`, `start`, `edit` and `delete`, each run with a 10-second limit so a hang fails the test |
+| Test gap 2: no test of `TRACKER_HOME` as a symlink to nowhere | `4999b7f`: every command, `init` included, a relative link above the store's folder, and `~/.tracker` |
+| Test gap 3: nothing checks that `list --json` keeps stderr empty | `0168196`: `a_hand_corrupted_item_file_is_reported_and_the_others_still_list` checks stderr for `list --json` and `project list --json` |
+| Process: the readme's Branch row and "Every I/O error says what to do" | `50d40ca`, along with the fixes: the Branch row lists every commit, and the line now reads "Store errors say what to do" |
+| Still open: a file can change between `entry_at` looking and the read | New in the readme's [Still open](../slice-5-readme.md#still-open), as bug 1 above noted: opening first wouldn't help, since a pipe blocks on open too |
+
+Seen failing:
+
+- **Bug 1 and test gap 1:** the new test was run against `a335a8d`'s code and failed on the symlink loop's exit 3. With the fix in place but the check for a non-regular file taken out, it failed on the 10-second limit at the pipe rather than hanging.
+- **Bug 2:** its test was run against `e6dea25` and failed with "Can't create …/store: File exists (os error 17)."
+- **Bug 3:** its test was run against `4999b7f` and failed: `sh` couldn't run the unquoted `ls -ld …/it's my store`.
+- **Test gap 3:** with `main` changed to print the warnings under `--json` too, the test failed.
+
+After all of this, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and all 197 tests pass, 3 more than at `9434db1`, all in `tests/bad_data.rs`.
