@@ -30,6 +30,32 @@ I checked each fix against the code:
 - **Input that slice 6 will need to handle:** a `design` reference can point outside the project, and DESIGN.md doesn't say what the path is relative to (finding 5).
 - The rest is low severity, documentation and test gaps.
 
+## Outcome
+
+Added after the fixes. The findings below are left as written, so their line links point at `901bea6`, not at the fixed code. Each fix is in its own commit, and the commits that change behaviour also update DESIGN.md and the readme. Each new test was seen failing against the code from before its fix:
+
+- `a_design_reference_is_named_from_the_current_folder_and_stored_from_the_root`, `an_unlabel_of_a_label_the_item_lacks_is_named` and `a_label_cant_hold_a_comma` were each run with their fix commit's tests and its parent's `src/` and `schemas/`
+- `wide_characters_keep_the_list_in_line` was run against the old `table`
+- test gap 1's new cases were run with the schema's `else` branch cut back to forbidding `fields` alone
+
+After the fixes, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and all 138 tests pass.
+
+| Finding | Resolved by |
+| --- | --- |
+| Fix before slice 4, item 1: labels with no lowercase form | Still open |
+| Fix before slice 4, item 2: an edit can record a label twice in `labels_removed` | Still open |
+| Security and design 3: lookalike labels | Still open. The choice between ASCII labels and accepting the risk is still to be made, together with finding 1 |
+| Security and design 4: T9 could hold an item whose `needs-review` an edit removed | Still open. Slice 9's prompt doesn't mention it yet |
+| Security and design 5: a `design` reference can point anywhere | `d8a2144`: the file is named relative to the current folder, refused unless it's inside the project's root (by an absolute path, `..` or a symlink in a folder that exists), and stored relative to the root. So `DESIGN.md#2.4` typed in TR's `docs/` is stored as `docs/DESIGN.md#2.4`. §2.1, §7 and `--help` say so. PLAN.md's slice 6 has G6 read the file from the root and fail one that's outside it after following symlinks, with a _Done when_ check for a symlink. `a7406ef` corrects the readme: `edit` now reads `config.json` for a design reference |
+| Low severity 6: `--unlabel` of a missing label is silently ignored | `49685aa`: the edit goes ahead, and the text ends "XX-4 had no label \"needs-reveiw\", so it wasn't removed." `edit --json` gains `labels_not_found`, which `edit.schema.json` requires. §3 says so |
+| Low severity 7: wide characters push `list`'s columns out of line | `f8a1978`: `table` measures each cell in terminal columns with `unicode-width`, which §8 and CLAUDE.md now list |
+| Low severity 8: a label holding `, ` or `]` | `6c14ee2`: `create` and `edit --label` refuse a comma. `--unlabel` and `list --label` still take one, so a label written by hand can be found and removed. §2.1 and `--help` say so. `]` is still accepted |
+| Code and DESIGN.md, item 9: where `list` names its scope | `30ae978`: §3 now says the text names the scope after the rows, followed by the hidden-states hint and the filters |
+| Code and DESIGN.md, item 10: review 1's outcome table | `3c47fa5`: its Process row now points at `901bea6` and lists what's still open |
+| Test gap 1: `kind_before` and `labels_removed` in the schema test | `b2cab77`: `a_wrong_output_is_caught` checks that an edit entry can carry both, that a move can carry neither, and that `labels_removed: ["bug", "bug"]`, an empty list, an empty label and an unknown `kind_before` fail |
+| Test gaps 2 and 3 | Not taken |
+| Still open, carried forward | Unchanged |
+
 ## Done when
 
 Every check passes, as in review 1's [Done when table](slice-3-review-1.md#done-when). One test name has changed since then: the done-item check now lives in `edit_works_in_every_state_but_done_and_review`, which also covers review. All other test names and links in that table still hold.
