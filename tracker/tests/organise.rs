@@ -384,6 +384,25 @@ fn i_can_edit_an_item_in_review_from_a_terminal() {
 }
 
 #[test]
+fn an_edit_from_a_terminal_records_interactive_true() {
+    // The digest marks each edit by whether it came from a terminal (§2.6).
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    edit(&env, &["XX-1", "--priority", "high"]);
+    let Some(output) = env.in_terminal(&["edit", "XX-1", "--label", "bug"]) else {
+        return;
+    };
+    assert!(output.status.success(), "{output:?}");
+
+    let entries = history(&env.item("XX-1"));
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0]["interactive"], false);
+    assert_eq!(entries[1]["interactive"], true);
+    assert_eq!(entries[1]["fields"], json!(["labels"]));
+}
+
+#[test]
 fn a_move_after_an_edit_still_works() {
     // The edit entry's `fields` must survive the move's rewrite.
     let env = Env::new();
