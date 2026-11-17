@@ -31,9 +31,9 @@ pub fn is_interactive() -> bool {
 ///
 /// The warning and question go to stderr, so a `--json` caller's stdout
 /// still holds one JSON object. Call this before taking the store's lock:
-/// the lock would stop every other command while I read and decide. So
-/// the caller must re-read what it's about to change under the lock, and
-/// change nothing if it differs from what the warning described (§4.4).
+/// the lock would stop every other command while I read and decide. Then
+/// take the lock with `Store::lock_unchanged`, which refuses if the item
+/// changed from what the warning described (§4.4).
 pub fn confirm(command: &str, id: &str, warning: &str, otherwise: &str) -> Result<()> {
     if !is_interactive() {
         let mut message = format!(

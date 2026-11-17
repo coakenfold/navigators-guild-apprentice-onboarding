@@ -1527,31 +1527,12 @@ fn delete(store: &Store, id: &str) -> Result<Output> {
             item.status.phrase()
         )
     };
-    tty::confirm(
-        &format!("tracker delete {id}"),
-        &id,
-        &deletion_warning(&item),
-        &otherwise,
-    )?;
+    let command = format!("tracker delete {id}");
+    tty::confirm(&command, &id, &deletion_warning(&item), &otherwise)?;
 
-    // The lock wasn't held while I decided, so the item is read again
-    // under it, and nothing happens if it changed (§4.4).
-    let _lock = store.lock()?;
-    let now = match store.item_text(&id) {
-        Ok(text) => text,
-        Err(err) if err.code == 1 => {
-            return Err(Error::input(format!(
-                "{id} was removed while you were deciding. Nothing was changed."
-            )));
-        }
-        Err(err) => return Err(err),
-    };
-    if now != before {
-        return Err(Error::input(format!(
-            "{id} changed while you were deciding, so it wasn't deleted. Run `tracker delete \
-             {id}` again to see what it is now."
-        )));
-    }
+    // The lock wasn't held while I decided, so nothing happens if the item
+    // changed meanwhile (§4.4).
+    let _lock = store.lock_unchanged(&id, &before, &command)?;
 
     // The ID, title, state, time and whether it came from a terminal, and
     // nothing else of the item (§2.8).

@@ -265,3 +265,50 @@ fn show_prints_an_item_whose_history_has_a_command_it_doesnt_know() {
     assert!(text.contains(warning), "{text}");
     assert_eq!(fs::read_to_string(env.item_path("XX-1")).unwrap(), edited);
 }
+
+#[test]
+fn lock_unchanged_holds_the_lock_only_while_the_file_is_as_it_was() {
+    // What every human-only command calls after its question (§2.7).
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    let store = store(&env);
+    let (_, before) = store.load_item_with_text("XX-1").unwrap();
+    let command = "tracker delete XX-1";
+
+    // Unchanged: it returns the lock, which is released when dropped.
+    let lock = store.lock_unchanged("XX-1", &before, command).unwrap();
+    drop(lock);
+
+    // Changed, even by one byte.
+    fs::write(env.item_path("XX-1"), format!("{before} ")).unwrap();
+    let error = store.lock_unchanged("XX-1", &before, command).unwrap_err();
+    assert_eq!(error.code, 1);
+    assert!(
+        error
+            .message
+            .contains("XX-1 changed while you were deciding"),
+        "{}",
+        error.message
+    );
+    assert!(
+        error.message.contains("Run `tracker delete XX-1` again"),
+        "{}",
+        error.message
+    );
+
+    // Removed.
+    fs::remove_file(env.item_path("XX-1")).unwrap();
+    let error = store.lock_unchanged("XX-1", &before, command).unwrap_err();
+    assert_eq!(error.code, 1);
+    assert!(
+        error
+            .message
+            .contains("XX-1 was removed while you were deciding"),
+        "{}",
+        error.message
+    );
+
+    // The lock was released each time, so a command can still take it.
+    env.create("XX", "b");
+}

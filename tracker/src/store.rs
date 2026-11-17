@@ -192,6 +192,37 @@ impl Store {
         Ok(file)
     }
 
+    /// Takes the lock, then checks that item `id`'s file still holds exactly
+    /// `before`, the text it held when the command read it without the
+    /// lock. Returns the lock, which is held until it's dropped.
+    ///
+    /// A human-only command asks its question without the lock (§2.7),
+    /// since holding it would stop every other command while I decide, and
+    /// `approve` (slice 9) runs the gates in between too. So each one calls
+    /// this before it writes, and whatever the warning described is what
+    /// it changes. Refuses with exit 1, writing nothing, if the item was
+    /// removed or changed meanwhile. `command` is how it was run, such as
+    /// `tracker delete XX-1`, so the message can say what to run again.
+    pub fn lock_unchanged(&self, id: &str, before: &str, command: &str) -> Result<File> {
+        let lock = self.lock()?;
+        let now = match self.item_text(id) {
+            Ok(text) => text,
+            Err(err) if err.code == 1 => {
+                return Err(Error::input(format!(
+                    "{id} was removed while you were deciding. Nothing was changed."
+                )));
+            }
+            Err(err) => return Err(err),
+        };
+        if now != before {
+            return Err(Error::input(format!(
+                "{id} changed while you were deciding, so nothing was changed. Run `{command}` \
+                 again to see what it is now."
+            )));
+        }
+        Ok(lock)
+    }
+
     /// Hands out the next ID for `project` from `counters.json` and records
     /// the number after it. IDs never come from the item files, so a deleted
     /// item's ID is never reused. Call this only while holding the lock.
