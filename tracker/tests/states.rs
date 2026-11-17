@@ -606,3 +606,26 @@ fn the_text_output_names_the_move() {
     let stderr = String::from_utf8_lossy(&output.get_output().stderr).to_string();
     assert!(stderr.starts_with("error: XX-1 is done"), "{stderr}");
 }
+
+#[test]
+fn a_move_refuses_a_file_it_would_lose_fields_from() {
+    // During self-tracking, the installed tracker is a slice behind the
+    // code, so it meets files with fields it doesn't know. Rewriting one
+    // would drop them without a word.
+    let env = env_with_item();
+    let path = env.item_path("XX-1");
+    let original = fs::read_to_string(&path).unwrap();
+    let edited = original.replace("  \"created\"", "  \"labels\": [\"bug\"],\n  \"created\"");
+    assert_ne!(edited, original);
+    fs::write(&path, &edited).unwrap();
+
+    for args in [
+        &["start", "XX-1"][..],
+        &["status", "XX-1", "in-progress"],
+        &["shelve", "XX-1", "--reason", "later"],
+    ] {
+        let message = env.error(args, 3);
+        assert!(message.contains("labels"), "{args:?}: {message}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), edited, "{args:?}");
+    }
+}
