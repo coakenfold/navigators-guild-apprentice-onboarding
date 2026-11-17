@@ -582,7 +582,7 @@ Each item is one JSON file, and serde maps it to Rust structs and back. The tool
     }
   ],
   "started": {
-    "at": "2026-11-13T09:15:00Z",
+    "at": "2026-11-13T10:10:00Z",
     "criteria_hash": "9f2c41",
     "head": "5d0e9b2",
     "checks": [{ "criterion": 1, "passed": false }]
@@ -610,6 +610,36 @@ Each item is one JSON file, and serde maps it to Rust structs and back. The tool
   },
   "history": [
     {
+      "at": "2026-11-13T09:15:00Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-13T09:30:00Z",
+      "from": "in-progress",
+      "to": "shelved",
+      "via": "shelve",
+      "interactive": false,
+      "reason": "Tag chips need the tag list from BM-11, which isn't done yet."
+    },
+    {
+      "at": "2026-11-13T10:05:00Z",
+      "from": "shelved",
+      "to": "open",
+      "via": "reopen",
+      "interactive": true,
+      "reason": "BM-11 is done."
+    },
+    {
+      "at": "2026-11-13T10:10:00Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
       "at": "2026-11-13T11:40:00Z",
       "from": "in-progress",
       "to": "done",
@@ -624,6 +654,8 @@ Each item is one JSON file, and serde maps it to Rust structs and back. The tool
 - `written` holds one fingerprint per criterion's text as it was written at `create` (T5).
 - `started.head` is `HEAD` at start (T14). `started.checks` is the run at start, where failing is expected (T13).
 - `verification.judges` has one entry per judge question: its ref, the model, the request hash, the answer and the reason.
+- `verification.note` explains a record that its other fields don't, such as an `unchecked` one: "No gates ran: this version of tracker has none yet, so nothing checked the work."
+- A history entry's `reason` is the one given to `shelve`, `reopen` or `reject`, and it's left out for other moves. In the example, the agent shelved the item while it waited for BM-11, and I reopened it.
 - JSON has no date type, so timestamps are [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339) strings in UTC, which `jiff` reads and writes.
 - `description` is markdown stored as a JSON string, so its line breaks are written as `\n`. `tracker show` prints it as plain text, and `tracker edit --description` changes it, so it never needs editing in the file.
 
