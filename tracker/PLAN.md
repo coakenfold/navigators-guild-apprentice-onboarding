@@ -198,6 +198,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - `review` lists held items with their reasons and the `show --diff` hint, and prints "Nothing needs you." when it's empty.
   - `echo XX-1 | tracker approve XX-1` is refused. Typing the ID in a real terminal moves the item to done (checked by hand).
   - An approve whose gate re-run fails leaves the item in review. A reject puts its reason in history.
+  - Every move refused for an item in review, through a command or through `status`, names `approve` and `reject`, and its `allowed` lists both. Until now the message says this version can't do either, and `allowed` is empty.
   - `show XX-1 --diff` includes XX-1's commits and none of XX-12's.
 
 ### Slice 10: Risky changes are held
