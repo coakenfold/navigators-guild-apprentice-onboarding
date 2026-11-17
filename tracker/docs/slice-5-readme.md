@@ -6,10 +6,10 @@ After slice 5 you can **keep working past a corrupt file, and get help text, col
 
 | | |
 | --- | --- |
-| Status | Every _Done when_ check has a test, and every test passes, as does the test command. Nothing in this slice needs a check by hand. PLAN.md has slice 5 as `in review`. From [review 1](reviews/slice-5-review-1.md), all three bugs, the DESIGN.md item and all four test gaps are done ([below](#fixes-after-review-1)). The branch isn't merged into `main`. What's left is listed under [Still open](#still-open). |
-| Branch | `feat/tracker/slice-5`, from `main` at `e3854b8` (slice 4 merged): `942f844` (anstream and anstyle), `a59f11f` (`Styled`), `0dfa462` (the slice's code and tests, in one commit, since most of `src/main.rs` changed for both halves at once), `51958aa` (DESIGN.md §2.1 and §4.4), `9765c91` (this readme and PLAN.md's status), `2b0a767` (review 1), then review 1's fixes, `e76eabb` to `af02b3b` ([Fixes after review 1](#fixes-after-review-1)) |
+| Status | Every _Done when_ check has a test, and every test passes, as does the test command. Nothing in this slice needs a check by hand. PLAN.md has slice 5 as `in review`. From [review 1](reviews/slice-5-review-1.md), all three bugs, the DESIGN.md item and all four test gaps are done ([below](#fixes-after-review-1)). From [review 2](reviews/slice-5-review-2.md), all three bugs, the security finding, the DESIGN.md item and all three test gaps are done ([below](#fixes-after-review-2)). The branch isn't merged into `main`. What's left is listed under [Still open](#still-open). |
+| Branch | `feat/tracker/slice-5`, from `main` at `e3854b8` (slice 4 merged): `942f844` (anstream and anstyle), `a59f11f` (`Styled`), `0dfa462` (the slice's code and tests, in one commit, since most of `src/main.rs` changed for both halves at once), `51958aa` (DESIGN.md §2.1 and §4.4), `9765c91` (this readme and PLAN.md's status), `2b0a767` (review 1), then review 1's fixes, `e76eabb` to `af02b3b`, and the flaky lock test's fix, `290eeed` ([Fixes after review 1](#fixes-after-review-1)), with their docs in `3e1824a`, `0a91129`, `90fad8d` and `9434db1`. Then `a335a8d` (review 2) and its fixes, `d13574a` to `0168196` ([Fixes after review 2](#fixes-after-review-2)) |
 | Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/` |
-| Tests | 194: 39 in `tests/create_and_list.rs`, 34 in `tests/organise.rs`, 27 in `tests/states.rs`, 24 in `tests/show_and_delete.rs`, 14 in `tests/item_files.rs`, 11 in `tests/docs_links.rs`, 10 in `tests/bad_data.rs`, 9 in `tests/polish.rs`, 7 in `tests/fixtures.rs`, 6 in `tests/output.rs`, 4 each in `tests/schemas.rs` and `tests/store_writes.rs`, 2 in `tests/item_ids.rs`, 2 unit tests in `src/main.rs` and 1 in `src/store.rs` |
+| Tests | 197: 39 in `tests/create_and_list.rs`, 34 in `tests/organise.rs`, 27 in `tests/states.rs`, 24 in `tests/show_and_delete.rs`, 14 in `tests/item_files.rs`, 13 in `tests/bad_data.rs`, 11 in `tests/docs_links.rs`, 9 in `tests/polish.rs`, 7 in `tests/fixtures.rs`, 6 in `tests/output.rs`, 4 each in `tests/schemas.rs` and `tests/store_writes.rs`, 2 in `tests/item_ids.rs`, 2 unit tests in `src/main.rs` and 1 in `src/store.rs` |
 
 ## Contents
 
@@ -21,6 +21,7 @@ After slice 5 you can **keep working past a corrupt file, and get help text, col
 - [Testing](#testing)
 - [Decisions worth knowing](#decisions-worth-knowing)
 - [Fixes after review 1](#fixes-after-review-1)
+- [Fixes after review 2](#fixes-after-review-2)
 - [Still open](#still-open)
 - [Limits, and what later slices change](#limits-and-what-later-slices-change)
 
@@ -28,9 +29,9 @@ After slice 5 you can **keep working past a corrupt file, and get help text, col
 
 **Built:**
 
-- **A corrupt item file costs one item.** `list` and `project list` skip any item file that can't be read as the item its name says: JSON that doesn't parse, a value this version doesn't know (such as `"status": "closed"`), a file that isn't UTF-8, an empty file, a folder named like an item file, a file whose name and `id` disagree, or one whose `project` and ID disagree. Each is reported on stderr with its name, the parser's line and column, the reason, and what to do. The list says after its rows that something was left out, and `--json` lists the files as `skipped`.
+- **A corrupt item file costs one item.** `list` and `project list` skip any item file that can't be read as the item its name says: JSON that doesn't parse, a value this version doesn't know (such as `"status": "closed"`), a file that isn't UTF-8, an empty file, anything that isn't a regular file once symlinks are followed (a folder or pipe named like an item file, or a symlink whose target is missing or loops), which is never opened, a file whose name and `id` disagree, or one whose `project` and ID disagree. Each is reported on stderr with its name, the parser's line and column, the reason, and what to do. The list says after its rows that something was left out, and `--json` lists the files as `skipped`.
 - **A command that names a corrupt item refuses with exit 3**, with the same name, line, reason and fix, such as `tracker show BM-2`.
-- **Every I/O error says what to do.** A file or folder the store can't read, write, create or lock names the path and the system's reason, and for a permission problem, how to check and fix it. A `config.json` or `counters.json` that doesn't parse names the line, the column, the reason, and what the file should hold.
+- **Store errors say what to do.** A file or folder the store can't read, write, create or lock names the path and the system's reason, and for a permission problem, how to check and fix it, with the path quoted so the command works pasted. A store folder that's a file, or a symlink to nowhere, says so. A `config.json` or `counters.json` that doesn't parse names the line, the column, the reason, and what the file should hold.
 - **A missing store** says "Run `tracker init`." for every command, as it did, and a store missing only `config.json` now says that `init` puts it back, rather than that there's no store at all.
 - **Colour** through anstream and anstyle: bold headings in `list`, `project list` and `show`, each state and priority in its own colour, the new state after a move, and a red `error:` and a yellow `warning:` on stderr. anstream drops the codes when the output isn't a terminal, or `NO_COLOR` is set.
 - **`--help` on every command and flag.** The top level now says where the store is, how to start, and what the exit codes mean, and `init`, `project add`, `create`, `start` and `show` say more under `--help`.
@@ -163,7 +164,9 @@ The exit codes were 1 for the missing store and the long title, 3 for `show BM-2
 | Not UTF-8 | none | it isn't UTF-8 text | the same |
 | An empty file | 1 | `EOF while parsing a value` | the same |
 | A folder named like an item file | none | it's a folder, not a file | move it out of `items/` |
+| Anything else that isn't a regular file, such as a pipe or a link to `/dev/null` | none | it isn't a regular file | move it out of `items/` |
 | A symlink to a file that doesn't exist | none | it's a symlink to a file that doesn't exist | remove it from `items/` |
+| A symlink that can't be followed for another reason, such as a loop | none | it's a symlink that can't be followed, and the system's reason | remove it from `items/` |
 | A name that isn't an ID, such as `notes.json` | none | it isn't named after an item ID | move it out of `items/` |
 | Name and `id` disagree, such as a copy | none | it holds the item `"XX-1"`, but its name says XX-9 | rename the file or fix its `"id"` |
 | `project` and the ID disagree | none | it's in project `"YY"`, but its ID XX-1 says XX | fix its `"project"` |
@@ -171,6 +174,8 @@ The exit codes were 1 for the missing store and the long title, 3 for `show BM-2
 The last three were refused with exit 3 before this slice. §4.4 checks them when a file is read, and they now cost one item like a parse error does, rather than the whole list. A command that names the item still refuses: `load_item` and `load_item_with_text` read through `item_text` and the same `check_item`, and turn a `Skipped` into an exit-3 error with the same details.
 
 A file that's gone by the time `load_items` reads it, because a `delete` removed it after the folder was listed, is left out without a word: `list` takes no lock, and that item is gone. `read_listed` reads each file and says which of the three it was: an item, a skipped file, or gone.
+
+Before reading anything, `read_listed` and `item_text` ask `entry_at` what's there, following symlinks but without opening it. Only a regular file is read. Anything else is skipped, or refused by a command that names it, which keeps a pipe from making a command wait forever, a writing one while it holds the lock, and a device such as `/dev/zero` from being read without end.
 
 A file or folder that can't be read at all is different. If `items/` or an item file has no read permission, `load_items` fails with exit 3, since that's a problem with the store, not with one item, and skipping it would hide every item in it.
 
@@ -180,10 +185,10 @@ A file or folder that can't be read at all is different. If `items/` or an item 
 
 Two helpers in [src/error.rs](../src/error.rs) build every store error:
 
-- `error::io(doing, path, e)` for a file or folder: "Can't read …/counters.json: Permission denied (os error 13).", then, for a permission problem, how to check it with `ls -ld` and that the store should be yours. `error::io_in_store` adds, for a missing file, to run `tracker init`, and is used only for what `init` creates: the store's folder, `config.json`, `counters.json`, `items/`, the lock, and a file written into one of those folders. A missing item file isn't one of them.
+- `error::io(doing, path, e)` for a file or folder: "Can't read …/counters.json: Permission denied (os error 13).", then, for a permission problem, how to check it with `ls -ld` and that the store should be yours. When a folder above the path hides it, `ls -ld` names that folder, since it couldn't see the path itself. `error::shell_quote` puts the path in single quotes when it holds a space, a quote or anything else a shell would read differently, so the command works pasted. `error::io_in_store` adds, for a missing file, to run `tracker init`, and is used only for what `init` creates: the store's folder, `config.json`, `counters.json`, `items/`, the lock, and a file written into one of those folders. A missing item file isn't one of them.
 - `error::parse(path, e, fix)` for a JSON file: "Can't parse …/config.json, line 3, column 5: expected `,` or `}`.", then `fix`. `config.json`'s fix points to §4.2's layout and says every command refuses until it parses. `counters.json`'s says what it maps and that each counter must be above the highest number used.
 
-`Store::require_exists` gives the unreadable store its own message, with `ls -ld` and `chmod u+rwx` for the store's folder, since that's what a `chmod 000` breaks. `Store::locate` refuses a store folder that's a file, or that has a file where a folder above it should be, with exit 3 and which path it is.
+`Store::require_exists` gives the unreadable store its own message, with `ls -ld` and `chmod u+rwx` for the store's folder, since that's what a `chmod 000` breaks. `Store::locate` refuses a store folder that's a file or a symlink that can't be followed, or that has one where a folder above it should be, with exit 3 and which path it is. For a symlink, it names the target and says to create it.
 
 ### Colour
 
@@ -265,8 +270,8 @@ No other JSON changed. The text changed in many places, which §3 allows: `list`
 ## Code tour
 
 - [src/styled.rs](../src/styled.rs) (new): `Styled`, its `render`, and the styles for headings, states, priorities, `error:` and `warning:`.
-- [src/error.rs](../src/error.rs): `error::io`, `error::io_in_store`, `error::parse`, `error::json_problem`, which splits a serde_json error into line, column and reason, and `error::at`.
-- [src/store.rs](../src/store.rs): `Skipped`, `check_item`, `load_items` returning the skipped files, `item_text` reporting a file that isn't UTF-8 or a broken symlink, `read_listed`, `check_not_a_file`, `update_item` refusing only unknown fields, and `require_exists`'s messages.
+- [src/error.rs](../src/error.rs): `error::io`, `error::io_in_store`, `error::shell_quote`, `error::parse`, `error::json_problem`, which splits a serde_json error into line, column and reason, and `error::at`.
+- [src/store.rs](../src/store.rs): `Skipped`, `check_item`, `load_items` returning the skipped files, `item_text` reporting a file that isn't UTF-8 or isn't a regular file, `read_listed`, `entry_at`, `check_not_a_file`, `update_item` refusing only unknown fields, and `require_exists`'s messages.
 - [src/config.rs](../src/config.rs): the fix for a `config.json` that doesn't parse.
 - [src/main.rs](../src/main.rs): `Output` carries `Styled` text and `warnings`, `print_out` and `report` write through anstream, `styled_table`, `list_table` and `empty_list` for `list`, `skipped_json`, `skipped_warnings` and `skipped_note`, `section` for `show`, `MAX_TITLE`, the new help text, and the two unit tests.
 - [tests/bad_data.rs](../tests/bad_data.rs) (new) and [tests/polish.rs](../tests/polish.rs) (new): this slice's tests.
@@ -287,7 +292,7 @@ Every _Done when_ check in [PLAN.md's slice 5](PLAN.md#slice-5-bad-data-and-poli
 
 | _Done when_ | Tests |
 | --- | --- |
-| A hand-corrupted item file is reported with its name, line and reason, and the other items still list | `a_hand_corrupted_item_file_is_reported_and_the_others_still_list` in `tests/bad_data.rs`: the JSON's `skipped` with line 4, column 3 and the reason, stderr's warning with the name, line, reason and fix, stdout's note, `project list`'s counts, `show` and `start` refusing with the same details, and the file left as it was. Also `a_file_with_an_unknown_value_is_skipped_with_the_parsers_reason`, `a_file_that_isnt_utf8_or_is_empty_or_is_a_folder_is_skipped`, and the three `…_is_skipped` tests in `tests/item_files.rs` |
+| A hand-corrupted item file is reported with its name, line and reason, and the other items still list | `a_hand_corrupted_item_file_is_reported_and_the_others_still_list` in `tests/bad_data.rs`: the JSON's `skipped` with line 4, column 3 and the reason, stderr's warning with the name, line, reason and fix, stdout's note, `project list`'s counts, `show` and `start` refusing with the same details, nothing on stderr with `--json`, and the file left as it was. Also `a_file_with_an_unknown_value_is_skipped_with_the_parsers_reason`, `a_file_that_isnt_utf8_or_is_empty_or_is_a_folder_is_skipped`, `a_symlink_to_a_missing_file_is_skipped_and_named_without_suggesting_init`, `an_entry_that_isnt_a_regular_file_is_skipped_and_never_read`, and the three `…_is_skipped` tests in `tests/item_files.rs` |
 | With no store, commands say "Run `tracker init`." and never panic | `without_a_store_every_command_says_run_tracker_init`: every command, as JSON and as text, with no "panicked" on stderr and nothing created. Also `a_store_missing_only_config_json_says_to_put_it_back` |
 | A store with `chmod 000` exits 3 | `a_store_with_chmod_000_exits_3`: every command, `init` included, says how to check the permissions and doesn't panic. Also `an_items_folder_with_chmod_000_exits_3`. Both skip themselves where permissions don't apply, as for root; on macOS, where they were run, neither skipped |
 | No temporary files are left in the store after any command | `no_temporary_files_are_left_in_the_store_after_any_command`, which checks the whole store after every command, including refusals, a delete typed at a terminal under `script`, and a `create` that can't write. `tests/store_writes.rs` still covers `write_file` itself |
@@ -340,6 +345,21 @@ Every _Done when_ check in [PLAN.md's slice 5](PLAN.md#slice-5-bad-data-and-poli
 | A flaky test, found while fixing the above: `lock_unchanged_holds_the_lock_only_while_the_file_is_as_it_was` failed once | `290eeed` | A lock is released when its file is closed, but a process that another test in the binary starts gets a copy of every open file, the lock's included, until its program runs. A probe measured it on macOS: with processes being started, about 1 drop in 100 left the lock held, for at most 0.2 ms, and none without. The test now retries the lock for up to 5 seconds after the drop, through `locks_within`. A tracker command has one thread, so this only affects tests | A temporary test that dropped the lock 3,000 times while another thread started processes failed 69 times with the old check, and passed with the new one. With the drop left out, the test still fails |
 | Test gap 4: no fixture saved by slice 5 | `af02b3b` | `tests/fixtures/slice-5/`: XX-9 open, with every field and an edit with `fields`, `kind_before` and `labels_removed`; XX-10 in progress; XX-11 done and unchecked; XX-12 reopened from done, so with `previous_verification`, then shelved. Review can't be reached until slice 9 | `slice_5_wrote_four_fixtures_one_in_each_state`, and the four fixture tests that load, list and show every fixture |
 
+## Fixes after review 2
+
+[Review 2](reviews/slice-5-review-2.md) found three bugs, one security problem, one place where DESIGN.md was unclear, and three test gaps. Each fix is its own commit, with its tests, and each test was seen failing first:
+
+| Finding | Commit | What changed | Tests |
+| --- | --- | --- | --- |
+| Bug 1: a symlink loop stopped the whole list, and a pipe made `list` and `show` hang | `d13574a` | `entry_at` looks at each entry in `items/`, following symlinks, before anything reads it. Only a regular file is read. A folder, a pipe, a device, or a symlink whose target is missing or loops is skipped by a listing and refused, with exit 3, by a command that names it | `an_entry_that_isnt_a_regular_file_is_skipped_and_never_read` in `tests/bad_data.rs`: a self-loop, a two-link loop, a link to `/dev/null` and a pipe, through `list`, `project list`, `show`, `start`, `edit` and `delete`, each stopped after 10 seconds so a hang fails rather than stalls the suite. It failed on the loop before the fix, and on the 10-second limit with the pipe check taken out |
+| Security 4: a pipe made `start` and `edit` hang while holding the lock, so every writing command waited | `d13574a`, with bug 1 | `item_text`, which every command that names an item reads through, refuses the pipe before opening it, so slice 8's `submit` and slice 9's `approve` get this too | The same test's `start` and `edit` on the pipe |
+| Finding 5: §4.4 listed the skipped cases one at a time | `e6dea25` | §4.4 gives the rule: anything in `items/` that isn't a regular file once symlinks are followed is skipped, and never opened | `tests/docs_links.rs` still passes |
+| Bug 2: `TRACKER_HOME` as a symlink to nowhere said "Run `tracker init`", and `init` said "File exists" | `4999b7f` | `check_not_a_file` also refuses a store folder that is, or sits under, a symlink that can't be followed, naming the link and its target and saying to create the target. A relative link's target is shown from the link's folder | `a_store_folder_that_is_a_symlink_to_nothing_is_named_with_how_to_fix_it`: every command, `init` included, a link above the store's folder, and `~/.tracker`, with nothing created where the links point |
+| Bug 3: the suggested `ls -ld` and `chmod` didn't quote the path | `6781f4e` | `error::shell_quote` single-quotes a path that needs it, in `error::io` and `require_exists`. Making the test run the commands also showed that `ls -ld` named an item file a locked `items/` hides, so `error::io` now names the deepest part of the path that can be looked at | `the_commands_a_permission_message_suggests_work_when_pasted`: a store named `it's my store`, locked and with `items/` locked, running each suggested command through `sh` |
+| Test gap 1: no test of a loop or a pipe | `d13574a` | With bug 1 | |
+| Test gap 2: no test of `TRACKER_HOME` as a symlink to nowhere | `4999b7f` | With bug 2 | |
+| Test gap 3: nothing checked that `list --json` keeps stderr empty | `0168196` | `a_hand_corrupted_item_file_is_reported_and_the_others_still_list` checks stderr for `list --json` and `project list --json`. Seen failing with the warnings printed under `--json` too | |
+
 ## Still open
 
 Everything here but the first group is carried over from [slice 4's readme](slice-4-readme.md#still-open).
@@ -347,7 +367,8 @@ Everything here but the first group is carried over from [slice 4's readme](slic
 **This slice**
 
 - **Review 1 isn't independent.** It was written in the same session that built the slice, so PLAN.md's #adversarial-review matters more here.
-- **A symlink to an item file that does exist is still followed** when read, as it has been since slice 1. A write replaces the link with a file, so nothing is written through it. Review 1 suggested skipping every symlink in `items/`, which would also stop a symlinked item from listing; only the broken ones are skipped for now.
+- **A symlink to an item file that does exist is still followed** when read, as it has been since slice 1. A write replaces the link with a file, so nothing is written through it. Review 1 suggested skipping every symlink in `items/`, which would also stop a symlinked item from listing; only the ones that can't be followed are skipped for now.
+- **A file can still change between `entry_at` looking at it and the read**, such as a regular file swapped for a pipe in that moment. Closing that gap would mean opening the file first, and a pipe blocks on open too. Only a hand edit timed to the instant could hit it.
 - **The code and its tests landed as one commit** (`0dfa462`), as slices 2–4 did, though the earlier reviews asked for one commit per step. The colour module and the dependencies are their own commits.
 - **`delete` can't remove a corrupt item file.** The file can be repaired and then deleted, or moved out of `items/` by hand, which leaves no line in `deleted.json` for slice 16's digest. A delete that records only the ID would need `deleted.schema.json` to allow a record without a title and state.
 - **A temporary file left by a crash stays.** A command that dies between creating its temporary file and renaming it, such as one killed with `kill -9`, leaves `XX-1.json.4242.tmp` behind. Every listing ignores it, and the next write uses its own process ID, so nothing breaks, but nothing removes it either. `audit` (slice 16) could report it.
