@@ -59,7 +59,9 @@ impl Store {
                 Ok(Store { home })
             }
             None => Err(Error::store(
-                "Neither TRACKER_HOME nor HOME is set, so there's no store to use.".to_string(),
+                "Neither TRACKER_HOME nor HOME is set, so there's no store to use. Set \
+                 TRACKER_HOME to the store's folder, an absolute path such as /Users/me/.tracker."
+                    .to_string(),
             )),
         }
     }
@@ -369,7 +371,10 @@ impl Store {
                 if is_broken_symlink(&path) {
                     return Err(broken_symlink(&path).error());
                 }
-                Err(Error::input(format!("There's no item {id}.")))
+                Err(Error::input(format!(
+                    "There's no item {id}. `tracker list --all --status \
+                     open,in-progress,review,done,shelved` lists every item."
+                )))
             }
             Err(e) if e.kind() == ErrorKind::InvalidData => Err(not_utf8(&path).error()),
             Err(e) => Err(error::io("read", &path, &e)),

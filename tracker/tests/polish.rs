@@ -1,5 +1,6 @@
 //! Slice 5's polish: `--help` on every command, colour only on a terminal,
-//! empty states, `list`'s heading row, and the longest title.
+//! empty states, `list`'s heading row, the longest title, and error
+//! messages that say how to fix the problem.
 
 mod common;
 
@@ -322,4 +323,72 @@ fn a_title_can_be_at_most_200_characters() {
         assert!(message.contains("--description"), "{message}");
     }
     assert_eq!(env.item("XX-1")["title"], longest.as_str());
+}
+
+#[test]
+fn common_errors_say_how_to_fix_the_problem() {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+
+    // An ID that names no item, from every command that takes one.
+    for args in [
+        &["show", "XX-9"][..],
+        &["edit", "XX-9", "--priority", "low"],
+        &["start", "XX-9"],
+        &["submit", "XX-9"],
+        &["shelve", "XX-9", "--reason", "later"],
+        &["reopen", "XX-9", "--reason", "back"],
+        &["status", "XX-9", "open", "--reason", "back"],
+        &["delete", "XX-9"],
+    ] {
+        assert_eq!(
+            env.error(args, 1),
+            "There's no item XX-9. `tracker list --all --status \
+             open,in-progress,review,done,shelved` lists every item.",
+            "{args:?}"
+        );
+    }
+
+    let root = env.dir("yy");
+    let root = root.to_str().unwrap();
+    assert_eq!(
+        env.error(&["project", "add", "YY", "--name", " ", "--root", root], 1),
+        "A project's --name can't be empty. Give it a readable name, such as --name bookmarks."
+    );
+
+    let nope = env.work.path().join("nope");
+    let message = env.error(
+        &[
+            "project",
+            "add",
+            "YY",
+            "--name",
+            "y",
+            "--root",
+            nope.to_str().unwrap(),
+        ],
+        1,
+    );
+    assert!(
+        message.starts_with(&format!("Can't use {} as a project root: ", nope.display())),
+        "{message}"
+    );
+    assert!(
+        message.ends_with(". Check the path, or create the folder first."),
+        "{message}"
+    );
+
+    let output = env
+        .cmd()
+        .env_remove("TRACKER_HOME")
+        .env_remove("HOME")
+        .args(["list", "--json"])
+        .assert()
+        .code(3);
+    let error = common::parse(&output.get_output().stdout);
+    assert_eq!(
+        error["error"],
+        "Neither TRACKER_HOME nor HOME is set, so there's no store to use. Set TRACKER_HOME to \
+         the store's folder, an absolute path such as /Users/me/.tracker."
+    );
 }

@@ -482,14 +482,16 @@ fn project_add(
     let name = name.trim();
     if name.is_empty() {
         return Err(Error::input(
-            "A project's --name can't be empty.".to_string(),
+            "A project's --name can't be empty. Give it a readable name, such as --name \
+             bookmarks."
+                .to_string(),
         ));
     }
     check_printable(name, "A project's --name", "Use plain text.")?;
 
     let root = std::fs::canonicalize(root).map_err(|e| {
         Error::input(format!(
-            "Can't use {} as a project root: {e}",
+            "Can't use {} as a project root: {e}. Check the path, or create the folder first.",
             root.display()
         ))
     })?;
