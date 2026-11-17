@@ -718,6 +718,34 @@ fn delete_appends_to_a_deleted_json_with_no_final_newline() {
     assert_eq!(records[1]["id"], "XX-1");
 }
 
+#[test]
+fn a_delete_run_again_after_a_crash_doesnt_list_it_twice() {
+    // A crash between writing XX-1's line and removing its file leaves the
+    // line and the file. Another delete has been listed since. Running the
+    // delete again removes the file and keeps the one line for XX-1, so
+    // the digest won't list the delete twice (review 2's bug 2).
+    let env = env_with_project();
+    env.create("XX", "a");
+    let log = env.home.path().join("deleted.json");
+    let lines = concat!(
+        r#"{"id":"XX-1","title":"a","status":"open","at":"2026-11-17T12:00:00Z","interactive":true}"#,
+        "\n",
+        r#"{"id":"YY-1","title":"t","status":"open","at":"2026-11-17T12:05:00Z","interactive":true}"#,
+        "\n",
+    );
+    fs::write(&log, lines).unwrap();
+
+    let Some((output, ok)) = env.in_terminal_typing(&["delete", "XX-1"], PROMPT, "XX-1", || {})
+    else {
+        return;
+    };
+    assert!(ok, "{output}");
+    assert!(output.contains("Deleted XX-1."), "{output}");
+    assert!(!env.item_path("XX-1").exists());
+    assert_eq!(fs::read_to_string(&log).unwrap(), lines);
+    assert_eq!(deleted(&env).len(), 2);
+}
+
 #[cfg(unix)]
 #[test]
 fn a_delete_whose_file_cant_be_removed_takes_its_record_back_out() {

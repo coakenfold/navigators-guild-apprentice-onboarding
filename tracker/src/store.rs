@@ -352,19 +352,37 @@ impl Store {
     /// delete that's listed but didn't happen, which I'd notice, rather than
     /// one that happened unlisted. If the file can't be removed, the record
     /// is taken back out.
+    ///
+    /// Running the delete again after such a crash finds the item's line
+    /// already there, so it only removes the file, and the digest doesn't
+    /// list one delete twice. IDs are never reused, so a line with this ID
+    /// can only be from that delete.
     pub fn delete_item(&self, id: &str, record: &str) -> Result<()> {
         let path = self.item_path(id)?;
         let log = self.deleted_path();
         let before = self.read_deleted()?;
-        let mut text = before.clone();
-        if !text.is_empty() && !text.ends_with('\n') {
+        let already_listed = before.lines().any(|line| {
+            serde_json::from_str::<serde_json::Value>(line)
+                .is_ok_and(|earlier| earlier["id"].as_str() == Some(id))
+        });
+        if !already_listed {
+            let mut text = before.clone();
+            if !text.is_empty() && !text.ends_with('\n') {
+                text.push('\n');
+            }
+            text.push_str(record);
             text.push('\n');
+            write_file(&log, &text)?;
         }
-        text.push_str(record);
-        text.push('\n');
-        write_file(&log, &text)?;
 
         if let Err(e) = fs::remove_file(&path) {
+            if already_listed {
+                return Err(Error::store(format!(
+                    "Can't remove {}: {e}. deleted.json already lists it, from an earlier \
+                     delete that didn't finish.",
+                    path.display()
+                )));
+            }
             let put_back = if before.is_empty() {
                 fs::remove_file(&log).is_ok()
             } else {
