@@ -592,6 +592,24 @@ fn list_filters_combine() {
     assert!(text.contains("label \"bug\""), "{text}");
 }
 
+#[test]
+fn two_label_filters_keep_items_with_both() {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    create(&env, "XX", "both", &["--label", "bug", "--label", "ui"]);
+    create(&env, "XX", "bug only", &["--label", "bug"]);
+    create(&env, "XX", "ui only", &["--label", "ui"]);
+
+    assert_eq!(listed(&env, &["--label", "bug", "--label", "UI"]), ["XX-1"]);
+    assert_eq!(
+        listed(&env, &["--label", "bug", "--label", "bug"]),
+        ["XX-1", "XX-2"]
+    );
+
+    let text = list_text(&env, &env.outside(), &["--label", "bug", "--label", "ui"]);
+    assert!(text.contains("labels \"bug\" and \"ui\""), "{text}");
+}
+
 /// A store with one XX item in each state: XX-1 open, XX-2 in-progress,
 /// XX-3 in review (set by hand, since only slice 9's triggers reach it),
 /// XX-4 done and XX-5 shelved.

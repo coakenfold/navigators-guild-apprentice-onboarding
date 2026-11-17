@@ -171,9 +171,10 @@ struct ListArgs {
     /// Only items with this priority
     #[arg(long, value_parser = priorities())]
     priority: Option<String>,
-    /// Only items with this label
-    #[arg(long)]
-    label: Option<String>,
+    /// Only items with this label. Repeat it to keep items with every
+    /// label named
+    #[arg(long = "label", value_name = "LABEL")]
+    labels: Vec<String>,
     /// Only items of this kind
     #[arg(long, value_parser = kinds())]
     kind: Option<String>,
@@ -846,7 +847,8 @@ const ACTIVE: [Status; 3] = [Status::Open, Status::InProgress, Status::Review];
 /// grouped by project and sorted by priority, highest first.
 fn list(store: &Store, args: ListArgs) -> Result<Output> {
     store.require_exists()?;
-    let label = args.label.as_deref().map(check_label).transpose()?;
+    let mut labels = Vec::new();
+    add_labels(&mut labels, &check_labels(&args.labels)?);
     let config = config::load(store)?;
     let mut items = store.load_items()?;
     let store_is_empty = items.is_empty();
@@ -906,7 +908,7 @@ fn list(store: &Store, args: ListArgs) -> Result<Output> {
             && statuses.contains(&item.status)
             && priority.is_none_or(|priority| item.priority == priority)
             && kind.is_none_or(|kind| item.kind == kind)
-            && label.as_ref().is_none_or(|label| item.labels.contains(label))
+            && labels.iter().all(|label| item.labels.contains(label))
             // A file written by slice 2 can hold a verification record on
             // a shelved item, so the state is checked too.
             && by.is_none_or(|by| {
@@ -973,8 +975,10 @@ fn list(store: &Store, args: ListArgs) -> Result<Output> {
     if let Some(priority) = priority {
         filters.push(format!("priority {}", priority.as_str()));
     }
-    if let Some(label) = &label {
-        filters.push(format!("label \"{label}\""));
+    if !labels.is_empty() {
+        let quoted: Vec<String> = labels.iter().map(|label| format!("\"{label}\"")).collect();
+        let noun = if labels.len() == 1 { "label" } else { "labels" };
+        filters.push(format!("{noun} {}", states::join(&quoted, "and")));
     }
     if let Some(kind) = kind {
         filters.push(format!("kind {}", kind.as_str()));
