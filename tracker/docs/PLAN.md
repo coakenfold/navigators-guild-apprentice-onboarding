@@ -41,7 +41,7 @@ The stack, where things live, the conventions and the test command are in `guild
 | 2   | States                          | start, submit, shelve and reopen items, with history kept                                             | 1          | —             | merged |
 | 3   | Organise and filter             | set priority, kind and labels, edit items, filter a sorted list                                       | 2          | —             | merged |
 | 4   | Show and delete                 | see an item's full record, and delete one from a real terminal                                        | 3          | —             | merged |
-| 5   | Bad data and polish             | keep working past a corrupt file; get help text, colour and empty states                              | 4          | —             | in review |
+| 5   | Bad data and polish             | keep working past a corrupt file; get help text, colour and empty states                              | 4          | —             | merged |
 |     | _Checkpoint: course submission_ |                                                                                                       |            |               |        |
 | 6   | Criteria and simple gates       | write Done-when criteria; get refused when they're missing or incomplete                              | 5          | —             | todo   |
 |     | _Checkpoint: self-tracking_     |                                                                                                       |            |               |        |
