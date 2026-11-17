@@ -612,3 +612,73 @@ fn delete_appends_to_a_deleted_json_with_no_final_newline() {
     assert_eq!(records[0]["id"], "YY-1");
     assert_eq!(records[1]["id"], "XX-1");
 }
+
+#[cfg(unix)]
+#[test]
+fn a_delete_whose_file_cant_be_removed_takes_its_record_back_out() {
+    // `delete_item` writes the record first, so a crash leaves a delete
+    // listed but not done. If the file then can't be removed, the record
+    // comes back out: deleted.json is put back as it was, or removed if
+    // the delete created it.
+    use std::os::unix::fs::PermissionsExt;
+    use tracker::store::Store;
+
+    let env = env_with_project();
+    env.create("XX", "a");
+    let store = Store {
+        home: env.home.path().to_path_buf(),
+    };
+    let items = env.home.path().join("items");
+    let log = env.home.path().join("deleted.json");
+    let item_before = fs::read(env.item_path("XX-1")).unwrap();
+    let record = r#"{"id":"XX-1","title":"a","status":"open","at":"2026-11-17T12:00:00Z","interactive":true}"#;
+    let earlier = r#"{"id":"YY-1","title":"t","status":"open","at":"2026-11-15T22:01:56Z","interactive":true}"#.to_string() + "\n";
+
+    // Files can't be removed from items/, but the store's folder, where
+    // deleted.json is written, is untouched.
+    fs::set_permissions(&items, fs::Permissions::from_mode(0o500)).unwrap();
+    if fs::write(items.join("probe"), "").is_ok() {
+        // Permissions aren't enforced here, as for root, so the removal
+        // can't be made to fail.
+        let _ = fs::remove_file(items.join("probe"));
+        fs::set_permissions(&items, fs::Permissions::from_mode(0o700)).unwrap();
+        eprintln!("Skipped: permissions aren't enforced for this user.");
+        return;
+    }
+    let first = store.delete_item("XX-1", record);
+    let first_left_log = log.exists();
+    fs::write(&log, &earlier).unwrap();
+    let second = store.delete_item("XX-1", record);
+    fs::set_permissions(&items, fs::Permissions::from_mode(0o700)).unwrap();
+
+    // With no deleted.json before, the one just created is removed.
+    let error = first.unwrap_err();
+    assert_eq!(error.code, 3);
+    assert!(
+        error.message.contains("Nothing was deleted."),
+        "{}",
+        error.message
+    );
+    assert!(!first_left_log);
+    // With one before, it's put back byte for byte.
+    let error = second.unwrap_err();
+    assert_eq!(error.code, 3);
+    assert!(
+        error.message.contains("Nothing was deleted."),
+        "{}",
+        error.message
+    );
+    assert_eq!(fs::read_to_string(&log).unwrap(), earlier);
+    // The item is untouched, and no temporary file is left in either folder.
+    assert_eq!(fs::read(env.item_path("XX-1")).unwrap(), item_before);
+    for dir in [env.home.path(), items.as_path()] {
+        for entry in fs::read_dir(dir).unwrap() {
+            let name = entry.unwrap().file_name().into_string().unwrap();
+            assert!(
+                !name.ends_with(".tmp"),
+                "{name} was left in {}",
+                dir.display()
+            );
+        }
+    }
+}
