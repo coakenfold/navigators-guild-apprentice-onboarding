@@ -367,6 +367,76 @@ fn a_store_folder_that_is_a_file_is_named_with_how_to_fix_it() {
     assert_eq!(fs::read_to_string(&file).unwrap(), "not a store");
 }
 
+// Review 2's bug 2: before, `list` said "Run `tracker init`" and `init`
+// then failed with "File exists", with nothing saying the store's folder
+// was a symlink to nowhere.
+#[cfg(unix)]
+#[test]
+fn a_store_folder_that_is_a_symlink_to_nothing_is_named_with_how_to_fix_it() {
+    let env = Env::without_store();
+    let root = env.dir("xx");
+    let nowhere = env.work.path().join("nowhere");
+    let link = env.work.path().join("store");
+    std::os::unix::fs::symlink(&nowhere, &link).unwrap();
+
+    let mut commands = every_command(&root);
+    commands.insert(0, vec!["init".to_string()]);
+    for args in commands {
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let message = store_error(&env, Some(&link), &args);
+        assert_eq!(
+            message,
+            format!(
+                "TRACKER_HOME names {}, a symlink to {}, which doesn't exist, so it can't hold \
+                 the store. Point TRACKER_HOME at a folder, or create {}.",
+                link.display(),
+                nowhere.display(),
+                nowhere.display()
+            ),
+            "{args:?}"
+        );
+    }
+    // A link above the store's folder, and a relative link, which is
+    // followed from the folder it's in.
+    std::os::unix::fs::symlink("nowhere", env.work.path().join("up")).unwrap();
+    let inside = env.work.path().join("up").join("store");
+    let message = store_error(&env, Some(&inside), &["init"]);
+    assert_eq!(
+        message,
+        format!(
+            "TRACKER_HOME names {}, but {} is a symlink to {}, which doesn't exist, so it can't \
+             hold the store. Point TRACKER_HOME at a folder, or create {}.",
+            inside.display(),
+            env.work.path().join("up").display(),
+            nowhere.display(),
+            nowhere.display()
+        )
+    );
+
+    // With no TRACKER_HOME, ~/.tracker linking to nothing says the same.
+    let default = env.user_home().join(".tracker");
+    std::os::unix::fs::symlink(&nowhere, &default).unwrap();
+    let message = store_error(&env, None, &["list"]);
+    assert!(
+        message.starts_with(&format!(
+            "TRACKER_HOME isn't set, so the store is {}, a symlink to {}",
+            default.display(),
+            nowhere.display()
+        )),
+        "{message}"
+    );
+    assert!(
+        message.ends_with(&format!(
+            "Set TRACKER_HOME to a folder, or create {}.",
+            nowhere.display()
+        )),
+        "{message}"
+    );
+
+    // Nothing was created where the links point.
+    assert!(!nowhere.exists());
+}
+
 /// One run of every command, for the tests that need each of them.
 fn every_command(root: &Path) -> Vec<Vec<String>> {
     let root = root.to_str().unwrap();

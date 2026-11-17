@@ -741,28 +741,68 @@ fn check_item(path: &Path, text: &str) -> std::result::Result<Item, Skipped> {
     Ok(item)
 }
 
-/// Refuses, with exit 3, a store folder `home` that's a file, or that has a
-/// file where one of the folders above it should be. Otherwise every
-/// command would fail with "Not a directory" on a file inside it, and
-/// `init` with "File exists", neither of which says what's wrong. `named`
-/// says where `home` came from, and `instead` what else to do than move
-/// the file.
+/// Refuses, with exit 3, a store folder `home` that's a file or a symlink
+/// that can't be followed, or that has one where one of the folders above
+/// it should be. Otherwise every command would fail with "Not a directory"
+/// on a file inside it, or say "Run `tracker init`" for a symlink to
+/// nowhere, and `init` would fail with "File exists", none of which says
+/// what's wrong. `named` says where `home` came from, and `instead` what
+/// else to do than move the file or create the link's target.
 fn check_not_a_file(home: &Path, named: &str, instead: &str) -> Result<()> {
-    let Some(file) = home
-        .ancestors()
-        .find(|path| fs::metadata(path).is_ok_and(|meta| !meta.is_dir()))
-    else {
-        return Ok(());
-    };
-    let problem = if file == home {
-        "which is a file, not a folder".to_string()
-    } else {
-        format!("but {} is a file, not a folder", file.display())
-    };
-    Err(Error::store(format!(
-        "{named} {}, {problem}, so it can't hold the store. {instead}, or move the file.",
-        home.display()
-    )))
+    for path in home.ancestors() {
+        // What's at `path`, whether it's a file rather than a symlink, and
+        // the fix.
+        let (what, is_file, fix) = match fs::metadata(path) {
+            // The folders above a folder are folders too.
+            Ok(meta) if meta.is_dir() => return Ok(()),
+            Ok(_) => (
+                "a file, not a folder".to_string(),
+                true,
+                "move the file".to_string(),
+            ),
+            Err(e) => {
+                let is_link =
+                    fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink());
+                let Some(target) = fs::read_link(path).ok().filter(|_| is_link) else {
+                    // Not there yet, which `init` puts right.
+                    continue;
+                };
+                // A relative link is followed from the folder it's in.
+                let target = match path.parent() {
+                    Some(parent) if target.is_relative() => parent.join(target),
+                    _ => target,
+                };
+                if e.kind() == ErrorKind::NotFound {
+                    (
+                        format!("a symlink to {}, which doesn't exist", target.display()),
+                        false,
+                        format!("create {}", target.display()),
+                    )
+                } else {
+                    (
+                        format!(
+                            "a symlink to {}, which can't be followed: {e}",
+                            target.display()
+                        ),
+                        false,
+                        "fix the symlink".to_string(),
+                    )
+                }
+            }
+        };
+        // "names X, which is a file", but "names X, a symlink to Y, which
+        // doesn't exist", rather than two "which"es.
+        let problem = match (path == home, is_file) {
+            (true, true) => format!("which is {what}"),
+            (true, false) => what,
+            (false, _) => format!("but {} is {what}", path.display()),
+        };
+        return Err(Error::store(format!(
+            "{named} {}, {problem}, so it can't hold the store. {instead}, or {fix}.",
+            home.display()
+        )));
+    }
+    Ok(())
 }
 
 /// Creates `path`, and any missing folders above it, readable only by me
