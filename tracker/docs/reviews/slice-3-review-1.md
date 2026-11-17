@@ -21,28 +21,7 @@ Slice 3 does what the plan asks. Every _Done when_ check passes and has a test. 
 
 One real bug turned up. A label can be stored that the item schema forbids, so `create`, `edit` and `list` can print JSON that breaks the schema (finding 1). There is also one design gap that slice 3 opens: an agent can quietly take off the `needs-review` label I added, or downgrade an item's kind before `start`, and nothing reports it (finding 2). The rest is low severity, decisions that DESIGN.md doesn't record yet, test gaps, and process.
 
-## Outcome
-
-Added after the fixes. The findings below are left as written, so their line links point at `9351296`, not at the fixed code. Each fix is in its own commit, and each new test that guards a change was seen failing first. The concurrent-edit and terminal tests cover behaviour that already worked, so each was checked by breaking the code on purpose. After the fixes, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and all 134 tests pass. The fix before slice 4 came later, after the branch was merged, on `feat/tracker/slice-4` ([slice 3's readme](../slice-3-readme.md#fixed-on-slice-4s-branch)).
-
-| Finding | Resolved by |
-| --- | --- |
-| Fix before slice 4, item 1: labels with no lowercase form | `bf229d0`, on slice 4's branch: as suggested here, `create` and `edit --label` refuse a label that still holds a capital after lowercasing, naming the character. `--unlabel` still takes one, so a hand-written one can be removed. §2.1 and `--help` say so |
-| Security 2: `needs-review` and `kind` can be quietly weakened | Option (b). `f2f07de` makes an edit's history entry record `kind_before` and `labels_removed`, so slice 16's digest can tell these edits apart. DESIGN.md §2.1, §2.6, §3 and §6, and PLAN.md's slice 16, now say the digest lists every edit that removes `needs-review` or changes kind away from `capability`. Unlike (b) as written, the digest lists every such edit, marked by whether it came from a terminal, not only an agent's edits: §2.6 lists my own actions because `script` can fake a terminal. Adds fixture `slice-3/XX-8.json` |
-| Security 3: the symlinked `.tmp` file | `4a40b00`: the temporary file is named with the process ID and opened with `create_new`, so a planted symlink is refused rather than followed |
-| Low severity 4: hand-edited labels aren't matched case-insensitively | Still open. Its last point, a hand-written `["bug", "bug"]` kept through `edit`, is fixed by `1d2f64e` on slice 4's branch for an edit given `--label` or `--unlabel` |
-| Low severity 5: invisible characters in labels and titles | Still open |
-| Low severity 6: no label length limit | `47d4671`: `create` and `edit --label` refuse a label over 50 characters. `--unlabel` has no limit, so a long label written by hand can still be removed. Whether titles need a limit is now in slice 5's prompt (`5634992`) |
-| Low severity 7: strict list filters | `9daacb3` trims each `--status` value. `8f85fa4` lets `list --label` repeat, meaning items with every label named, and says so in §3 |
-| Low severity 8: no column headings in `list` | `5634992` adds them to slice 5's prompt and _Done when_ |
-| Code and DESIGN.md, items 1–4 | Recorded in §3: `e7e3071`, `40b2979`, `b238b17` and `d30b2ba` |
-| Code and DESIGN.md, item 5: `edit` on an item in review | `6fb2e70`: refused (exit 1) unless it comes from an interactive terminal, so an agent can't change a held item while I decide it. §2.2, §3 and `--help` say so |
-| Test gap 2: `edit` on an item in review | Done with `6fb2e70`, which uses `env_with_every_state` and checks that a piped edit is refused and one from a terminal works |
-| Test gap 3: concurrent edits | `4321762`: ten `edit --label` commands at once all land. Slice 2's concurrent moves are still untested |
-| Test gap 4: an edit from a terminal records `interactive: true` | `e8b3ac4`. `213c9e0` moved the `script` runner into `tests/common/mod.rs` first, so both tests share it |
-| Test gap 1: labels with no lowercase form | `bf229d0`, on slice 4's branch: `a_label_with_no_lower_case_form_is_refused`, seen failing first |
-| Test gaps 5 and 6 | Not taken |
-| Process | `901bea6` adds `docs/slice-3-readme.md`, which carries the open items forward. Still open: the `unchecked` note's tense, and PLAN.md's Status column |
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
 
 ## Done when
 
@@ -137,3 +116,26 @@ None of these is wrong in the code. Each is a decision that DESIGN.md §3 doesn'
 - **The `unchecked` note is still in the present tense** ([states.rs:37-38](../../src/states.rs#L37-L38)). Slice 2 review 2 said it was cheapest to change before slice 3. That's still true until self-tracking starts after slice 6, because only the test fixtures hold the old text.
 - **PLAN.md marks slice 3 `done` in the commit named "first pass"**, before any review, just as `54d8f66` did for slice 2. So the Status column means "built", not "built and reviewed". That's fine, but PLAN.md's intro should say so, or the status should change only after the review fixes. From slice 7 on, PLAN.md ties `done` to the item reaching done, which happens before a review too.
 - **The slice is one commit again** (`1296661`, +1518 lines across 16 files). Slice 2's readme records this as history. From slice 7 on, the work goes through `tracker start` and `submit`, and smaller commits will make T7's diff-size hold and `show --diff` easier to read.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `9351296`, not at the fixed code. Each fix is in its own commit, and each new test that guards a change was seen failing first. The concurrent-edit and terminal tests cover behaviour that already worked, so each was checked by breaking the code on purpose. After the fixes, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and all 134 tests pass. The fix before slice 4 came later, after the branch was merged, on `feat/tracker/slice-4` ([slice 3's readme](../slice-3-readme.md#fixed-on-slice-4s-branch)).
+
+| Finding | Resolved by |
+| --- | --- |
+| Fix before slice 4, item 1: labels with no lowercase form | `bf229d0`, on slice 4's branch: as suggested here, `create` and `edit --label` refuse a label that still holds a capital after lowercasing, naming the character. `--unlabel` still takes one, so a hand-written one can be removed. §2.1 and `--help` say so |
+| Security 2: `needs-review` and `kind` can be quietly weakened | Option (b). `f2f07de` makes an edit's history entry record `kind_before` and `labels_removed`, so slice 16's digest can tell these edits apart. DESIGN.md §2.1, §2.6, §3 and §6, and PLAN.md's slice 16, now say the digest lists every edit that removes `needs-review` or changes kind away from `capability`. Unlike (b) as written, the digest lists every such edit, marked by whether it came from a terminal, not only an agent's edits: §2.6 lists my own actions because `script` can fake a terminal. Adds fixture `slice-3/XX-8.json` |
+| Security 3: the symlinked `.tmp` file | `4a40b00`: the temporary file is named with the process ID and opened with `create_new`, so a planted symlink is refused rather than followed |
+| Low severity 4: hand-edited labels aren't matched case-insensitively | Still open. Its last point, a hand-written `["bug", "bug"]` kept through `edit`, is fixed by `1d2f64e` on slice 4's branch for an edit given `--label` or `--unlabel` |
+| Low severity 5: invisible characters in labels and titles | Still open |
+| Low severity 6: no label length limit | `47d4671`: `create` and `edit --label` refuse a label over 50 characters. `--unlabel` has no limit, so a long label written by hand can still be removed. Whether titles need a limit is now in slice 5's prompt (`5634992`) |
+| Low severity 7: strict list filters | `9daacb3` trims each `--status` value. `8f85fa4` lets `list --label` repeat, meaning items with every label named, and says so in §3 |
+| Low severity 8: no column headings in `list` | `5634992` adds them to slice 5's prompt and _Done when_ |
+| Code and DESIGN.md, items 1–4 | Recorded in §3: `e7e3071`, `40b2979`, `b238b17` and `d30b2ba` |
+| Code and DESIGN.md, item 5: `edit` on an item in review | `6fb2e70`: refused (exit 1) unless it comes from an interactive terminal, so an agent can't change a held item while I decide it. §2.2, §3 and `--help` say so |
+| Test gap 2: `edit` on an item in review | Done with `6fb2e70`, which uses `env_with_every_state` and checks that a piped edit is refused and one from a terminal works |
+| Test gap 3: concurrent edits | `4321762`: ten `edit --label` commands at once all land. Slice 2's concurrent moves are still untested |
+| Test gap 4: an edit from a terminal records `interactive: true` | `e8b3ac4`. `213c9e0` moved the `script` runner into `tests/common/mod.rs` first, so both tests share it |
+| Test gap 1: labels with no lowercase form | `bf229d0`, on slice 4's branch: `a_label_with_no_lower_case_form_is_refused`, seen failing first |
+| Test gaps 5 and 6 | Not taken |
+| Process | `901bea6` adds `docs/slice-3-readme.md`, which carries the open items forward. Still open: the `unchecked` note's tense, and PLAN.md's Status column |
