@@ -4,13 +4,19 @@
   "title": "tracker edit --json",
   "description": "An edit (DESIGN.md §3). When fields isn't empty, the item's last history entry is the edit just made, with the same fields. When it's empty, nothing changed and nothing was written.",
   "type": "object",
-  "required": ["fields", "item"],
+  "required": ["fields", "labels_not_found", "item"],
   "properties": {
     "fields": {
       "description": "The fields the edit changed, in the item file's order. Empty when the item already had every value given.",
       "type": "array",
       "uniqueItems": true,
       "items": { "enum": ["title", "kind", "priority", "labels", "design", "description"] }
+    },
+    "labels_not_found": {
+      "description": "The labels given to --unlabel that the item didn't have, so nothing removed them, each once, in the order given.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string" }
     },
     "item": {
       "description": "The item after the edit, exactly as its file holds it.",

@@ -199,13 +199,24 @@ fn a_wrong_output_is_caught() {
     check_schema("item", &edited);
     check_schema(
         "edit",
-        &json!({ "fields": ["priority", "labels"], "item": edited.clone() }),
+        &json!({ "fields": ["priority", "labels"], "labels_not_found": [], "item": edited.clone() }),
     );
-    check_schema("edit", &json!({ "fields": [], "item": organised.clone() }));
-    fails("edit", json!({ "item": edited.clone() }));
+    check_schema(
+        "edit",
+        &json!({ "fields": [], "labels_not_found": ["ui"], "item": organised.clone() }),
+    );
     fails(
         "edit",
-        json!({ "fields": ["status"], "item": edited.clone() }),
+        json!({ "labels_not_found": [], "item": edited.clone() }),
+    );
+    fails("edit", json!({ "fields": [], "item": organised.clone() }));
+    fails(
+        "edit",
+        json!({ "fields": [], "labels_not_found": ["ui", "ui"], "item": organised.clone() }),
+    );
+    fails(
+        "edit",
+        json!({ "fields": ["status"], "labels_not_found": [], "item": edited.clone() }),
     );
     for bad_entry in [
         // An edit names what it changed, and has no reason.

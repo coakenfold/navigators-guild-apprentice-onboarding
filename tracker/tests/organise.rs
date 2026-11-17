@@ -365,7 +365,61 @@ fn an_edit_that_changes_nothing_writes_nothing() {
         ],
     );
     assert_eq!(output["fields"], json!([]));
+    assert_eq!(output["labels_not_found"], json!(["ui"]));
     assert_eq!(fs::read(env.item_path(&id)).unwrap(), before);
+}
+
+#[test]
+fn an_unlabel_of_a_label_the_item_lacks_is_named() {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    let id = create(
+        &env,
+        "XX",
+        "a",
+        &["--label", "needs-review", "--label", "bug"],
+    );
+
+    let output = edit(
+        &env,
+        &[
+            &id,
+            "--priority",
+            "high",
+            "--unlabel",
+            "needs-reveiw",
+            "--unlabel",
+            "bug",
+            "--unlabel",
+            "NEEDS-REVEIW",
+        ],
+    );
+    assert_eq!(output["fields"], json!(["priority", "labels"]));
+    assert_eq!(output["labels_not_found"], json!(["needs-reveiw"]));
+    assert_eq!(output["item"]["labels"], json!(["needs-review"]));
+    assert_eq!(
+        output["item"]["history"][0]["labels_removed"],
+        json!(["bug"])
+    );
+
+    // The text says so after what changed, naming each label once.
+    let text = |args: &[&str]| {
+        let output = env.cmd().arg("edit").args(args).assert().success();
+        String::from_utf8(output.get_output().stdout.clone()).unwrap()
+    };
+    assert_eq!(
+        text(&[&id, "--priority", "low", "--unlabel", "needs-reveiw"]),
+        format!(
+            "Edited {id}: changed priority.\n{id} had no label \"needs-reveiw\", so it wasn't removed.\n"
+        )
+    );
+    assert_eq!(
+        text(&[&id, "--unlabel", "x", "--unlabel", "y"]),
+        format!(
+            "{id} already has those details. Nothing changed.\n\
+             {id} had no labels \"x\" or \"y\", so they weren't removed.\n"
+        )
+    );
 }
 
 #[test]

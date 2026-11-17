@@ -876,6 +876,15 @@ fn edit(store: &Store, args: EditArgs) -> Result<Output> {
         item.priority = priority;
         fields.push("priority");
     }
+    // A label given to --unlabel that the item doesn't have is named, so a
+    // typo in one such as needs-review isn't missed.
+    let mut not_found = Vec::new();
+    let missing: Vec<String> = remove
+        .iter()
+        .filter(|label| !item.labels.contains(label))
+        .cloned()
+        .collect();
+    add_labels(&mut not_found, &missing);
     let mut labels: Vec<String> = item
         .labels
         .iter()
@@ -907,7 +916,7 @@ fn edit(store: &Store, args: EditArgs) -> Result<Output> {
     }
 
     let fields: Vec<String> = fields.into_iter().map(String::from).collect();
-    let text = if fields.is_empty() {
+    let mut text = if fields.is_empty() {
         // Nothing to record, so the file isn't touched.
         format!("{id} already has those details. Nothing changed.\n")
     } else {
@@ -927,9 +936,24 @@ fn edit(store: &Store, args: EditArgs) -> Result<Output> {
         store.update_item(&item)?;
         format!("Edited {id}: changed {}.\n", states::join(&fields, "and"))
     };
+    if !not_found.is_empty() {
+        let quoted: Vec<String> = not_found
+            .iter()
+            .map(|label| format!("\"{label}\""))
+            .collect();
+        let (noun, they) = if not_found.len() == 1 {
+            ("label", "it wasn't")
+        } else {
+            ("labels", "they weren't")
+        };
+        text.push_str(&format!(
+            "{id} had no {noun} {}, so {they} removed.\n",
+            states::join(&quoted, "or")
+        ));
+    }
     Ok(Output {
         text,
-        json: json!({ "fields": fields, "item": item }),
+        json: json!({ "fields": fields, "labels_not_found": not_found, "item": item }),
     })
 }
 
