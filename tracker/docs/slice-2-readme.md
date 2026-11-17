@@ -6,10 +6,10 @@ After slice 2 you can **move an item through its lifecycle**: start it, submit i
 
 |              |                                                                                                                                                                                                                                                                 |
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Status       | Done. Every _Done when_ check passes. From [review 1](./reviews/slice-2-review-1.md), its three fixes before slice 3 and two low-severity items are done, and its five questions about DESIGN.md are settled ([below](#fixes-after-review-1)).                  |
+| Status       | Done. Every _Done when_ check passes, and so does the test command. From [review 1](./reviews/slice-2-review-1.md), its three fixes before slice 3 and two low-severity items are done, and its five questions about DESIGN.md are settled ([below](#fixes-after-review-1)). From [review 2](./reviews/slice-2-review-2.md), its fix before slice 3, three low-severity items, two DESIGN.md questions and four test gaps are done ([below](#fixes-after-review-2)). The rest is listed under [Still open](#still-open). |
 | Branch       | `feat/tracker/slice-2`                                                                                                                                                                                                                                          |
 | Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/`                                                                                                                                                                             |
-| Tests        | 93: 38 in `tests/create_and_list.rs`, 25 in `tests/states.rs`, 8 in `tests/item_files.rs`, 6 in `tests/output.rs`, 5 in `tests/docs_links.rs`, 4 in `tests/fixtures.rs`, 3 in `tests/schemas.rs`, and 2 each in `tests/item_ids.rs` and `tests/store_writes.rs` |
+| Tests        | 98: 38 in `tests/create_and_list.rs`, 27 in `tests/states.rs`, 10 in `tests/item_files.rs`, 6 each in `tests/output.rs` and `tests/docs_links.rs`, 4 in `tests/fixtures.rs`, 3 in `tests/schemas.rs`, and 2 each in `tests/item_ids.rs` and `tests/store_writes.rs` |
 
 ## Contents
 
@@ -22,6 +22,8 @@ After slice 2 you can **move an item through its lifecycle**: start it, submit i
 - [Testing](#testing)
 - [Decisions worth knowing](#decisions-worth-knowing)
 - [Fixes after review 1](#fixes-after-review-1)
+- [Fixes after review 2](#fixes-after-review-2)
+- [Still open](#still-open)
 - [Limits, and what later slices change](#limits-and-what-later-slices-change)
 
 ## What's in this slice
@@ -278,7 +280,7 @@ Every _Done when_ check in PLAN.md's slice 2 has a test in [tests/states.rs](../
 | _Prompt:_ `submit` writes `by: "unchecked"`, the time and a note            | `check_unchecked`, called from the tests above                                                                                                       |
 | _Prompt:_ each entry has `interactive`                                      | `check_last_move` checks `false` on every move, and `a_move_from_a_terminal_records_interactive_true` checks `true`                                  |
 
-Further tests cover the edges: `nothing_moves_an_item_to_review_by_hand`, `an_item_in_review_is_refused_by_every_move`, `status_refuses_a_reason_for_a_move_that_takes_none`, `a_reason_must_fit_on_one_line`, `a_reason_can_be_at_most_500_characters`, `a_move_on_a_missing_or_malformed_id_exits_1`, `a_move_finds_an_id_typed_in_lower_case`, `a_move_needs_a_store`, `list_and_project_list_show_the_new_states`, `the_text_output_names_the_move` and `help_shows_that_shelve_and_reopen_need_a_reason`. The tests added after review 1 are listed with their fixes [below](#fixes-after-review-1).
+Further tests cover the edges: `nothing_moves_an_item_to_review_by_hand`, `an_item_in_review_is_refused_by_every_move`, `status_refuses_a_reason_for_a_move_that_takes_none`, `a_reason_must_fit_on_one_line`, `a_reason_can_be_at_most_500_characters`, `a_move_on_a_missing_or_malformed_id_exits_1`, `a_move_finds_an_id_typed_in_lower_case`, `a_move_needs_a_store`, `list_and_project_list_show_the_new_states`, `the_text_output_names_the_move` and `help_shows_that_shelve_and_reopen_need_a_reason`. The tests added after each review are listed with their fixes: [review 1](#fixes-after-review-1) and [review 2](#fixes-after-review-2).
 
 **Tests read the JSON, not the wording.** Refusals are checked through `allowed`, so the messages can be reworded freely, as §3 intends. The exceptions are the reason checks, which look for "needs a reason" or "500" because those refusals have no field of their own, and the text-output and `--help` tests, whose subject is the text.
 
@@ -300,7 +302,7 @@ Review 1 checked these against the debug binary in a temporary store:
 - Five `submit` and five `shelve` commands run at once on one in-progress item: exactly one move wins.
 - A file with a field that a newer tracker would write is refused with exit 3, and nothing is written.
 
-The first two aren't automated yet ([test gap 2](#still-open-from-review-1)).
+The third is now automated as `a_move_refuses_a_file_it_would_lose_fields_from`. The first two aren't automated yet ([test gap 2](#still-open)).
 
 ## Decisions worth knowing
 
@@ -309,7 +311,7 @@ The first two aren't automated yet ([test gap 2](#still-open-from-review-1)).
 - **A move that isn't allowed exits 1, not 2.** Exit 2 means a gate refused, and none exist yet. A move the diagram doesn't draw is bad input.
 - **`updated` changes on every move**, to the move's time, which is also the history entry's `at`.
 - **`submit` returns the item next to §3's fields**, as `item`, following CLAUDE.md's rule that a command returning an item wraps it. §3's example shows it.
-- **A move on an item whose project was removed from `config.json` succeeds.** §3 says "a command that takes an item ID needs no project". Slice 7 will need the project's root, so whether that stays allowed is still to decide ([test gap 5](#still-open-from-review-1)).
+- **A move on an item whose project was removed from `config.json` succeeds.** §3 says "a command that takes an item ID needs no project". Slice 7 will need the project's root, so whether that stays allowed is still to decide ([still open](#still-open)).
 
 ## Fixes after review 1
 
@@ -351,11 +353,76 @@ These weren't fixed in this round.
 - **Finding 4, the symlinked `.tmp` file**, carried over from slice 1's review 2: a planted `<id>.json.tmp` symlink makes a move overwrite the file it points to. It needs write access to the store, which is mode 0700.
 - **Finding 5, faking `interactive`** with `script`: only DESIGN.md changed (`ee14706`). The digest will list every shelve and human action, yours included, each marked by whether it came from a terminal, and a delete will leave a line in `deleted.json` so it can be listed. §6 and §7 record the gap that's left: an agent that also edits the store to cover its tracks. The review's suggestion of having `audit` flag such entries wasn't taken, since the digest covers it.
 
-### Still open from review 1
+## Fixes after review 2
 
-- The low-severity items not listed above: a hand-edited timestamp blamed on "a newer tracker", and `status <id> closed` being refused. One file with an unknown `via` stopping `list` was fixed after review 2.
-- Test gaps 2–5: concurrent moves on one item, the "would lose fields" refusal through a move command, `created` unchanged and the text output of `shelve` and `reopen`, and a move on an item whose project isn't registered.
-- The two process points: this readme now exists, and the slice still landed as one commit.
+[slice-2-review-2.md](./reviews/slice-2-review-2.md) reviewed the branch at `44abdb8`, after review 1's fixes and the move into `docs/`. It found that the move had broken the test suite, and it raised a few things for slices 3 and 9 to rely on. As after review 1, each fix is in its own commit, and each new test was seen failing first.
+
+`cf1f600` saves the review itself.
+
+### Fix before slice 3
+
+| Finding | Commit | Fix | Tests |
+| --- | --- | --- | --- |
+| 1. The move into `docs/` broke the test suite, the links, and what the docs say about themselves | `c7dd093` | Every relative link in `docs/` and CLAUDE.md is rewritten for the new layout. The docs tests point at `docs/DESIGN.md` and check `docs/` and its subfolders. DESIGN.md §4.2's TR example and PLAN.md's self-tracking checkpoint give TR's design as `docs/DESIGN.md`. CLAUDE.md and DESIGN.md §8 describe the layout. | The `docs_links` tests, which failed at `44abdb8` |
+
+### Low severity
+
+| Finding | Commit | Fix | Tests |
+| --- | --- | --- | --- |
+| 3. One file with a `via` this version doesn't know makes `list` exit 3 for the whole store | `b892d73` | `Via::Unknown` reads any other command. The file lists, `--json` prints the command as `unknown`, and `Store::update_item` still refuses to write it back. | `a_history_entry_from_a_newer_tracker_still_lists` |
+| 6. The move table has one outcome per command and state | `dfb9579` | Settled for slice 9, nothing to change yet: `allowed` keeps a single `to` per entry and lists `submit` once for each outcome, with the same command (option A). DESIGN.md §3, `error.schema.json` and PLAN.md's slice 9 say so. | None yet. Slice 9's _Done when_ checks the two entries. |
+| 8. Shelving from in-progress skips §2.8's rules, and the readme doesn't say so | `477b1ce` | [What's in this slice](#whats-in-this-slice) and [Limits](#limits-and-what-later-slices-change) say so. | None, since it's documentation |
+
+### Design decisions
+
+| Question | Decision | Commit |
+| --- | --- | --- |
+| 1. `holds` lists only the triggers that fired, so an agent can't tell a quiet trigger from one that didn't run | `submit --json` gains `triggers`, every trigger that ran with whether it fired, between `gates` and `holds`. It's empty until slice 9, and a disabled trigger isn't listed. §3 and its example say so. | `21db5f1`, tested by `submit_prints_the_shape_section_3_gives_it` |
+| 2. §2.1 says every history entry has the same fields, but `reason` and `fields` appear only on some | §2.1 names the five fields every entry has, and the moves that add `reason`. | `2bf238c` |
+
+### Test gaps
+
+| Gap | Commit | Test |
+| --- | --- | --- |
+| 1. The docs tests don't look in `docs/reviews/` | `c7dd093`, `205c0e2` | `docs/reviews/` is checked. A review's line links are checked against the commit in its _Line references_ row, not against today's files, and a review that names no commit has its line links skipped: `a_review_names_the_commit_its_lines_point_at` |
+| 3. The "would lose fields" refusal through a move command | `087fe4e` | `a_move_refuses_a_file_it_would_lose_fields_from`: start, status and shelve on a file with a field a newer tracker writes exit 3 and leave it unchanged |
+| 4. `created` unchanged by a move | `d68d2a8` | `a_move_changes_updated_but_never_created` |
+| 6. A `via` from a later slice | `7386240` | `a_move_refuses_an_item_whose_history_has_a_command_it_doesnt_know`: submit, status and shelve exit 3 without writing, the item still lists, and other items still move |
+
+### Process
+
+- **`44abdb8` was committed with a failing test suite.** It stays in the history. `c7dd093` makes the suite pass again, so skip `44abdb8` when bisecting.
+- **The readme's status line and file references** are updated: the links by `c7dd093`, and the status line here.
+
+## Still open
+
+Neither review's remaining items are fixed yet. Where both reviews raised the same thing, it's listed once.
+
+**Security**
+
+- **The symlinked `.tmp` file** (slice 1 review 2, slice 2 review 1 finding 4, slice 2 review 2 finding 2): a planted `<id>.json.tmp` symlink makes a move overwrite the file it points to. It needs write access to the store, which is mode 0700.
+- **Faking `interactive`** (review 1 finding 5) is answered by the digest rather than by a check, as described under [Security items](#security-items).
+
+**Low severity** (review 2 numbering)
+
+- **4.** A hand-edited timestamp is blamed on "a newer tracker". Refusing is right, but the message should name the field that would change rather than guess at a newer binary. Also raised by review 1.
+- **5.** `status <id> closed` is refused, though §1 calls done "the course's 'closed' state". Accepting `closed` as an alias, or adding a hint, is a design call. Also raised by review 1.
+- **7.** A move on an item whose project isn't in `config.json` succeeds. §3 allows it today, but slices 7 and 8 need the project's root, so which commands still work without a project has to be decided by then.
+- **9.** The `unchecked` note, "No gates ran: this version of tracker has none yet…", is written into item files in the present tense, and stays there after slice 6 adds gates. A tense-free wording such as "Submitted before tracker had gates, so nothing checked the work" stays true. It's cheapest to change before slice 3, while only the test fixtures hold the old text, and those fixtures stay as they are.
+
+**DESIGN.md**
+
+- **3.** `error.schema.json` has `additionalProperties: false`, and its `allowed[].via` enum lists only today's four commands. Slices 6 and 9 must extend the schema in the same commit as the code. Its description says so for slice 6's fields, but not for the `via` enum.
+
+**Test gaps**
+
+- Concurrent moves on one item (gap 2 in both reviews). It's correct when checked by hand, but a ten-way `start` test, like slice 1's ten-way `create`, would guard the lock-then-read order in `move_item`.
+- A move on an item whose project isn't registered (gap 5 in both reviews). No test pins today's behaviour, which item 7 above may change.
+- The text output of `shelve` and `reopen` (from review 1's gap 4). `the_text_output_names_the_move` covers only `start`, `submit` and a refusal.
+
+**Process**
+
+- Slice 2 landed as one commit (`54d8f66`) rather than one per step. That's in the history and stays.
 
 ## Limits, and what later slices change
 
