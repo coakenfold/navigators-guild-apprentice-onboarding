@@ -5,7 +5,9 @@ The build order for [DESIGN.md](DESIGN.md), in 16 vertical slices. DESIGN.md is 
 - `todo`: not started.
 - `in progress`: being built.
 - `in review`: built, and its _Done when_ checks pass, but its reviews and their fixes aren't finished.
-- `done`: the last review's fixes are in, and its branch is merged into `main`. Set it in the pull request that merges the branch, not before.
+- `merged`: the last review's fixes are in, and its branch is merged into `main`. Set it in the pull request that merges the branch, not before.
+
+The last value is `merged`, not `done`, because from slice 7 on each slice also has a tracker item, whose `done` state comes earlier: when `tracker submit` passes its gates, before any review.
 
 **Approach:** layer, because this is a new project. §9 used to list 12 layers, and this plan re-sizes them rather than starting over:
 
@@ -35,9 +37,9 @@ The stack, where things live, the conventions and the test command are in `guild
 
 | #   | Slice                           | Outcome (I can…)                                                                                      | Depends on | Parallel with | Status    |
 | --- | ------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------- | ------------- | --------- |
-| 1   | Create and list                 | create items in two projects and list them from one store                                             | —          | —             | done      |
-| 2   | States                          | start, submit, shelve and reopen items, with history kept                                             | 1          | —             | done      |
-| 3   | Organise and filter             | set priority, kind and labels, edit items, filter a sorted list                                       | 2          | —             | done      |
+| 1   | Create and list                 | create items in two projects and list them from one store                                             | —          | —             | merged    |
+| 2   | States                          | start, submit, shelve and reopen items, with history kept                                             | 1          | —             | merged    |
+| 3   | Organise and filter             | set priority, kind and labels, edit items, filter a sorted list                                       | 2          | —             | merged    |
 | 4   | Show and delete                 | see an item's full record, and delete one from a real terminal                                        | 3          | —             | in review |
 | 5   | Bad data and polish             | keep working past a corrupt file; get help text, colour and empty states                              | 4          | —             | todo      |
 |     | _Checkpoint: course submission_ |                                                                                                       |            |               |           |
@@ -327,4 +329,4 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 
 ## Build loop
 
-Build one slice, then run its new checks **and** the full existing suite, commit, and move to the next slice. A regression in slice 3 should surface before later slices depend on it. From slice 7 on, the loop is `tracker start` → build → `tracker submit`, and the slice's row here becomes `in review` when its item reaches done. It becomes `done` only once its review fixes are in and its branch is merged, as for slices 1–6.
+Build one slice, then run its new checks **and** the full existing suite, commit, and move to the next slice. A regression in slice 3 should surface before later slices depend on it. From slice 7 on, the loop is `tracker start` → build → `tracker submit`, and the slice's row here becomes `in review` when its item reaches done. It becomes `merged` only once its review fixes are in and its branch is merged, as for slices 1–6.
