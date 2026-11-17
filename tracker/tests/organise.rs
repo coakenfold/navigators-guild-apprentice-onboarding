@@ -172,6 +172,37 @@ fn a_label_is_at_most_50_characters() {
 }
 
 #[test]
+fn a_label_cant_hold_a_comma() {
+    // `list` prints labels as `[a, b]`, so `a, b` would read as two.
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    let id = create(&env, "XX", "a", &["--label", "bug"]);
+    let before = fs::read(env.item_path(&id)).unwrap();
+    for args in [
+        vec!["create", "b", "--project", "XX", "--label", "a, b"],
+        vec!["create", "b", "--project", "XX", "--label", "a,b"],
+        vec!["edit", &id, "--label", "x,"],
+    ] {
+        let message = env.error(&args, 1);
+        assert!(message.contains("comma"), "{args:?}: {message}");
+    }
+    assert!(!env.item_path("XX-2").exists());
+    assert_eq!(fs::read(env.item_path(&id)).unwrap(), before);
+
+    // One written into a file by hand can still be found and removed.
+    let mut item = env.item(&id);
+    item["labels"] = json!(["bug", "a, b"]);
+    fs::write(
+        env.item_path(&id),
+        serde_json::to_string_pretty(&item).unwrap() + "\n",
+    )
+    .unwrap();
+    assert_eq!(listed(&env, &["--all", "--label", "a, b"]), [id.as_str()]);
+    let output = edit(&env, &[&id, "--unlabel", "a, b"]);
+    assert_eq!(output["item"]["labels"], json!(["bug"]));
+}
+
+#[test]
 fn an_unknown_priority_or_kind_exits_1_and_names_the_allowed_values() {
     let env = Env::new();
     env.add_project("XX", "xx");

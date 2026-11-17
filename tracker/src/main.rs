@@ -121,8 +121,8 @@ struct CreateArgs {
     /// How soon it matters. `list` shows high first
     #[arg(long, default_value = "medium", value_parser = priorities())]
     priority: String,
-    /// A label, such as bug, of at most 50 characters. Repeat it for more than one. Labels are
-    /// lowercased, and each is kept once
+    /// A label, such as bug, of at most 50 characters and with no comma. Repeat it for more than
+    /// one. Labels are lowercased, and each is kept once
     #[arg(long = "label", value_name = "LABEL")]
     labels: Vec<String>,
     /// A reference into the project's design doc, such as DESIGN.md#2.4. The file is named
@@ -145,7 +145,8 @@ struct EditArgs {
     /// A new priority
     #[arg(long, value_parser = priorities())]
     priority: Option<String>,
-    /// A label to add, such as needs-review, of at most 50 characters. Repeat it for more than one
+    /// A label to add, such as needs-review, of at most 50 characters and with no comma. Repeat it
+    /// for more than one
     #[arg(long = "label", value_name = "LABEL")]
     labels: Vec<String>,
     /// A label to remove. Repeat it for more than one
@@ -651,12 +652,19 @@ fn check_labels(labels: &[String]) -> Result<Vec<String>> {
 /// label is printed in every `list` row, so a long one widens the table.
 const MAX_LABEL: usize = 50;
 
-/// Labels being added to an item: checked as `check_labels` does, and each
-/// at most `MAX_LABEL` characters. `--unlabel` has no limit, so a long label
-/// written into a file by hand can still be removed.
+/// Labels being added to an item: checked as `check_labels` does, each at
+/// most `MAX_LABEL` characters, and with no comma, since `list` prints them
+/// as `[a, b]`. `--unlabel` has neither rule, so a label written into a file
+/// by hand can still be removed.
 fn check_new_labels(labels: &[String]) -> Result<Vec<String>> {
     let labels = check_labels(labels)?;
     for label in &labels {
+        if label.contains(',') {
+            return Err(Error::input(format!(
+                "A label can't hold a comma, and \"{label}\" does: `list` separates labels \
+                 with commas. Give each label its own --label, such as --label a --label b."
+            )));
+        }
         let length = label.chars().count();
         if length > MAX_LABEL {
             return Err(Error::input(format!(
