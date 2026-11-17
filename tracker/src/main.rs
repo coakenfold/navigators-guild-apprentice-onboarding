@@ -43,7 +43,9 @@ enum Command {
     /// Change an item's details, such as its priority or labels
     ///
     /// Adds one entry to the item's history, naming the fields that
-    /// changed. A done item can't be edited: reopen it first
+    /// changed. A done item can't be edited: reopen it first. An item in
+    /// review can be edited only from an interactive terminal, since it's
+    /// waiting for a human's decision
     Edit(EditArgs),
     /// List items, grouped by project and sorted by priority
     ///
@@ -652,7 +654,8 @@ fn check_design(design: &str) -> Result<Option<String>> {
 
 /// `edit`: changes an item's details and adds one history entry that names
 /// the fields it changed (§2.1). Refused for a done item, whose verification
-/// record is about the item as it was verified.
+/// record is about the item as it was verified, and for an item in review
+/// unless it comes from an interactive terminal.
 fn edit(store: &Store, args: EditArgs) -> Result<Output> {
     store.require_exists()?;
     let id = normalize_id(&args.id);
@@ -699,6 +702,14 @@ fn edit(store: &Store, args: EditArgs) -> Result<Output> {
             "{id} is done, so it can't be edited: its verification record is about the item as \
              it was verified. Reopen it first with `{}`.",
             states::command(&id, Via::Reopen)
+        )));
+    }
+    // A held item is mine to decide (§2.2), so only I can change it while
+    // I do. Like the human actions, this is a convention, not security (§7).
+    if item.status == Status::Review && !tty::is_interactive() {
+        return Err(Error::input(format!(
+            "{id} is in review, waiting for a human to approve or reject it, so it can only be \
+             edited from an interactive terminal. Wait for the decision."
         )));
     }
 

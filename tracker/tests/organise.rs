@@ -332,21 +332,13 @@ fn edit_finds_an_id_typed_in_lower_case() {
 }
 
 #[test]
-fn edit_works_in_every_state_but_done() {
-    let env = Env::new();
-    env.add_project("XX", "xx");
-    for title in ["open", "in progress", "shelved", "done"] {
-        env.create("XX", title);
-    }
-    env.json(&["start", "XX-2"]);
-    env.json(&["shelve", "XX-3", "--reason", "later"]);
-    env.json(&["start", "XX-4"]);
-    env.json(&["submit", "XX-4"]);
+fn edit_works_in_every_state_but_done_and_review() {
+    let env = env_with_every_state();
 
     for (id, state) in [
         ("XX-1", "open"),
         ("XX-2", "in-progress"),
-        ("XX-3", "shelved"),
+        ("XX-5", "shelved"),
     ] {
         let item = edit(&env, &[id, "--priority", "high"])["item"].clone();
         assert_eq!(item["status"], state);
@@ -365,6 +357,30 @@ fn edit_works_in_every_state_but_done() {
     // Once reopened, it can be edited again.
     env.json(&["reopen", "XX-4", "--reason", "found a bug"]);
     edit(&env, &["XX-4", "--priority", "high"]);
+
+    // A held item is mine to decide (§2.2), so an agent can't change it
+    // while I do.
+    let before = fs::read(env.item_path("XX-3")).unwrap();
+    let message = env.error(&["edit", "XX-3", "--label", "bug"], 1);
+    assert!(message.contains("review"), "{message}");
+    assert!(message.contains("terminal"), "{message}");
+    assert_eq!(fs::read(env.item_path("XX-3")).unwrap(), before);
+}
+
+#[test]
+fn i_can_edit_an_item_in_review_from_a_terminal() {
+    let env = env_with_every_state();
+    let Some(output) = env.in_terminal(&["edit", "XX-3", "--label", "bug"]) else {
+        return;
+    };
+    assert!(output.status.success(), "{output:?}");
+
+    let item = env.item("XX-3");
+    assert_eq!(item["status"], "review");
+    assert_eq!(item["labels"], json!(["bug"]));
+    let last = history(&item).last().unwrap().clone();
+    assert_eq!(last["via"], "edit");
+    assert_eq!(last["interactive"], true);
 }
 
 #[test]
