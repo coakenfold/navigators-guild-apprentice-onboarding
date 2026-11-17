@@ -128,7 +128,9 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - the `written` fingerprints (sha2), taken at create
   - interactive-only `criterion accept`, which adds a history entry with `via: "criterion-accept"` (§2.1)
 
-  Add gates G1 (at start: the item has criteria, and no other item in the project is in progress or review), G2 and G6. They run in a new `gates <id>` dry run and in front of `submit`. Any failure lists every reason, changes nothing and exits 2."
+  Add gates G1 (at start: the item has criteria, and no other item in the project is in progress or review), G2 and G6. They run in a new `gates <id>` dry run and in front of `submit`. Any failure lists every reason, changes nothing and exits 2.
+
+  G1 refuses `start` for an item with no criteria, and almost every test in `tests/states.rs` starts one that has none. Give those items a criterion, for example by having the shared test helper that creates them add one, so that the move tests still test moves."
 
 - **Done when:**
   - `start` with no criteria is refused by G1 with exit 2, and so is `start` while another item in the project is in progress.
