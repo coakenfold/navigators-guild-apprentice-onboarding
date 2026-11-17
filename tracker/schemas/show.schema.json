@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracker.invalid/schemas/show.schema.json",
+  "title": "tracker show --json",
+  "description": "Everything about one item (DESIGN.md §3): its fields, verification records and history.",
+  "type": "object",
+  "required": ["item"],
+  "properties": {
+    "item": {
+      "description": "The item as this version of tracker reads it. A file written by a newer tracker can hold more, which warning names.",
+      "$ref": "item.schema.json"
+    },
+    "warning": {
+      "description": "Present only when the item's file holds top-level fields this version doesn't know or can't show in full, such as ones a newer tracker added. It names them, and item leaves them out or shows them changed.",
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false
+}

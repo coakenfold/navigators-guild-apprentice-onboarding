@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracker.invalid/schemas/delete.schema.json",
+  "title": "tracker delete --json",
+  "description": "A delete (DESIGN.md §2.8). The question and the warning before it go to stderr, so stdout holds only this object.",
+  "type": "object",
+  "required": ["deleted"],
+  "properties": {
+    "deleted": {
+      "description": "The line just added to deleted.json.",
+      "$ref": "deleted.schema.json"
+    }
+  },
+  "additionalProperties": false
+}

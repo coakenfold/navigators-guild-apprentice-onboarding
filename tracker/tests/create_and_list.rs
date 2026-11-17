@@ -339,17 +339,72 @@ fn every_command_prints_json_that_parses() {
 #[test]
 fn commands_without_a_store_say_run_tracker_init() {
     let env = Env::without_store();
-    let commands: [&[&str]; 4] = [
+    let commands: [&[&str]; 6] = [
         &["list"],
         &["project", "list"],
         &["create", "t", "--project", "XX"],
         &["project", "add", "XX", "--name", "x", "--root", "."],
+        &["show", "XX-1"],
+        &["delete", "XX-1"],
     ];
     for args in commands {
         let output = env.cmd().args(args).assert().code(1);
         let stderr = String::from_utf8_lossy(&output.get_output().stderr);
         assert!(stderr.contains("Run `tracker init`."), "{args:?}: {stderr}");
     }
+}
+
+#[test]
+fn every_command_refuses_a_config_json_that_cant_be_parsed() {
+    // §3: every command needs config.json to parse, including the ones that
+    // never use it, so a broken store isn't hidden (review 2's finding 3).
+    let env = Env::new();
+    let root = env.add_project("XX", "xx");
+    let root = root.to_str().unwrap().to_string();
+    for title in ["a", "b", "c"] {
+        env.create("XX", title);
+    }
+    env.json(&["start", "XX-2"]);
+    env.json(&["start", "XX-3"]);
+    env.json(&["submit", "XX-3"]);
+    let config = env.home.path().join("config.json");
+    fs::write(&config, "{").unwrap();
+    let item_files = || ["XX-1", "XX-2", "XX-3"].map(|id| fs::read(env.item_path(id)).unwrap());
+    let before = item_files();
+
+    let commands: [&[&str]; 14] = [
+        &["list"],
+        &["project", "list"],
+        &["project", "add", "YY", "--name", "y", "--root", &root],
+        &["create", "t", "--project", "XX"],
+        &["show", "XX-1"],
+        &["edit", "XX-1", "--priority", "high"],
+        &["edit", "XX-1", "--design", "DESIGN.md"],
+        &["start", "XX-1"],
+        &["submit", "XX-2"],
+        &["shelve", "XX-1", "--reason", "later"],
+        &["reopen", "XX-3", "--reason", "again"],
+        &["status", "XX-1", "in-progress"],
+        &["delete", "XX-1"],
+        &["init"],
+    ];
+    for args in commands {
+        let message = env.error(args, 3);
+        assert!(message.contains("config.json"), "{args:?}: {message}");
+        assert!(message.contains("Can't parse"), "{args:?}: {message}");
+    }
+    // From a terminal too, where delete would otherwise ask.
+    if let Some(output) = env.in_terminal(&["delete", "XX-1"]) {
+        let text = String::from_utf8_lossy(&output.stdout);
+        assert_eq!(output.status.code(), Some(3), "{text}");
+        assert!(text.contains("config.json"), "{text}");
+        assert!(!text.contains("Type XX-1"), "{text}");
+    }
+
+    assert_eq!(item_files(), before);
+    assert_eq!(fs::read_to_string(&config).unwrap(), "{");
+    assert_eq!(env.read_store_file("counters.json")["XX"], 4);
+    assert!(!env.home.path().join("deleted.json").exists());
 }
 
 #[test]

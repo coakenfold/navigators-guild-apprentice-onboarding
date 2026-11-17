@@ -313,3 +313,46 @@ fn a_wrong_output_is_caught() {
         json!({ "error": "x", "exit_code": 1, "allowed": [{ "via": "start" }] }),
     );
 }
+
+#[test]
+fn a_wrong_show_or_delete_output_is_caught() {
+    // show wraps the item, as create does.
+    check_schema("show", &json!({ "item": item() }));
+    fails("show", item());
+    let mut bad = item();
+    bad["status"] = json!("closed");
+    fails("show", json!({ "item": bad }));
+
+    // A line of deleted.json: the ID, title, state, time and interactive,
+    // and nothing else of the item (DESIGN.md §2.8).
+    let record = json!({
+        "id": "XX-2",
+        "title": "Gone",
+        "status": "shelved",
+        "at": "2026-11-16T12:00:00Z",
+        "interactive": true
+    });
+    check_schema("deleted", &record);
+    check_schema("delete", &json!({ "deleted": record.clone() }));
+    fails("delete", record.clone());
+    for field in ["id", "title", "status", "at", "interactive"] {
+        let mut bad = record.clone();
+        bad.as_object_mut().unwrap().remove(field);
+        fails("deleted", bad);
+    }
+    for (field, value) in [
+        ("id", json!("xx-2")),
+        ("title", json!("")),
+        ("title", json!("two\nlines")),
+        ("status", json!("closed")),
+        ("at", json!("yesterday")),
+        ("interactive", json!("yes")),
+        // Nothing else of the item.
+        ("description", json!("d")),
+        ("history", json!([])),
+    ] {
+        let mut bad = record.clone();
+        bad[field] = value;
+        fails("deleted", bad);
+    }
+}

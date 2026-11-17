@@ -243,3 +243,130 @@ fn a_move_refuses_an_item_whose_history_has_a_command_it_doesnt_know() {
         "in-progress"
     );
 }
+
+#[test]
+fn show_prints_an_item_whose_history_has_a_command_it_doesnt_know() {
+    // Showing never writes, so the entry is shown as `unknown` and the file
+    // stays as it was.
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    env.json(&["start", "XX-1"]);
+    let edited = add_newer_entry(&env, "XX-1");
+
+    let shown = env.json(&["show", "XX-1"]);
+    assert_eq!(shown["item"]["history"][1]["via"], "unknown");
+    // And it says the history isn't shown in full.
+    let warning = shown["warning"].as_str().unwrap();
+    assert!(warning.contains(": history."), "{warning}");
+    let output = env.cmd().args(["show", "XX-1"]).assert().success();
+    let text = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+    assert!(text.contains("unknown"), "{text}");
+    assert!(text.contains(warning), "{text}");
+    assert_eq!(fs::read_to_string(env.item_path("XX-1")).unwrap(), edited);
+}
+
+#[test]
+fn lost_on_rewrite_tells_unknown_fields_from_values_written_differently() {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    env.json(&["start", "XX-1"]);
+    env.json(&["submit", "XX-1"]);
+    let mut item = env.item("XX-1");
+    // Written differently: an empty list, a null, a time with an offset,
+    // and a null inside a history entry.
+    item["labels"] = serde_json::json!([]);
+    item["description"] = serde_json::Value::Null;
+    let at = item["updated"].as_str().unwrap().replace('Z', "+00:00");
+    item["updated"] = serde_json::json!(at);
+    item["history"][0]["reason"] = serde_json::Value::Null;
+    // Unknown: a field inside a record, and one at the top level.
+    item["verification"]["commit"] = serde_json::json!("abc123");
+    item["criteria"] = serde_json::json!([]);
+    item["owner"] = serde_json::json!("me");
+    let text = serde_json::to_string_pretty(&item).unwrap();
+
+    let lost = tracker::item::lost_on_rewrite(&text).unwrap();
+    assert_eq!(lost.unknown, ["verification", "owner"]);
+    assert_eq!(
+        lost.respelled,
+        ["updated", "history", "labels", "description", "criteria"]
+    );
+    assert_eq!(
+        lost.fields(),
+        [
+            "verification",
+            "owner",
+            "updated",
+            "history",
+            "labels",
+            "description",
+            "criteria"
+        ]
+    );
+
+    // A history entry made by a command this version doesn't know.
+    let mut item = env.item("XX-1");
+    item["history"][0]["via"] = serde_json::json!("approve");
+    let text = serde_json::to_string_pretty(&item).unwrap();
+    let lost = tracker::item::lost_on_rewrite(&text).unwrap();
+    assert_eq!(lost.unknown, ["history"]);
+    assert!(lost.respelled.is_empty());
+}
+
+#[test]
+fn lock_unchanged_holds_the_lock_only_while_the_file_is_as_it_was() {
+    // What every human-only command calls after its question (§2.7).
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    let store = store(&env);
+    let (_, before) = store.load_item_with_text("XX-1").unwrap();
+    let command = "tracker delete XX-1";
+
+    // Unchanged: it returns the lock, which is held until it's dropped. The
+    // lock file opened a second time can't be locked meanwhile, as another
+    // command's couldn't (review 2's test gap 1).
+    let lock = store.lock_unchanged("XX-1", &before, command).unwrap();
+    let other = fs::File::open(store.lock_path()).unwrap();
+    assert!(
+        matches!(other.try_lock(), Err(fs::TryLockError::WouldBlock)),
+        "lock_unchanged returned without holding the lock"
+    );
+    drop(lock);
+    other.try_lock().unwrap();
+    other.unlock().unwrap();
+
+    // Changed, even by one byte.
+    fs::write(env.item_path("XX-1"), format!("{before} ")).unwrap();
+    let error = store.lock_unchanged("XX-1", &before, command).unwrap_err();
+    assert_eq!(error.code, 1);
+    assert!(
+        error
+            .message
+            .contains("XX-1 changed while you were deciding"),
+        "{}",
+        error.message
+    );
+    assert!(
+        error.message.contains("Run `tracker delete XX-1` again"),
+        "{}",
+        error.message
+    );
+
+    // Removed.
+    fs::remove_file(env.item_path("XX-1")).unwrap();
+    let error = store.lock_unchanged("XX-1", &before, command).unwrap_err();
+    assert_eq!(error.code, 1);
+    assert!(
+        error
+            .message
+            .contains("XX-1 was removed while you were deciding"),
+        "{}",
+        error.message
+    );
+
+    // The lock was released each time, so a command can still take it.
+    env.create("XX", "b");
+}

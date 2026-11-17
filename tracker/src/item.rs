@@ -299,19 +299,103 @@ pub fn from_json(text: &str) -> Result<Item, serde_json::Error> {
 }
 
 /// The top-level fields of an item file that this version would lose or
-/// change if it read the file and wrote it back: fields it doesn't know,
-/// such as ones a newer tracker added, and values it would write
-/// differently. Empty when a rewrite keeps everything.
-pub fn lost_on_rewrite(text: &str) -> Result<Vec<String>, serde_json::Error> {
+/// change if it read the file and wrote it back, in two kinds.
+#[derive(Debug, Default, PartialEq)]
+pub struct Lost {
+    /// Fields that hold something this version doesn't know, such as a
+    /// field a newer tracker added, at the top level or inside a record, or
+    /// a history entry made by a command it doesn't have. A rewrite would
+    /// drop it, and `show` can't display it.
+    pub unknown: Vec<String>,
+    /// Fields whose values this version knows, but would only write
+    /// differently: `[]` or `null`, which it leaves out, or a time with an
+    /// offset such as `+00:00`, which it writes as the same instant ending
+    /// in `Z`. These come from hand edits, and nothing is hidden.
+    pub respelled: Vec<String>,
+}
+
+impl Lost {
+    /// Whether a rewrite keeps the file exactly as it is.
+    pub fn is_empty(&self) -> bool {
+        self.unknown.is_empty() && self.respelled.is_empty()
+    }
+
+    /// Every field a rewrite would lose or change, the unknown ones first.
+    pub fn fields(&self) -> Vec<String> {
+        let mut fields = self.unknown.clone();
+        fields.extend(self.respelled.iter().cloned());
+        fields
+    }
+}
+
+/// What an item file holds that this version would lose or change by
+/// reading it and writing it back. Empty when a rewrite keeps everything.
+pub fn lost_on_rewrite(text: &str) -> Result<Lost, serde_json::Error> {
     let on_disk: serde_json::Value = serde_json::from_str(text)?;
     let rewritten = serde_json::to_value(from_json(text)?).expect("items always serialize");
-    let mut lost = Vec::new();
+    let mut lost = Lost::default();
     if let Some(fields) = on_disk.as_object() {
         for (name, value) in fields {
-            if rewritten.get(name) != Some(value) {
-                lost.push(name.clone());
+            match difference(Some(value), rewritten.get(name)) {
+                Difference::None => {}
+                Difference::Spelling => lost.respelled.push(name.clone()),
+                Difference::Meaning => lost.unknown.push(name.clone()),
             }
         }
     }
     Ok(lost)
+}
+
+/// How a value on disk differs from what a rewrite puts in its place,
+/// least to most.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Difference {
+    None,
+    /// The same value, written another way.
+    Spelling,
+    /// Something this version doesn't know, which a rewrite would lose.
+    Meaning,
+}
+
+/// Compares a value on disk with its rewrite, looking inside records and
+/// lists so that one unknown field anywhere counts as `Meaning`. `None` on
+/// either side means the field isn't there.
+fn difference(
+    on_disk: Option<&serde_json::Value>,
+    rewritten: Option<&serde_json::Value>,
+) -> Difference {
+    use serde_json::Value;
+    match (on_disk, rewritten) {
+        (a, b) if a == b => Difference::None,
+        // An empty list or a null, which a rewrite leaves out.
+        (Some(value), None) | (None, Some(value)) if is_empty(value) => Difference::Spelling,
+        (Some(Value::Object(a)), Some(Value::Object(b))) => a
+            .keys()
+            .chain(b.keys())
+            .map(|key| difference(a.get(key), b.get(key)))
+            .max()
+            .unwrap_or(Difference::None),
+        (Some(Value::Array(a)), Some(Value::Array(b))) if a.len() == b.len() => a
+            .iter()
+            .zip(b)
+            .map(|(a, b)| difference(Some(a), Some(b)))
+            .max()
+            .unwrap_or(Difference::None),
+        (Some(Value::String(a)), Some(Value::String(b))) if same_instant(a, b) => {
+            Difference::Spelling
+        }
+        _ => Difference::Meaning,
+    }
+}
+
+fn is_empty(value: &serde_json::Value) -> bool {
+    value.is_null() || value.as_array().is_some_and(Vec::is_empty)
+}
+
+/// Whether two strings are both times, and the same instant.
+fn same_instant(a: &str, b: &str) -> bool {
+    match (a.parse::<Timestamp>(), b.parse::<Timestamp>()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
 }

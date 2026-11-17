@@ -1,6 +1,13 @@
 # Build plan: `tracker`, a verification-gated work tracker
 
-The build order for [DESIGN.md](DESIGN.md), in 16 vertical slices. DESIGN.md is the spec, and each slice's prompt cites its sections. DESIGN.md §9 points here and keeps the rules that apply to every slice. Each slice runs in its own conversation, started in `guild-portfolio/tracker/` so that Claude Code loads the **Shared context** from that folder's CLAUDE.md by itself. Give the agent that slice's **Prompt** and **Done when**. Update the **Status** column as slices finish (`todo` / `in progress` / `done`).
+The build order for [DESIGN.md](DESIGN.md), in 16 vertical slices. DESIGN.md is the spec, and each slice's prompt cites its sections. DESIGN.md §9 points here and keeps the rules that apply to every slice. Each slice runs in its own conversation, started in `guild-portfolio/tracker/` so that Claude Code loads the **Shared context** from that folder's CLAUDE.md by itself. Give the agent that slice's **Prompt** and **Done when**. Update the **Status** column as each slice moves on:
+
+- `todo`: not started.
+- `in progress`: being built.
+- `in review`: built, and its _Done when_ checks pass, but its reviews and their fixes aren't finished.
+- `merged`: the last review's fixes are in, and its branch is merged into `main`. Set it in the pull request that merges the branch, not before.
+
+The last value is `merged`, not `done`, because from slice 7 on each slice also has a tracker item, whose `done` state comes earlier: when `tracker submit` passes its gates, before any review.
 
 **Approach:** layer, because this is a new project. §9 used to list 12 layers, and this plan re-sizes them rather than starting over:
 
@@ -30,10 +37,10 @@ The stack, where things live, the conventions and the test command are in `guild
 
 | #   | Slice                           | Outcome (I can…)                                                                                      | Depends on | Parallel with | Status |
 | --- | ------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------- | ------------- | ------ |
-| 1   | Create and list                 | create items in two projects and list them from one store                                             | —          | —             | done   |
-| 2   | States                          | start, submit, shelve and reopen items, with history kept                                             | 1          | —             | done   |
-| 3   | Organise and filter             | set priority, kind and labels, edit items, filter a sorted list                                       | 2          | —             | done   |
-| 4   | Show and delete                 | see an item's full record, and delete one from a real terminal                                        | 3          | —             | todo   |
+| 1   | Create and list                 | create items in two projects and list them from one store                                             | —          | —             | merged |
+| 2   | States                          | start, submit, shelve and reopen items, with history kept                                             | 1          | —             | merged |
+| 3   | Organise and filter             | set priority, kind and labels, edit items, filter a sorted list                                       | 2          | —             | merged |
+| 4   | Show and delete                 | see an item's full record, and delete one from a real terminal                                        | 3          | —             | merged |
 | 5   | Bad data and polish             | keep working past a corrupt file; get help text, colour and empty states                              | 4          | —             | todo   |
 |     | _Checkpoint: course submission_ |                                                                                                       |            |               |        |
 | 6   | Criteria and simple gates       | write Done-when criteria; get refused when they're missing or incomplete                              | 5          | —             | todo   |
@@ -292,15 +299,17 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 
 - **Prompt:** "Add per-project digests as §2.6 describes:
   - `digest [--project]` lists auto-verified items, judge-passed ones first with refs, answers and reasons. It also lists every shelve, every human action (`approve`, `reject`, `delete`, `criterion accept`), mine included, and every `edit` whose history entry shows it removed `needs-review` or changed kind away from `capability`, each marked by whether it came from an interactive terminal, and says when the digest was last acknowledged.
-  - `digest ack` records what was seen in `digests.json`.
+  - `digest ack` records what was seen in `digests.json`. It confirms through `tty::confirm`, asking me to type `ack` rather than an ID (§2.7). It builds the digest before asking, then, under the lock, builds it again and compares the two. If they differ, it records nothing and exits 1, as `Store::lock_unchanged` does for an item, so an entry added while I read is never acknowledged unseen.
   - `review` flags a digest older than `every_days` as overdue.
 
   Add `audit` and `judges` (§3), and bring `--help` text and empty states up to slice 5's standard for every command added since."
 
 - **Done when:**
   - `digest` lists every item auto-verified since that project's last ack, judge-passed first. `digest ack --project XX` empties only XX's digest.
+  - From a terminal, `digest ack` asks for `ack`. Typing the project key, or anything else, cancels with exit 1. An item auto-verified in that project while the question waits makes it exit 1, record nothing, and leave that item in the next digest.
   - A shelve from piped stdin and one run under `script` (skipped where `script` isn't installed) are both listed, marked not from a terminal and from a terminal. So are a delete and an approve made since the last ack, an edit that removes `needs-review`, and one that changes kind from `capability` to `change`. An edit that only adds a label isn't listed.
   - `audit` reports a hand-edited status, a done item with no verification record, and an ID used twice.
+  - `audit` reports a `deleted.json` line whose ID is at or above its project's counter in `counters.json`. Such a line can only have been written by hand, and `create`'s tripwire refuses that project until the counter is raised (slice 4 review 1, finding 7).
   - `judges` shows the approve and reject counts for each question.
 
 ## Deferred / out of scope
@@ -320,4 +329,4 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 
 ## Build loop
 
-Build one slice, then run its new checks **and** the full existing suite, commit, and move to the next slice. A regression in slice 3 should surface before later slices depend on it. From slice 7 on, the loop is `tracker start` → build → `tracker submit`, and the slice's row here becomes `done` when its item does.
+Build one slice, then run its new checks **and** the full existing suite, commit, and move to the next slice. A regression in slice 3 should surface before later slices depend on it. From slice 7 on, the loop is `tracker start` → build → `tracker submit`, and the slice's row here becomes `in review` when its item reaches done. It becomes `merged` only once its review fixes are in and its branch is merged, as for slices 1–6. A review's fixes are new items, unless the review finds that the item doesn't meet its own criteria, which reopens it (DESIGN.md [§2.9](DESIGN.md#29-reopen-vs-a-new-item)).

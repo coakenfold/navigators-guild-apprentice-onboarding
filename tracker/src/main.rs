@@ -103,6 +103,21 @@ enum Command {
         #[arg(long)]
         reason: Option<String>,
     },
+    /// Show everything about one item: its fields, verification record and history
+    Show {
+        /// The item's ID, such as BM-12
+        id: String,
+    },
+    /// Delete an item for good. Only from an interactive terminal
+    ///
+    /// Says what will be lost, then asks for the ID to be typed back.
+    /// Works on an item in any state. One line in deleted.json records the
+    /// delete, and the ID is never used again. An agent can't delete: it
+    /// shelves the item instead
+    Delete {
+        /// The item's ID, such as BM-12
+        id: String,
+    },
 }
 
 #[derive(Args)]
@@ -122,7 +137,8 @@ struct CreateArgs {
     #[arg(long, default_value = "medium", value_parser = priorities())]
     priority: String,
     /// A label, such as bug, of at most 50 characters and with no comma. Repeat it for more than
-    /// one. Labels are lowercased, and each is kept once
+    /// one. Labels are lowercased, and each is kept once. A capital with no lower-case form, such
+    /// as ℂ, is refused
     #[arg(long = "label", value_name = "LABEL")]
     labels: Vec<String>,
     /// A reference into the project's design doc, such as DESIGN.md#2.4. The file is named
@@ -146,7 +162,8 @@ struct EditArgs {
     #[arg(long, value_parser = priorities())]
     priority: Option<String>,
     /// A label to add, such as needs-review, of at most 50 characters and with no comma. Repeat it
-    /// for more than one
+    /// for more than one. It's lowercased, and a capital with no lower-case form, such as ℂ, is
+    /// refused
     #[arg(long = "label", value_name = "LABEL")]
     labels: Vec<String>,
     /// A label to remove. Repeat it for more than one
@@ -295,6 +312,8 @@ fn main() -> ExitCode {
             let state = Status::parse(&state).expect("clap only accepts state names");
             status(&store, &id, state, reason)
         }
+        Command::Show { id } => show(&store, &id),
+        Command::Delete { id } => delete(&store, &id),
     });
 
     match result {
@@ -382,7 +401,7 @@ fn init(store: &Store) -> Result<Output> {
                 "- counters.json is empty, so every project's IDs start again at 1. Set the \
                  counter of each project that has used IDs above the highest one, so no \
                  deleted item's ID is handed out again. `create` refuses while a counter is at \
-                 or below a number still in items/.\n"
+                 or below a number still in items/ or deleted.json.\n"
             }
             _ => "- items/ is empty. Any items that were in it are gone.\n",
         });
@@ -653,12 +672,25 @@ fn check_labels(labels: &[String]) -> Result<Vec<String>> {
 const MAX_LABEL: usize = 50;
 
 /// Labels being added to an item: checked as `check_labels` does, each at
-/// most `MAX_LABEL` characters, and with no comma, since `list` prints them
-/// as `[a, b]`. `--unlabel` has neither rule, so a label written into a file
-/// by hand can still be removed.
+/// most `MAX_LABEL` characters, with no comma, since `list` prints them as
+/// `[a, b]`, and with no capital that lowercasing leaves as it is. `--unlabel`
+/// has none of these rules, so a label written into a file by hand can
+/// still be removed.
 fn check_new_labels(labels: &[String]) -> Result<Vec<String>> {
     let labels = check_labels(labels)?;
     for label in &labels {
+        // A few capitals, such as ℂ, have no lower-case form, so they're
+        // still capitals after `check_label`, and `item.schema.json` forbids
+        // them. `is_uppercase` also covers enclosed capitals such as 🅰,
+        // which the schema allows, but which read as capitals too.
+        if let Some(capital) = label.chars().find(|c| c.is_uppercase()) {
+            return Err(Error::input(format!(
+                "A label is stored in lower case, and \"{label}\" holds {capital} (U+{:04X}), \
+                 a capital with no lower-case form. Spell it with letters that have one, \
+                 such as --label c.",
+                capital as u32
+            )));
+        }
         if label.contains(',') {
             return Err(Error::input(format!(
                 "A label can't hold a comma, and \"{label}\" does: `list` separates labels \
@@ -894,22 +926,32 @@ fn edit(store: &Store, args: EditArgs) -> Result<Output> {
         .cloned()
         .collect();
     add_labels(&mut not_found, &missing);
-    let mut labels: Vec<String> = item
-        .labels
-        .iter()
-        .filter(|label| !remove.contains(label))
-        .cloned()
-        .collect();
-    add_labels(&mut labels, &add);
-    let labels_removed: Vec<String> = item
-        .labels
-        .iter()
-        .filter(|label| !labels.contains(label))
-        .cloned()
-        .collect();
-    if labels != item.labels {
-        item.labels = labels;
-        fields.push("labels");
+    // The labels are rebuilt only when the edit names some, through
+    // add_labels, so a label a hand edit wrote twice is kept once, and
+    // recorded once in labels_removed: item.schema.json wants each unique,
+    // and no command rewrites a history entry.
+    let mut labels_removed = Vec::new();
+    if !add.is_empty() || !remove.is_empty() {
+        let kept: Vec<String> = item
+            .labels
+            .iter()
+            .filter(|label| !remove.contains(label))
+            .cloned()
+            .collect();
+        let mut labels = Vec::new();
+        add_labels(&mut labels, &kept);
+        add_labels(&mut labels, &add);
+        let gone: Vec<String> = item
+            .labels
+            .iter()
+            .filter(|label| !labels.contains(label))
+            .cloned()
+            .collect();
+        add_labels(&mut labels_removed, &gone);
+        if labels != item.labels {
+            item.labels = labels;
+            fields.push("labels");
+        }
     }
     if let Some(design) = design
         && design != item.design
@@ -1291,6 +1333,265 @@ fn apply(
         json!({ "item": item })
     };
     Ok(Output { text, json })
+}
+
+/// `show`: everything about one item (§3): every field, its verification
+/// records, and its history with the time of each entry. Free text is
+/// escaped, since a file edited by hand can hold anything.
+///
+/// It shows the item as this version reads it. A file from a newer tracker
+/// can hold fields this version doesn't know, so `show` names them, in the
+/// text and as `warning` beside `item`, rather than leave them out unsaid.
+fn show(store: &Store, id: &str) -> Result<Output> {
+    store.require_exists()?;
+    let id = normalize_id(id);
+    let (item, file) = store.load_item_with_text(&id)?;
+    let unknown = unknown_fields(&file);
+    let config = config::load(store)?;
+
+    let project = match config.projects.get(&item.project) {
+        Some(project) => format!("{} ({})", item.project, project.name),
+        None => format!("{} (not in config.json)", item.project),
+    };
+    let mut rows = vec![
+        vec!["  project".to_string(), project],
+        vec!["  kind".to_string(), item.kind.as_str().to_string()],
+        vec!["  status".to_string(), item.status.as_str().to_string()],
+        vec!["  priority".to_string(), item.priority.as_str().to_string()],
+    ];
+    if !item.labels.is_empty() {
+        rows.push(vec!["  labels".to_string(), item.labels.join(", ")]);
+    }
+    if let Some(design) = &item.design {
+        rows.push(vec!["  design".to_string(), design.clone()]);
+    }
+    rows.push(vec!["  created".to_string(), item.created.to_string()]);
+    rows.push(vec!["  updated".to_string(), item.updated.to_string()]);
+
+    let mut text = format!("{}  {}\n", item.id, text::for_terminal(&item.title, false));
+    text.push_str(&table(&rows));
+
+    if let Some(description) = &item.description {
+        text.push_str("\nDescription:\n");
+        // Indented, except for blank lines, which stay empty.
+        for line in text::for_terminal(description, true).lines() {
+            if !line.is_empty() {
+                text.push_str("  ");
+            }
+            text.push_str(line);
+            text.push('\n');
+        }
+    }
+
+    match &item.verification {
+        Some(record) => {
+            text.push_str("\nVerification:\n");
+            text.push_str(&verification_rows(record));
+        }
+        None => text.push_str("\nVerification: none.\n"),
+    }
+    if let Some(record) = &item.previous_verification {
+        text.push_str("\nPrevious verification, from before it was last reopened:\n");
+        text.push_str(&verification_rows(record));
+    }
+
+    if item.history.is_empty() {
+        text.push_str("\nHistory: none yet.\n");
+    } else {
+        text.push_str(&format!(
+            "\nHistory, oldest first ({}):\n",
+            entries(item.history.len())
+        ));
+        let rows: Vec<Vec<String>> = item
+            .history
+            .iter()
+            .map(|entry| {
+                let moved = if entry.from == entry.to {
+                    format!("stays {}", entry.from.as_str())
+                } else {
+                    format!("{} → {}", entry.from.as_str(), entry.to.as_str())
+                };
+                let source = if entry.interactive {
+                    "from a terminal"
+                } else {
+                    "not from a terminal"
+                };
+                vec![
+                    format!("  {}", entry.at),
+                    entry.via.as_str().to_string(),
+                    moved,
+                    source.to_string(),
+                ]
+            })
+            .collect();
+        for (entry, line) in item.history.iter().zip(table(&rows).lines()) {
+            text.push_str(line);
+            text.push('\n');
+            let mut details = Vec::new();
+            if let Some(reason) = &entry.reason {
+                details.push(format!("reason: {reason}"));
+            }
+            if !entry.fields.is_empty() {
+                details.push(format!("changed: {}", entry.fields.join(", ")));
+            }
+            if let Some(kind) = entry.kind_before {
+                details.push(format!("kind before: {}", kind.as_str()));
+            }
+            if !entry.labels_removed.is_empty() {
+                details.push(format!(
+                    "labels removed: {}",
+                    entry.labels_removed.join(", ")
+                ));
+            }
+            for detail in details {
+                text.push_str(&format!("      {}\n", text::for_terminal(&detail, false)));
+            }
+        }
+    }
+
+    let mut json = json!({ "item": item });
+    if !unknown.is_empty() {
+        let warning = format!(
+            "{id}'s file has fields this version of tracker doesn't know, or can't show in \
+             full: {}. It was probably written by a newer tracker, so use that one to see them.",
+            unknown.join(", ")
+        );
+        text.push_str(&format!("\n{}\n", text::for_terminal(&warning, false)));
+        json["warning"] = json!(warning);
+    }
+    Ok(Output { text, json })
+}
+
+/// The top-level fields of an item file that this version doesn't know, or
+/// would read as something else, such as a field a newer tracker added or a
+/// history entry made by a command it doesn't have. A value that's only
+/// written differently, such as `"labels": []` or a time ending `+00:00`,
+/// comes from a hand edit and hides nothing, so it isn't counted. `text`
+/// has already been parsed as an item, so it parses again here.
+fn unknown_fields(text: &str) -> Vec<String> {
+    item::lost_on_rewrite(text)
+        .map(|lost| lost.unknown)
+        .unwrap_or_default()
+}
+
+/// A verification record's fields as indented rows.
+fn verification_rows(record: &Verification) -> String {
+    let mut rows = vec![
+        vec!["  by".to_string(), record.by.as_str().to_string()],
+        vec!["  at".to_string(), record.at.to_string()],
+    ];
+    if let Some(note) = &record.note {
+        rows.push(vec!["  note".to_string(), note.clone()]);
+    }
+    table(&rows)
+}
+
+/// "1 entry" or "6 entries".
+fn entries(count: usize) -> String {
+    if count == 1 {
+        "1 entry".to_string()
+    } else {
+        format!("{count} entries")
+    }
+}
+
+/// `delete`: removes an item for good, from an interactive terminal only,
+/// after saying what will be lost and asking for the ID (§2.8). One line
+/// in `deleted.json` records it, so the digest can list it (§2.6).
+fn delete(store: &Store, id: &str) -> Result<Output> {
+    store.require_exists()?;
+    let id = normalize_id(id);
+    let (item, before) = store.load_item_with_text(&id)?;
+    // A newer tracker's file can hold more than this version would say is
+    // lost, or know to clean up, such as a git ref. A delete can't be
+    // undone, so it's left to the tracker that wrote the file, as
+    // `Store::update_item` does for a rewrite.
+    let unknown = unknown_fields(&before);
+    if !unknown.is_empty() {
+        return Err(Error::store(format!(
+            "{} has fields this version of tracker doesn't know, or can't show in full: {}. \
+             It was probably written by a newer tracker, which knows what deleting it must \
+             remove, so use that one. Nothing was deleted.",
+            store.item_path(&id)?.display(),
+            unknown.join(", ")
+        )));
+    }
+    // Shelving is the agent's way to put an item aside, but only open and
+    // in-progress items can be shelved (§2.8), so only they get that advice.
+    let otherwise = if states::find(Via::Shelve, item.status).is_some() {
+        format!(
+            "Only a human deletes items. An item that shouldn't be done is shelved instead, \
+             with `{}`, and a human decides whether to delete it.",
+            states::command(&id, Via::Shelve)
+        )
+    } else {
+        format!(
+            "Only a human deletes items, so a human decides whether to delete {id}, which is \
+             {}.",
+            item.status.phrase()
+        )
+    };
+    let command = format!("tracker delete {id}");
+    tty::confirm(&command, &id, &deletion_warning(&item), &otherwise)?;
+
+    // The lock wasn't held while I decided, so nothing happens if the item
+    // changed meanwhile (§4.4).
+    let _lock = store.lock_unchanged(&id, &before, &command)?;
+
+    // The ID, title, state, time and whether it came from a terminal, and
+    // nothing else of the item (§2.8).
+    let record = json!({
+        "id": item.id,
+        "title": item.title,
+        "status": item.status.as_str(),
+        "at": item::now(),
+        "interactive": tty::is_interactive(),
+    });
+    let line = serde_json::to_string(&record).expect("JSON values always serialize");
+    store.delete_item(&id, &text::for_json(&line))?;
+
+    Ok(Output {
+        text: format!(
+            "Deleted {id}. Its line in deleted.json records the delete, and {id} won't be used \
+             again.\n"
+        ),
+        json: json!({ "deleted": record }),
+    })
+}
+
+/// What `delete` says before asking for the ID (§2.8): the item's state,
+/// and what deleting it removes.
+fn deletion_warning(item: &Item) -> String {
+    let id = &item.id;
+    let state = match (item.status, &item.verification) {
+        (Status::Done, Some(record)) => match record.by {
+            VerifiedBy::Auto => format!("done, verified by its gates at {}", record.at),
+            VerifiedBy::Human => format!("done, approved by a human at {}", record.at),
+            // Nothing verified it, so the warning mustn't say it was.
+            VerifiedBy::Unchecked => format!("done at {}, unchecked: no gates ran", record.at),
+        },
+        (Status::Done, None) => "done, with no verification record".to_string(),
+        (Status::InProgress, _) => "in-progress, so someone may be working on it".to_string(),
+        (Status::Review, _) => "in review, waiting for a human's decision".to_string(),
+        (status, _) => status.as_str().to_string(),
+    };
+    // Later slices add its criteria and, for a done item, its git ref.
+    let mut lost = vec!["its file".to_string()];
+    if !item.history.is_empty() {
+        lost.push(format!("its history ({})", entries(item.history.len())));
+    }
+    if item.verification.is_some() {
+        lost.push("its verification record".to_string());
+    }
+    if item.previous_verification.is_some() {
+        lost.push("the verification record from before it was reopened".to_string());
+    }
+    format!(
+        "{id} \"{}\" is {state}.\nDeleting it removes {}.\nAny commits scoped to it stay in \
+         git, the ID won't be used again, and deleted.json records the delete for the digest.\n",
+        text::for_terminal(&item.title, false),
+        states::join(&lost, "and")
+    )
 }
 
 /// An ID as typed, with its key in capitals, so `xx-1` finds XX-1.
