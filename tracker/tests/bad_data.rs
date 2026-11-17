@@ -53,6 +53,16 @@ fn a_hand_corrupted_item_file_is_reported_and_the_others_still_list() {
     assert_eq!(skipped[0]["line"], 4);
     assert_eq!(skipped[0]["column"], 3);
     assert_eq!(skipped[0]["reason"], "expected `,` or `}`");
+    // The news is in `skipped`, and stderr stays empty, so an agent that
+    // reads stdout and stderr together still gets one JSON object.
+    for args in [&["list", "--json"][..], &["project", "list", "--json"]] {
+        let output = env.cmd().args(args).assert().success();
+        assert!(
+            output.get_output().stderr.is_empty(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&output.get_output().stderr)
+        );
+    }
 
     // As text: the list on stdout, which says a file was left out, and the
     // file, line, reason and fix on stderr.
