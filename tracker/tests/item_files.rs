@@ -325,9 +325,18 @@ fn lock_unchanged_holds_the_lock_only_while_the_file_is_as_it_was() {
     let (_, before) = store.load_item_with_text("XX-1").unwrap();
     let command = "tracker delete XX-1";
 
-    // Unchanged: it returns the lock, which is released when dropped.
+    // Unchanged: it returns the lock, which is held until it's dropped. The
+    // lock file opened a second time can't be locked meanwhile, as another
+    // command's couldn't (review 2's test gap 1).
     let lock = store.lock_unchanged("XX-1", &before, command).unwrap();
+    let other = fs::File::open(store.lock_path()).unwrap();
+    assert!(
+        matches!(other.try_lock(), Err(fs::TryLockError::WouldBlock)),
+        "lock_unchanged returned without holding the lock"
+    );
     drop(lock);
+    other.try_lock().unwrap();
+    other.unlock().unwrap();
 
     // Changed, even by one byte.
     fs::write(env.item_path("XX-1"), format!("{before} ")).unwrap();
