@@ -392,7 +392,7 @@ An item that shouldn't be done at all goes through both: the agent shelves it wi
 Commands work from any folder, and pick their project like this:
 
 - **A command that works on one project**, such as `create` or `digest ack`, uses the project whose root contains the current folder, or the one `--project <KEY>` names. Outside every project root and without `--project`, it exits 1. When roots are nested, such as a monorepo and one of its packages, the deepest root that contains the folder wins.
-- **A command that lists items**, `list` or `digest`, shows the current project's items inside a project root, and every project's outside one. `--project <KEY>` picks one project, and `--all` shows every project from anywhere. The output always says which it covered, so a filtered list is never mistaken for an empty store.
+- **A command that lists items**, `list` or `digest`, shows the current project's items inside a project root, and every project's outside one. `--project <KEY>` picks one project, and `--all` shows every project from anywhere. `list --project` also takes a key that's no longer in `config.json` while items still use it, as `project list` counts those items. The output always says which it covered, so a filtered list is never mistaken for an empty store.
 - **A command that takes an item ID**, such as `show BM-12`, needs no project, because the ID names it.
 - **`review`, `judges` and `audit` always cover every project.** The inbox shows held items wherever I am, because a held item pauses its project (§4.4), and the other two report on the whole store.
 
