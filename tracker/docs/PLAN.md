@@ -329,4 +329,4 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 
 ## Build loop
 
-Build one slice, then run its new checks **and** the full existing suite, commit, and move to the next slice. A regression in slice 3 should surface before later slices depend on it. From slice 7 on, the loop is `tracker start` → build → `tracker submit`, and the slice's row here becomes `in review` when its item reaches done. It becomes `merged` only once its review fixes are in and its branch is merged, as for slices 1–6.
+Build one slice, then run its new checks **and** the full existing suite, commit, and move to the next slice. A regression in slice 3 should surface before later slices depend on it. From slice 7 on, the loop is `tracker start` → build → `tracker submit`, and the slice's row here becomes `in review` when its item reaches done. It becomes `merged` only once its review fixes are in and its branch is merged, as for slices 1–6. A review's fixes are new items, unless the review finds that the item doesn't meet its own criteria, which reopens it (DESIGN.md [§2.9](DESIGN.md#29-reopen-vs-a-new-item)).

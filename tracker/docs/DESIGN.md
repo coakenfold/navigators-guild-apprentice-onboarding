@@ -391,6 +391,16 @@ Deleting a done item also removes its git ref, so nothing keeps a commit alive f
 
 An item that shouldn't be done at all goes through both: the agent shelves it with the reason, the digest shows it to me, and I delete it if it's dead.
 
+### 2.9 Reopen vs. a new item
+
+A done item records a fact: its criteria passed, at its verification commit, with their output saved (§2.7). Work found later, in the digest or in a code review, goes one of two ways, depending on whether that fact holds.
+
+**Reopen** when the done was a false pass: the item doesn't meet its own criteria. A check passed without testing what its criterion says, a judge passed work that's wrong (§2.3.2), or the behaviour the criteria describe doesn't work. `tracker reopen BM-12 --reason "…"` sends it back to open, and its record moves to `previous_verification` (§2.1). If a check let the false pass through, it's fixed before the item starts again, so that it fails at start. A check left as it was already passes, and T13 holds the item.
+
+**Create a new item** for everything else: the item meets its criteria, but more or different work is needed, such as a case the criteria didn't cover, a design change, or a cleanup a review asks for. That's its own piece of work, with its own criteria, gates and verification, and the done item stays as it was verified. The tracker doesn't link the two. If the work needs the background, the new item's description says where it came from, such as the review that asked for it.
+
+Reopening for new work would cost three things. The item's old criteria already pass at start, so T13 holds every resubmit. Each reopen replaces `previous_verification`, so a second one loses the first done's record. And the item's criteria would mix what it was for with what came after.
+
 ## 3. Interface
 
 Commands work from any folder, and pick their project like this:
@@ -435,7 +445,7 @@ The `criterion` commands work at any time, but after `start` any change to the c
 | `tracker review`                      | **The inbox**: held items from every project with their reasons, and whether a digest is pending. Prints "Nothing needs you." when it's empty. Each held item ends with a hint to run `tracker show <ID> --diff`. |
 | `tracker approve` / `reject`          | §2.7.                                                                                                                                                                                          |
 | `tracker digest [--project <KEY> \| --all]`, `tracker digest ack [--project <KEY>]` | §2.6.                                                                                                                                                                                          |
-| `tracker reopen BM-12 --reason "…"`   | done or shelved → open. A done item that comes back with unchanged code is held by T13, because its checks already pass at start.                                                              |
+| `tracker reopen BM-12 --reason "…"`   | done or shelved → open. A done item that comes back with unchanged code is held by T13, because its checks already pass at start. A done item is reopened only for a false pass (§2.9).         |
 | `tracker judges`                      | For each judge question, how often I approved and how often I rejected the items it held (§2.3.2).                                                                                             |
 | `tracker criterion accept BM-12`      | After I hand-edit a criterion, records its new text in `written` (§2.7).                                                                                                                       |
 
