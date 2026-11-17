@@ -645,8 +645,14 @@ fn status_shows_exactly_the_states_named() {
         ["XX-1", "XX-2", "XX-3", "XX-4", "XX-5"]
     );
 
+    // Spaces around each state are ignored.
+    assert_eq!(
+        listed(&env, &["--status", " open , shelved "]),
+        ["XX-1", "XX-5"]
+    );
+
     // An unknown state exits 1 and names the states.
-    for value in ["closed", "open,closed", "open,"] {
+    for value in ["closed", "open,closed", "open,", "open, "] {
         let message = env.error(&["list", "--status", value], 1);
         assert!(message.contains("in-progress"), "{value}: {message}");
     }

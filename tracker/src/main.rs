@@ -164,13 +164,9 @@ struct ListArgs {
     /// Every project's items, even inside a project root
     #[arg(long)]
     all: bool,
-    /// Only items in these states, comma-separated, such as open,shelved
-    #[arg(
-        long,
-        value_delimiter = ',',
-        value_name = "STATES",
-        value_parser = PossibleValuesParser::new(Status::ALL.map(Status::as_str))
-    )]
+    /// Only items in these states, comma-separated, such as open,shelved.
+    /// The states are open, in-progress, review, done and shelved
+    #[arg(long, value_delimiter = ',', value_name = "STATES", value_parser = state_name)]
     status: Vec<String>,
     /// Only items with this priority
     #[arg(long, value_parser = priorities())]
@@ -184,6 +180,20 @@ struct ListArgs {
     /// Only done items verified this way
     #[arg(long, value_parser = PossibleValuesParser::new(VerifiedBy::ALL.map(VerifiedBy::as_str)))]
     by: Option<String>,
+}
+
+/// One state named in `--status`, trimmed, so `open, shelved` works as well
+/// as `open,shelved`. An unknown or empty one is refused with the states
+/// it could be.
+fn state_name(name: &str) -> std::result::Result<String, String> {
+    let name = name.trim();
+    match Status::parse(name) {
+        Some(status) => Ok(status.as_str().to_string()),
+        None => {
+            let names: Vec<String> = Status::ALL.iter().map(|s| s.as_str().to_string()).collect();
+            Err(format!("use {}", states::join(&names, "or")))
+        }
+    }
 }
 
 /// The values `--kind` takes, so that clap names them when one is wrong.
