@@ -127,10 +127,10 @@ Three more from this review:
 
 Added after the fixes. The findings above are left as written, so their line links point at `9434db1`, not at the fixed code. Each fix is in its own commit, with its tests, and the readme's [Fixes after review 2](../slice-5-readme.md#fixes-after-review-2) lists them too.
 
-All three bugs, finding 4, finding 5 and all three test gaps are resolved. The process notes and the carried-forward items weren't part of this round. The commits after this review (`a335a8d`), in order:
+Every numbered finding is resolved: all three bugs, finding 4, finding 5 and all three test gaps. Of the process notes, the out-of-date readme is fixed, and the other two needed no change. The carried-forward items are still open, and "Slice 6 must decide" is left for slice 6. The commits after this review (`a335a8d`), in order:
 
 - **Fixes:** `d13574a` (bug 1, finding 4 and test gap 1), `e6dea25` (finding 5), `4999b7f` (bug 2 and test gap 2), `6781f4e` (bug 3) and `0168196` (test gap 3).
-- **Docs:** `50d40ca` (the readme) and the commit that adds this Outcome.
+- **Docs:** `50d40ca` (the readme), `f969a2c` (this Outcome) and the commit that completes it with the status of every item below.
 
 | Finding | Resolved by |
 | --- | --- |
@@ -142,8 +142,20 @@ All three bugs, finding 4, finding 5 and all three test gaps are resolved. The p
 | Test gap 1: no test of a loop or a pipe | `d13574a`: a self-loop, a two-link loop, a link to `/dev/null` and a pipe, through `list`, `project list`, `show`, `start`, `edit` and `delete`, each run with a 10-second limit so a hang fails the test |
 | Test gap 2: no test of `TRACKER_HOME` as a symlink to nowhere | `4999b7f`: every command, `init` included, a relative link above the store's folder, and `~/.tracker` |
 | Test gap 3: nothing checks that `list --json` keeps stderr empty | `0168196`: `a_hand_corrupted_item_file_is_reported_and_the_others_still_list` checks stderr for `list --json` and `project list --json` |
-| Process: the readme's Branch row and "Every I/O error says what to do" | `50d40ca`, along with the fixes: the Branch row lists every commit, and the line now reads "Store errors say what to do" |
-| Still open: a file can change between `entry_at` looking and the read | New in the readme's [Still open](../slice-5-readme.md#still-open), as bug 1 above noted: opening first wouldn't help, since a pipe blocks on open too |
+| Process: review 1's fixes were made as asked | No change needed. This round's fixes are one commit each too, each with its test, seen failing first ([below](#outcome)) |
+| Process: `290eeed` is a sound fix for a test | No change needed. The lock test's 3,000-drop claim still can't be checked, since that temporary test isn't in the repo |
+| Process: the readme is out of date in two places | Fixed in `50d40ca`, with the readme's record of the fixes: the Branch row lists every commit to `0168196`, and "Every I/O error says what to do" now reads "Store errors say what to do" |
+| Carried forward: a symlink in `items/` that works is followed | Still open, unchanged. `d13574a` keeps it: a symlink to a regular file is still read. In the readme's [Still open](../slice-5-readme.md#still-open) |
+| Carried forward: review 1 wasn't independent | Still open, for #adversarial-review at PLAN.md's checkpoint |
+| Carried forward: the code and its tests landed as one commit (`0dfa462`) | Still open, and can't change now. Neither round of fixes repeated it |
+| Carried forward: slices 2–4's open items in the readme | Still open, unchanged: none of this round's commits touched `schemas/deleted.schema.json`, `src/item.rs`, `src/tty.rs` or `src/states.rs` |
+| Slice 6 must decide: G1 will break this slice's tests | Left for slice 6. `busy_store` and `every_command` still start items with no criteria |
+| Slice 6 must decide: how a refusal of several lines is printed | Left for slice 6. `report` is unchanged |
+| Slice 6 must decide: help and colour for `criterion`, `evidence` and `gates` | Left for slice 6 |
+| Slice 6 must decide: G6 should follow the same rule as `items/` | Left for slice 6. `d13574a`'s `entry_at` is private to `store.rs`, so G6 can reuse it once it's made public, or use the same check on the design file |
+| Slice 6 must decide: length limits for a criterion's text and an evidence note | Left for slice 6 |
+| Slice 6 must decide: a fixture saved by slice 6 | Left for slice 6 |
+| New, still open: a file can change between `entry_at` looking and the read | In the readme's [Still open](../slice-5-readme.md#still-open), as bug 1 above noted: opening first wouldn't help, since a pipe blocks on open too |
 
 Seen failing:
 
