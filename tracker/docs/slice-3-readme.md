@@ -6,7 +6,7 @@ After slice 3 you can **set an item's priority, kind and labels, edit its detail
 
 | | |
 | --- | --- |
-| Status | Every _Done when_ check passes, and so does the test command. From [review 1](reviews/slice-3-review-1.md), two security items, three low-severity items, all five DESIGN.md questions and three test gaps are done ([below](#fixes-after-review-1)). From [review 2](reviews/slice-3-review-2.md), one security item, three low-severity items, one DESIGN.md question, one process point and one test gap are done ([below](#fixes-after-review-2)). **Both reviews' fixes before slice 4 are still open:** a label such as `ℂ`, which has no lower-case form, is stored as it is (review 1's finding 1, raised again as review 2's finding 1), and `--unlabel` on a file that holds a label twice records it twice in `labels_removed` (review 2's finding 2). Either way, `create`, `edit` and `list --json` can print output that breaks `item.schema.json`, and the second leaves the bad value in history for good. These and the rest are listed under [Still open](#still-open). The branch isn't merged into `main` yet. |
+| Status | Every _Done when_ check passes, and so does the test command. From [review 1](reviews/slice-3-review-1.md), two security items, three low-severity items, all five DESIGN.md questions and three test gaps are done ([below](#fixes-after-review-1)). From [review 2](reviews/slice-3-review-2.md), one security item, three low-severity items, one DESIGN.md question, one process point and one test gap are done ([below](#fixes-after-review-2)). Both reviews' fixes before slice 4 were done after the merge, on slice 4's branch ([below](#fixed-on-slice-4s-branch)): a label such as `ℂ`, which has no lower-case form, is refused (review 1's finding 1, raised again as review 2's finding 1), and `--unlabel` on a file that holds a label twice records it once in `labels_removed` (review 2's finding 2). The rest is listed under [Still open](#still-open). The branch was merged into `main` by pull request #3 (`2f85306`). |
 | Branch | `feat/tracker/slice-3` |
 | Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/` |
 | Tests | 138: 38 in `tests/create_and_list.rs`, 32 in `tests/organise.rs`, 27 in `tests/states.rs`, 11 in `tests/docs_links.rs`, 10 in `tests/item_files.rs`, 6 in `tests/output.rs`, 5 in `tests/fixtures.rs`, 4 in `tests/store_writes.rs`, 3 in `tests/schemas.rs` and 2 in `tests/item_ids.rs` |
@@ -23,6 +23,7 @@ After slice 3 you can **set an item's priority, kind and labels, edit its detail
 - [Decisions worth knowing](#decisions-worth-knowing)
 - [Fixes after review 1](#fixes-after-review-1)
 - [Fixes after review 2](#fixes-after-review-2)
+- [Fixed on slice 4's branch](#fixed-on-slice-4s-branch)
 - [Still open](#still-open)
 - [Limits, and what later slices change](#limits-and-what-later-slices-change)
 
@@ -245,7 +246,7 @@ Every command takes `--json`. The kinds are `fix`, `change`, `capability` and `c
 
 `check_label` in [src/main.rs](../src/main.rs) trims and lowercases a label with Rust's `to_lowercase`, and refuses an empty one or one that `check_printable` refuses. `check_new_labels` adds two rules for labels being added: the 50-character limit (`MAX_LABEL`), and no comma, because `list` prints labels as `[a, b]`, so a label `a, b` would read as two. `add_labels` appends each label that isn't already there, so the order is the order labels were first given.
 
-`item.schema.json` describes a stored label as one line, trimmed, with no character in Unicode's uppercase (`Lu`) or titlecase (`Lt`) categories. Lowercasing doesn't guarantee that: a few `Lu` characters, such as `ℂ` (U+2102), have no lower-case form, and come through unchanged. That's [review 1's finding 1](reviews/slice-3-review-1.md#fix-before-slice-4), still open ([below](#still-open)).
+`item.schema.json` describes a stored label as one line, trimmed, with no character in Unicode's uppercase (`Lu`) or titlecase (`Lt`) categories. Lowercasing doesn't guarantee that: a few `Lu` characters, such as `ℂ` (U+2102), have no lower-case form, and come through unchanged. That was [review 1's finding 1](reviews/slice-3-review-1.md#fix-before-slice-4). Since `bf229d0`, on slice 4's branch, `check_new_labels` refuses such a label ([below](#fixed-on-slice-4s-branch)).
 
 Labels are matched exactly. A label written into a file by hand with a capital, such as `Bug`, isn't found by `list --label bug` and can't be removed by `--unlabel bug` (review 1's finding 4, also open). Labels are compared as exact strings in every other way too, so a label that only looks like `needs-review`, such as one with a Unicode hyphen or a Cyrillic `е`, isn't `needs-review` (review 2's finding 3, open).
 
@@ -291,7 +292,7 @@ An edit adds one entry to `history`, in the same shape as a move ([slice 2's rea
 | `interactive` | Whether stdin was a terminal. |
 | `fields` | The fields that changed, in the file's order, whatever order the flags came in. Never empty: an edit that changes nothing adds no entry. |
 | `kind_before` | Only when the kind changed: the kind it replaced. |
-| `labels_removed` | Only when labels were removed: the ones that were on the item and aren't now. `--unlabel` of a label the item didn't have isn't recorded here: the command's output names it, in `labels_not_found`. A label a hand edit put on the item twice is recorded twice, which breaks the schema (review 2's finding 2, open). |
+| `labels_removed` | Only when labels were removed: the ones that were on the item and aren't now. `--unlabel` of a label the item didn't have isn't recorded here: the command's output names it, in `labels_not_found`. A label a hand edit put on the item twice was recorded twice, which broke the schema (review 2's finding 2). Since `1d2f64e`, on slice 4's branch, it's recorded once. |
 
 `kind_before` is written for every change of kind, and `labels_removed` for every removed label. [§2.6](DESIGN.md#26-digest-auditing-the-auto-verifications) has slice 16's digest pick out the two that weaken a trigger: removing `needs-review`, which switches off T9, and moving away from `capability`, which leaves T1 firing only on a new file. `item.schema.json` allows `fields`, `kind_before` and `labels_removed` only on an edit entry, requires `fields` there, and forbids `reason`.
 
@@ -406,7 +407,7 @@ Review 1 checked two things by hand that are now automated: ten concurrent edits
 - Review 2's finding 2: with `"labels": ["bug", "bug"]` written into XX-1's file, `tracker edit XX-1 --unlabel bug --json` exits 0 and records `"labels_removed": ["bug", "bug"]`.
 - Review 2's finding 3: `--label $'needs‐review'`, with a Unicode hyphen, exits 0.
 
-`--label 'a, b'` exits 1, which confirms review 2's finding 8 is fixed.
+`--label 'a, b'` exits 1, which confirms review 2's finding 8 is fixed. The first two were fixed after the merge, and checked again at `1d2f64e` ([below](#fixed-on-slice-4s-branch)).
 
 ## Decisions worth knowing
 
@@ -525,29 +526,38 @@ A few consequences:
 - **A new label with a comma is refused**, with exit 1. Labels already stored keep working.
 - **`edit --json` always has `labels_not_found`**, empty when every `--unlabel` label was there.
 
+## Fixed on slice 4's branch
+
+Both reviews left the same kind of bug for before slice 4: each let `create`, `edit` and `list --json` print an item that breaks `item.schema.json`. Neither was fixed before the merge, so both were fixed at the start of slice 4, on `feat/tracker/slice-4`, each in its own commit with a test seen failing first: `create --label ℂ` exited 0, and `--unlabel bug` on a file holding `bug` twice printed output that didn't match `edit.schema.json`.
+
+| Finding | Commit | Fix | Tests |
+| --- | --- | --- | --- |
+| Review 1's finding 1, and review 2's finding 1: labels like `ℂ` have no lower-case form | `bf229d0` | `create` and `edit --label` refuse a label that still holds a capital after lowercasing, with exit 1, naming the character. `--unlabel` still takes one, so a hand-written one can be removed. §2.1 and `--help` say so. Review 2's ASCII option wasn't taken, so it's now only about lookalike labels ([below](#still-open)). | `a_label_with_no_lower_case_form_is_refused`, which closes review 1's test gap 1 |
+| Review 2's finding 2: a label written twice by hand is recorded twice in `labels_removed` | `1d2f64e` | `edit` rebuilds the labels through `add_labels` when it's given `--label` or `--unlabel`, so each label is kept once and recorded once. | `a_label_written_twice_by_hand_is_kept_and_removed_once`, which closes review 2's test gap 2 |
+
+Decisions made with these fixes:
+
+- **A label with a capital that has no lower-case form is refused, not changed.** There's no lower-case letter to change `ℂ` into, and `item.schema.json` forbids capitals, so refusing it keeps the two in step.
+- **The check uses Rust's `char::is_uppercase`**, with no new crate. Run over every Unicode character after lowercasing, it refuses all 471 that the schema's `\p{Lu}\p{Lt}` pattern forbids. It also refuses 78 enclosed capitals, such as `🄰` and `🅰`, which the schema allows because they aren't letters. They read as capitals, so refusing them too costs nothing.
+- **Only labels being added are checked for capitals**, like the length and comma rules, so `--unlabel` and `list --label` still take a capital that a hand edit put in a file.
+- **`edit` rebuilds the labels only when it's given `--label` or `--unlabel`.** Then a label written twice by hand is kept once, and `fields` includes `labels` even if the only change was dropping the copy. An edit of other fields leaves the labels as the file holds them, so `edit --priority low` doesn't report a labels change it wasn't asked for, but its `--json` still prints the duplicate (review 1's finding 4, [still open](#still-open)).
+
 ## Still open
 
-Where two reviews, or a review and slice 2's readme, raised the same thing, it's listed once.
-
-**Fix before slice 4**
-
-- **Labels with no lower-case form break the schema** (review 1's finding 1, and review 2's finding 1). `check_label` stores `label.trim().to_lowercase()`, which leaves characters such as `ℂ` (U+2102), `ϒ` (U+03D2) and `𝐀` unchanged, though `item.schema.json` forbids `Lu` and `Lt` characters. `create … --label 'ℂ' --json` exits 0, and from then on `create`, `edit` and `list --json` print output that breaks its schema. Review 1 suggests refusing such a label after lowercasing, and adding `ℂ` to `labels_are_lowercased_and_stored_once`. Review 2 suggests deciding it together with the lookalike labels below, since making labels ASCII would make that check unnecessary. Slice 4's `show` adds another output that prints labels.
-- **An edit can write a history entry that breaks the schema for good** (review 2's finding 2). Neither the label rebuild in `edit` nor `labels_removed` drops duplicates, so on a file holding `"labels": ["bug", "bug"]`, `--unlabel bug` records `"labels_removed": ["bug", "bug"]`, which `uniqueItems` forbids. No command rewrites a history entry, so every later `list --json` and `edit --json` on the item breaks its schema. Review 2 suggests rebuilding the labels with `add_labels`, which keeps each once, and a test that runs `--unlabel bug` on such a file through `Env::json`.
+Where two reviews, or a review and slice 2's readme, raised the same thing, it's listed once. Both fixes before slice 4 are done ([above](#fixed-on-slice-4s-branch)).
 
 **Security** (review 2)
 
-- **3. Lookalike labels.** Refusing the zero-width characters that review 1's finding 5 names wouldn't stop a label that only looks like `needs-review`: one with a Unicode hyphen (U+2010) or a Cyrillic `е` is stored without complaint, looks the same in a terminal, and T9 won't fire on it. Nor would it stop `café` with a precomposed `é` and `café` with a combining accent being stored as two labels. The review offers two choices: make labels ASCII, which closes the class and makes the `ℂ` check unnecessary, or record in §7 that labels are compared as exact strings. Neither is taken yet.
+- **3. Lookalike labels.** Refusing the zero-width characters that review 1's finding 5 names wouldn't stop a label that only looks like `needs-review`: one with a Unicode hyphen (U+2010) or a Cyrillic `е` is stored without complaint, looks the same in a terminal, and T9 won't fire on it. Nor would it stop `café` with a precomposed `é` and `café` with a combining accent being stored as two labels. The review offers two choices: make labels ASCII, which closes the class, or record in §7 that labels are compared as exact strings. Neither is taken yet. `bf229d0` refuses `ℂ` without making labels ASCII, so this choice is now only about lookalikes.
 - **4. T9 could keep holding an item whose `needs-review` an edit removed.** The digest lists such an edit only after the item has auto-verified. With `labels_removed` stored, slice 9's T9 could also fire if any edit since `start` removed `needs-review`. Review 2 asks for this to go into slice 9's prompt, or for a note of why the digest alone is enough. PLAN.md's slice 9 says neither yet.
 
 **Low severity** (review 1)
 
-- **4. Hand-edited labels aren't matched case-insensitively.** A file holding `"Bug"` isn't found by `list --label bug`, can't be changed by `--unlabel bug`, and breaks the schema in `list --json`. A hand-written `["bug", "bug"]` keeps both through `edit`, since the rebuild filters but doesn't de-duplicate, which is what leads to review 2's finding 2 above.
+- **4. Hand-edited labels aren't matched case-insensitively.** A file holding `"Bug"` isn't found by `list --label bug`, can't be changed by `--unlabel bug`, and breaks the schema in `list --json`. A hand-written `["bug", "bug"]` kept both through `edit`, which led to review 2's finding 2. Since `1d2f64e`, an edit given `--label` or `--unlabel` keeps it once, but any other edit leaves both, so the item's `--json` output breaks the schema until a label edit.
 - **5. Invisible characters are accepted in labels and titles.** `check_printable` doesn't refuse zero-width characters (U+200B–U+200D, U+2060, U+FEFF). For labels, review 2's finding 3 above covers this and more. For titles, refusing them is still worth doing.
 
 **Test gaps**
 
-- `ℂ` among the refused labels (review 1's gap 1, review 2's gap 3), with the first fix above.
-- A regression test for review 2's finding 2 (review 2's gap 2).
 - Two projects in the text list (review 1's gap 5). `the_text_list_marks_priority_kind_and_labels` has one project, so nothing checks the heading line before each project, or that the columns line up across them.
 - Hand-edited labels, once review 1's finding 4 is decided (review 1's gap 6).
 
