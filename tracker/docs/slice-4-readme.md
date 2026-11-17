@@ -435,7 +435,7 @@ The demo under [Try it](#try-it) was run against the debug binary, and its outpu
 | --- | --- | --- |
 | 8. §2.8's example is out of date | `fc24732` | The example now shows what `delete` prints: the title, "deleted.json records the delete for the digest" and the shared question. Its commit and `refs/tracker/BM-12` stay, for slice 8. |
 | 9. `tty::confirm` doesn't own the re-read under the lock | `5a51de2` | `Store::lock_unchanged(id, before, command)` takes the lock and refuses with exit 1 if the item was removed or changed. `delete` calls it, and `criterion accept`, `approve` and `reject` will. `lock_unchanged_holds_the_lock_only_while_the_file_is_as_it_was` tests it, including the removal, which had no test. |
-| 11. `show` needs a `config.json` that parses | `3c0d47d` | Kept. `show` exits 3 when `config.json` can't be parsed, like every other command, rather than print the item with "(config.json can't be read)" for the project's name. §3 says so. |
+| 11. `show` needs a `config.json` that parses | `1fcdeec` | Kept. `show` exits 3 when `config.json` can't be parsed, like every other command, rather than print the item with "(config.json can't be read)" for the project's name. §3 says so. |
 
 ### Test gaps
 
