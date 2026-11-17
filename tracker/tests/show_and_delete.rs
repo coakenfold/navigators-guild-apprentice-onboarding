@@ -553,6 +553,37 @@ fn delete_json_in_a_terminal_prints_only_the_record_on_stdout() {
 }
 
 #[test]
+fn delete_json_in_a_terminal_cancelled_prints_only_the_error_on_stdout() {
+    let env = env_with_project();
+    env.create("XX", "a");
+    let before = fs::read(env.item_path("XX-1")).unwrap();
+    let out = env.work.path().join("out.json");
+    let line = format!(
+        "\"$TRACKER\" delete XX-1 --json > '{}'",
+        out.to_str().unwrap()
+    );
+    let Some((output, ok)) = env.in_terminal_typing_sh(&line, PROMPT, "XX-2") else {
+        return;
+    };
+    assert!(!ok, "{output}");
+    // The question went to the terminal, through stderr.
+    assert!(output.contains("Type XX-1 to confirm"), "{output}");
+    // And stdout holds one error object, with nothing of the question.
+    let printed = fs::read_to_string(&out).unwrap();
+    assert!(!printed.contains("Type XX-1"), "{printed}");
+    let error = common::parse(printed.as_bytes());
+    check_schema("error", &error);
+    assert_eq!(error["exit_code"], 1);
+    let message = error["error"].as_str().unwrap();
+    assert!(
+        message.contains("Cancelled: \"XX-2\" isn't XX-1"),
+        "{message}"
+    );
+    assert_eq!(fs::read(env.item_path("XX-1")).unwrap(), before);
+    assert!(!env.home.path().join("deleted.json").exists());
+}
+
+#[test]
 fn an_item_changed_while_deciding_isnt_deleted() {
     let env = env_with_project();
     env.create("XX", "a");
