@@ -108,13 +108,14 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - Every write goes to a temporary file that is then renamed over the original.
   - An unreadable store exits 3.
 
-  Then polish: error messages that say how to fix the problem, colour (anstream/anstyle) that turns off when output isn't a terminal, `--help` text on every command and flag, and empty states such as 'No open items. Nice work!'."
+  Then polish: error messages that say how to fix the problem, colour (anstream/anstyle) that turns off when output isn't a terminal, `--help` text on every command and flag, empty states such as 'No open items. Nice work!', and a heading row naming `list`'s columns, as `project list` has. Decide whether a title needs a length limit, as a label (50) and a reason (500) have."
 
 - **Done when:**
   - A hand-corrupted item file is reported with its name, line and reason, and the other items still list.
   - With no store, commands say "Run `tracker init`." and never panic. A store with `chmod 000` exits 3.
   - No temporary files are left in the store after any command.
   - Every command has `--help` text. `tracker list | cat` contains no colour codes. An empty list prints its empty-state message.
+  - `list`'s text starts with a heading row that names each column, lined up with the rows below it.
 
 **Checkpoint: course submission.** Send slices 1–5 to #adversarial-review with a short design covering only those slices that links to the full one (§9).
 
