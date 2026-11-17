@@ -141,7 +141,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 
 **Checkpoint: self-tracking starts.**
 
-1. Run `cargo install --path .`, then `tracker init` and `tracker project add TR --name tracker --root <guild-portfolio>/tracker --design DESIGN.md`.
+1. Run `cargo install --path .`, then `tracker init` and `tracker project add TR --name tracker --root <guild-portfolio>/tracker --design docs/DESIGN.md`.
 2. Create items for slices 7–16 from this plan. The outcome becomes the title, "Done when" becomes the criteria, and a slice that adds new behaviour gets the kind `capability` (§5).
 3. Add DESIGN.md §5's settings and its block for `~/.claude/CLAUDE.md` yourself, trimming the lines about commands that don't exist yet.
 

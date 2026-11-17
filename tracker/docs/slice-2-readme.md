@@ -1,15 +1,15 @@
 # Slice 2: States
 
-`tracker` is a command-line work tracker, written in Rust, that keeps one central list of work items across many projects and, in later slices, decides when an item is really done. This document covers **slice 2** of the 16 in [PLAN.md](../PLAN.md): what it built, how it works, and how to test it. [Slice 1's readme](slice-1-readme.md) covers the store, `create` and `list`.
+`tracker` is a command-line work tracker, written in Rust, that keeps one central list of work items across many projects and, in later slices, decides when an item is really done. This document covers **slice 2** of the 16 in [PLAN.md](./PLAN.md): what it built, how it works, and how to test it. [Slice 1's readme](slice-1-readme.md) covers the store, `create` and `list`.
 
-After slice 2 you can **move an item through its lifecycle**: start it, submit it, shelve it and reopen it, with every move kept in its history. The spec is [DESIGN.md](../DESIGN.md). This slice implements §2.2 (states and moves) and the `status` alias from §3, and adds `history` and `verification` to §4.3's item file.
+After slice 2 you can **move an item through its lifecycle**: start it, submit it, shelve it and reopen it, with every move kept in its history. The spec is [DESIGN.md](./DESIGN.md). This slice implements §2.2 (states and moves) and the `status` alias from §3, and adds `history` and `verification` to §4.3's item file.
 
-| | |
-| --- | --- |
-| Status | Done. Every _Done when_ check passes. From [review 1](slice-2-review-1.md), its three fixes before slice 3 and two low-severity items are done, and its five questions about DESIGN.md are settled ([below](#fixes-after-review-1)). |
-| Branch | `feat/tracker/slice-2` |
-| Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/` |
-| Tests | 93: 38 in `tests/create_and_list.rs`, 25 in `tests/states.rs`, 8 in `tests/item_files.rs`, 6 in `tests/output.rs`, 5 in `tests/docs_links.rs`, 4 in `tests/fixtures.rs`, 3 in `tests/schemas.rs`, and 2 each in `tests/item_ids.rs` and `tests/store_writes.rs` |
+|              |                                                                                                                                                                                                                                                                 |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Status       | Done. Every _Done when_ check passes. From [review 1](./reviews/slice-2-review-1.md), its three fixes before slice 3 and two low-severity items are done, and its five questions about DESIGN.md are settled ([below](#fixes-after-review-1)).                  |
+| Branch       | `feat/tracker/slice-2`                                                                                                                                                                                                                                          |
+| Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/`                                                                                                                                                                             |
+| Tests        | 93: 38 in `tests/create_and_list.rs`, 25 in `tests/states.rs`, 8 in `tests/item_files.rs`, 6 in `tests/output.rs`, 5 in `tests/docs_links.rs`, 4 in `tests/fixtures.rs`, 3 in `tests/schemas.rs`, and 2 each in `tests/item_ids.rs` and `tests/store_writes.rs` |
 
 ## Contents
 
@@ -116,11 +116,43 @@ The item file then holds its last verification in `previous_verification`, becau
     "note": "No gates ran: this version of tracker has none yet, so nothing checked the work."
   },
   "history": [
-    { "at": "2026-11-17T00:24:57Z", "from": "open", "to": "in-progress", "via": "start", "interactive": false },
-    { "at": "2026-11-17T00:24:57Z", "from": "in-progress", "to": "done", "via": "submit", "interactive": false },
-    { "at": "2026-11-17T00:24:57Z", "from": "done", "to": "open", "via": "reopen", "interactive": false, "reason": "found a bug" },
-    { "at": "2026-11-17T00:24:57Z", "from": "open", "to": "in-progress", "via": "start", "interactive": false },
-    { "at": "2026-11-17T00:24:57Z", "from": "in-progress", "to": "shelved", "via": "shelve", "interactive": false, "reason": "Blocked on BM-2" }
+    {
+      "at": "2026-11-17T00:24:57Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-17T00:24:57Z",
+      "from": "in-progress",
+      "to": "done",
+      "via": "submit",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-17T00:24:57Z",
+      "from": "done",
+      "to": "open",
+      "via": "reopen",
+      "interactive": false,
+      "reason": "found a bug"
+    },
+    {
+      "at": "2026-11-17T00:24:57Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-17T00:24:57Z",
+      "from": "in-progress",
+      "to": "shelved",
+      "via": "shelve",
+      "interactive": false,
+      "reason": "Blocked on BM-2"
+    }
   ]
 }
 ```
@@ -129,12 +161,12 @@ The file itself puts each history field on its own line. It's shortened here. `i
 
 ## Commands
 
-| Command | Move |
-| --- | --- |
-| `tracker start <id>` | open → in-progress |
-| `tracker submit <id>` | in-progress → done, with an `unchecked` verification record |
-| `tracker shelve <id> --reason "…"` | open or in-progress → shelved |
-| `tracker reopen <id> --reason "…"` | done or shelved → open. A verification record moves to `previous_verification` |
+| Command                                      | Move                                                                                                                                                                                                        |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tracker start <id>`                         | open → in-progress                                                                                                                                                                                          |
+| `tracker submit <id>`                        | in-progress → done, with an `unchecked` verification record                                                                                                                                                 |
+| `tracker shelve <id> --reason "…"`           | open or in-progress → shelved                                                                                                                                                                               |
+| `tracker reopen <id> --reason "…"`           | done or shelved → open. A verification record moves to `previous_verification`                                                                                                                              |
 | `tracker status <id> <state> [--reason "…"]` | Runs the command that moves the item to `<state>`: `in-progress` runs start, `done` runs submit, `shelved` runs shelve and `open` runs reopen. `review` is refused, and so is any move of an item in review |
 
 Every command takes `--json`. An ID can be typed in lower case, so `xx-1` finds XX-1.
@@ -147,14 +179,14 @@ Exit codes are as in §3: `0` the move was made, `1` the move isn't allowed, the
 
 [`states::MOVES`](../src/states.rs) lists each move as a command (`via`), the state it starts from and the state it leads to:
 
-| via | from | to |
-| --- | --- | --- |
-| start | open | in-progress |
-| submit | in-progress | done |
-| shelve | open | shelved |
-| shelve | in-progress | shelved |
-| reopen | done | open |
-| reopen | shelved | open |
+| via    | from        | to          |
+| ------ | ----------- | ----------- |
+| start  | open        | in-progress |
+| submit | in-progress | done        |
+| shelve | open        | shelved     |
+| shelve | in-progress | shelved     |
+| reopen | done        | open        |
+| reopen | shelved     | open        |
 
 `states::find(via, from)` looks a move up. Nothing leads into or out of review yet: `submit`'s move to review, `approve` and `reject` arrive with the triggers in slice 9. Until then, an item reaches review only if its file is edited by hand, and every move refuses it.
 
@@ -185,13 +217,13 @@ Shelve and reopen need a reason, which goes in the history entry. A reason is tr
 
 Each move adds exactly one entry to `history`, oldest first. A refused move adds none.
 
-| Field | |
-| --- | --- |
-| `at` | When, to the second. Several moves in one second share a time, so the order of the entries is what counts. |
-| `from`, `to` | The states. Each entry's `to` is the next entry's `from`. |
-| `via` | The command that made the move. `status <id> done` records `submit`, not `status`. |
-| `interactive` | Whether stdin was a terminal. See below. |
-| `reason` | For shelve and reopen. Left out for other moves. |
+| Field         |                                                                                                            |
+| ------------- | ---------------------------------------------------------------------------------------------------------- |
+| `at`          | When, to the second. Several moves in one second share a time, so the order of the entries is what counts. |
+| `from`, `to`  | The states. Each entry's `to` is the next entry's `from`.                                                  |
+| `via`         | The command that made the move. `status <id> done` records `submit`, not `status`.                         |
+| `interactive` | Whether stdin was a terminal. See below.                                                                   |
+| `reason`      | For shelve and reopen. Left out for other moves.                                                           |
 
 From slice 3, `edit` and `criterion accept` add entries of the same shape, with `from` equal to `to` and a `fields` list (DESIGN.md §2.1).
 
@@ -209,12 +241,12 @@ It's a convention, not security. A command run under `script` gets a terminal an
 
 ## JSON output
 
-| Command | Output | Schema |
-| --- | --- | --- |
-| `start`, `shelve`, `reopen`, and `status` to any state but done | `{"item": {…}}`, the item after the move, as its file holds it | [move.schema.json](../schemas/move.schema.json) |
-| `submit`, `status <id> done` | `{"id", "result": "done", "status": "done", "gates": [], "holds": [], "item": {…}}`, §3's shape | [submit.schema.json](../schemas/submit.schema.json) |
-| A move the diagram doesn't draw | `{"error", "exit_code": 1, "allowed": [{"via", "to", "command"}]}`. `allowed` is empty for an item in review | [error.schema.json](../schemas/error.schema.json) |
-| Any other failure | `{"error", "exit_code"}` | [error.schema.json](../schemas/error.schema.json) |
+| Command                                                         | Output                                                                                                       | Schema                                              |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
+| `start`, `shelve`, `reopen`, and `status` to any state but done | `{"item": {…}}`, the item after the move, as its file holds it                                               | [move.schema.json](../schemas/move.schema.json)     |
+| `submit`, `status <id> done`                                    | `{"id", "result": "done", "status": "done", "gates": [], "holds": [], "item": {…}}`, §3's shape              | [submit.schema.json](../schemas/submit.schema.json) |
+| A move the diagram doesn't draw                                 | `{"error", "exit_code": 1, "allowed": [{"via", "to", "command"}]}`. `allowed` is empty for an item in review | [error.schema.json](../schemas/error.schema.json)   |
+| Any other failure                                               | `{"error", "exit_code"}`                                                                                     | [error.schema.json](../schemas/error.schema.json)   |
 
 `submit`'s `gates` and `holds` are always empty for now, and `result` is always `done`. Slice 6 fills in `gates`, and slice 9 fills in `holds` and adds `"result": "held"` with `"status": "review"`. Agents that parse `submit` now won't break when they do, because no field is renamed or removed.
 
@@ -222,29 +254,29 @@ It's a convention, not security. A command run under `script` gets a terminal an
 
 ## Code tour
 
-| File | What it holds |
-| --- | --- |
-| [src/states.rs](../src/states.rs) | The move table, `find`, `via_to`, and the refusals: `not_from` and `not_to` build the message and `allowed`, and `allowed` words the moves as one sentence. `UNCHECKED_NOTE` is the note `submit` writes. |
-| [src/item.rs](../src/item.rs) | `HistoryEntry`, `Via` (with `needs_reason`), `Verification` and `VerifiedBy`, and the `verification`, `previous_verification` and `history` fields of `Item`, each with a serde default so slice 1's files still load. `Status::phrase` gives "in review" rather than "review" for messages. |
-| [src/main.rs](../src/main.rs) | The clap definitions of the five commands, and `move_item`, `status`, `check_reason` and `apply`. `MAX_REASON` is the 500-character limit. |
-| [src/tty.rs](../src/tty.rs) | `is_interactive`. |
-| [src/error.rs](../src/error.rs) | `Error` gains `allowed`, which `fail` adds to the JSON. |
-| [tests/states.rs](../tests/states.rs) | Every test for this slice. `moved` runs a move and checks the file matches the output. `refused` and `refused_json` check that a refused move leaves the file byte for byte unchanged. `allowed` returns the commands a refusal lists. |
+| File                                  | What it holds                                                                                                                                                                                                                                                                                |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [src/states.rs](../src/states.rs)     | The move table, `find`, `via_to`, and the refusals: `not_from` and `not_to` build the message and `allowed`, and `allowed` words the moves as one sentence. `UNCHECKED_NOTE` is the note `submit` writes.                                                                                    |
+| [src/item.rs](../src/item.rs)         | `HistoryEntry`, `Via` (with `needs_reason`), `Verification` and `VerifiedBy`, and the `verification`, `previous_verification` and `history` fields of `Item`, each with a serde default so slice 1's files still load. `Status::phrase` gives "in review" rather than "review" for messages. |
+| [src/main.rs](../src/main.rs)         | The clap definitions of the five commands, and `move_item`, `status`, `check_reason` and `apply`. `MAX_REASON` is the 500-character limit.                                                                                                                                                   |
+| [src/tty.rs](../src/tty.rs)           | `is_interactive`.                                                                                                                                                                                                                                                                            |
+| [src/error.rs](../src/error.rs)       | `Error` gains `allowed`, which `fail` adds to the JSON.                                                                                                                                                                                                                                      |
+| [tests/states.rs](../tests/states.rs) | Every test for this slice. `moved` runs a move and checks the file matches the output. `refused` and `refused_json` check that a refused move leaves the file byte for byte unchanged. `allowed` returns the commands a refusal lists.                                                       |
 
 ## Testing
 
 Every _Done when_ check in PLAN.md's slice 2 has a test in [tests/states.rs](../tests/states.rs):
 
-| _Done when_ | Tests |
-| --- | --- |
-| open → in-progress → done → open, through the commands and through `status` | `an_item_goes_open_in_progress_done_open_through_the_commands`, `an_item_goes_open_in_progress_done_open_through_status` |
-| `status <id> open` without `--reason` exits 1 | `status_open_and_status_shelved_need_a_reason`, which also covers an empty and a blank reason, and `status … shelved` |
-| `shelve` works from open and from in-progress, and exits 1 without a reason | `shelve_works_from_open_and_from_in_progress`, `shelve_without_a_reason_exits_1` |
-| `reopen` brings a shelved item back to open | `reopen_brings_a_shelved_item_back_to_open` |
-| open → done exits 1 and lists the allowed moves | `open_to_done_exits_1_and_lists_the_allowed_moves`, and every other move the diagram doesn't draw in `every_move_the_diagram_doesnt_draw_is_refused` |
-| Every move adds exactly one history entry | `every_move_adds_exactly_one_history_entry` (eight moves, with the earlier entries unchanged), `a_refused_move_adds_no_history_entry` |
-| _Prompt:_ `submit` writes `by: "unchecked"`, the time and a note | `check_unchecked`, called from the tests above |
-| _Prompt:_ each entry has `interactive` | `check_last_move` checks `false` on every move, and `a_move_from_a_terminal_records_interactive_true` checks `true` |
+| _Done when_                                                                 | Tests                                                                                                                                                |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| open → in-progress → done → open, through the commands and through `status` | `an_item_goes_open_in_progress_done_open_through_the_commands`, `an_item_goes_open_in_progress_done_open_through_status`                             |
+| `status <id> open` without `--reason` exits 1                               | `status_open_and_status_shelved_need_a_reason`, which also covers an empty and a blank reason, and `status … shelved`                                |
+| `shelve` works from open and from in-progress, and exits 1 without a reason | `shelve_works_from_open_and_from_in_progress`, `shelve_without_a_reason_exits_1`                                                                     |
+| `reopen` brings a shelved item back to open                                 | `reopen_brings_a_shelved_item_back_to_open`                                                                                                          |
+| open → done exits 1 and lists the allowed moves                             | `open_to_done_exits_1_and_lists_the_allowed_moves`, and every other move the diagram doesn't draw in `every_move_the_diagram_doesnt_draw_is_refused` |
+| Every move adds exactly one history entry                                   | `every_move_adds_exactly_one_history_entry` (eight moves, with the earlier entries unchanged), `a_refused_move_adds_no_history_entry`                |
+| _Prompt:_ `submit` writes `by: "unchecked"`, the time and a note            | `check_unchecked`, called from the tests above                                                                                                       |
+| _Prompt:_ each entry has `interactive`                                      | `check_last_move` checks `false` on every move, and `a_move_from_a_terminal_records_interactive_true` checks `true`                                  |
 
 Further tests cover the edges: `nothing_moves_an_item_to_review_by_hand`, `an_item_in_review_is_refused_by_every_move`, `status_refuses_a_reason_for_a_move_that_takes_none`, `a_reason_must_fit_on_one_line`, `a_reason_can_be_at_most_500_characters`, `a_move_on_a_missing_or_malformed_id_exits_1`, `a_move_finds_an_id_typed_in_lower_case`, `a_move_needs_a_store`, `list_and_project_list_show_the_new_states`, `the_text_output_names_the_move` and `help_shows_that_shelve_and_reopen_need_a_reason`. The tests added after review 1 are listed with their fixes [below](#fixes-after-review-1).
 
@@ -281,36 +313,36 @@ The first two aren't automated yet ([test gap 2](#still-open-from-review-1)).
 
 ## Fixes after review 1
 
-[slice-2-review-1.md](slice-2-review-1.md) found no bugs in the slice's own behaviour. Its findings were about the shape of the JSON, the `interactive` flag, and decisions DESIGN.md didn't record. Each fix below is in its own commit, and each new test was seen failing first.
+[slice-2-review-1.md](./reviews/slice-2-review-1.md) found no bugs in the slice's own behaviour. Its findings were about the shape of the JSON, the `interactive` flag, and decisions DESIGN.md didn't record. Each fix below is in its own commit, and each new test was seen failing first.
 
 The first two commits save work from before the fixes: the review itself (`f97d253`), and a DESIGN.md change that came out of discussing finding 5 (`ee14706`, described under [Security items](#security-items)).
 
 ### Fix before slice 3
 
-| Finding | Commit | Fix | Tests |
-| --- | --- | --- | --- |
-| 1. `submit --json` doesn't have §3's shape | `d8a9564` | `submit` and `status <id> done` print `id`, `result`, `status`, `gates`, `holds` and `item`, from the new `submit.schema.json`. §3's example now includes `item`. | `submit_prints_the_shape_section_3_gives_it` |
-| 2. The allowed moves are only in the message | `32ef9f7` | A refused move adds `allowed` to its JSON error, and `error.schema.json` defines it. The tests check the field instead of the wording. | `every_move_the_diagram_doesnt_draw_is_refused` and the tests before and after it; `a_wrong_output_is_caught` in `tests/schemas.rs` |
-| 3. `interactive` is never tested as `true`, and isn't shared | `a370118` | `tty::is_interactive()` replaces the inline check, and slice 4's prompt says to reuse it. | `a_move_from_a_terminal_records_interactive_true` |
+| Finding                                                      | Commit    | Fix                                                                                                                                                               | Tests                                                                                                                               |
+| ------------------------------------------------------------ | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| 1. `submit --json` doesn't have §3's shape                   | `d8a9564` | `submit` and `status <id> done` print `id`, `result`, `status`, `gates`, `holds` and `item`, from the new `submit.schema.json`. §3's example now includes `item`. | `submit_prints_the_shape_section_3_gives_it`                                                                                        |
+| 2. The allowed moves are only in the message                 | `32ef9f7` | A refused move adds `allowed` to its JSON error, and `error.schema.json` defines it. The tests check the field instead of the wording.                            | `every_move_the_diagram_doesnt_draw_is_refused` and the tests before and after it; `a_wrong_output_is_caught` in `tests/schemas.rs` |
+| 3. `interactive` is never tested as `true`, and isn't shared | `a370118` | `tty::is_interactive()` replaces the inline check, and slice 4's prompt says to reuse it.                                                                         | `a_move_from_a_terminal_records_interactive_true`                                                                                   |
 
 ### Low severity
 
-| Finding | Commit | Fix | Tests |
-| --- | --- | --- | --- |
-| Reasons have no length limit | `6855ce9` | At most 500 characters, after trimming. `item.schema.json` and DESIGN.md §3 say so. | `a_reason_can_be_at_most_500_characters`, and a case in `a_wrong_output_is_caught` |
-| `--reason` shows as optional in `--help` | `529fa36` | The usage lines of `shelve` and `reopen` show `--reason <REASON>`, and `status`'s shows `[--reason <REASON>]`. | `help_shows_that_shelve_and_reopen_need_a_reason` |
+| Finding                                  | Commit    | Fix                                                                                                            | Tests                                                                              |
+| ---------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Reasons have no length limit             | `6855ce9` | At most 500 characters, after trimming. `item.schema.json` and DESIGN.md §3 say so.                            | `a_reason_can_be_at_most_500_characters`, and a case in `a_wrong_output_is_caught` |
+| `--reason` shows as optional in `--help` | `529fa36` | The usage lines of `shelve` and `reopen` show `--reason <REASON>`, and `status`'s shows `[--reason <REASON>]`. | `help_shows_that_shelve_and_reopen_need_a_reason`                                  |
 
 ### Design decisions
 
 The review listed five places where the code and DESIGN.md disagreed or DESIGN.md was silent. Each was settled after discussion.
 
-| Question | Decision | Commits |
-| --- | --- | --- |
-| 1. What happens to the verification record on reopen? | It moves to `previous_verification`, which keeps the latest only, so `verification` exists only while the item is done. Slice 3's `list --by` and slice 16's digest and `audit` can read it on its own, though `--by` also checks the state because of files like `XX-4`. DESIGN.md §2.1 and §2.7 say so. | `78c7d51`, and the fixture in `8ad15c1` |
-| 2. `verification.note` and `history[].reason` aren't in DESIGN.md | §4.3's example item now goes through a shelve and a reopen with reasons, and a bullet explains `note`. | `f817e58` |
-| 3. How is an `edit` recorded in history? | In the same shape as a move, with `from` equal to `to` and a `fields` list. `criterion accept` does the same with `via: "criterion-accept"`. DESIGN.md §2.1 and PLAN.md slices 3 and 6 say so. | `602cba8` |
-| 4. Refusals for an item in review say approve and reject don't exist | Right for now. Slice 9's _Done when_ now checks that every such refusal names them and that `allowed` lists them. | `a568739` |
-| 5. Two items in progress at once | The review was wrong that the tests do this: they submit XX-1 before starting XX-2. The real problem is that G1 refuses `start` for an item with no criteria, which is nearly every test here. Slice 6's prompt now says to give those items a criterion through the test helper. | `e405dad` |
+| Question                                                             | Decision                                                                                                                                                                                                                                                                                                  | Commits                                 |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| 1. What happens to the verification record on reopen?                | It moves to `previous_verification`, which keeps the latest only, so `verification` exists only while the item is done. Slice 3's `list --by` and slice 16's digest and `audit` can read it on its own, though `--by` also checks the state because of files like `XX-4`. DESIGN.md §2.1 and §2.7 say so. | `78c7d51`, and the fixture in `8ad15c1` |
+| 2. `verification.note` and `history[].reason` aren't in DESIGN.md    | §4.3's example item now goes through a shelve and a reopen with reasons, and a bullet explains `note`.                                                                                                                                                                                                    | `f817e58`                               |
+| 3. How is an `edit` recorded in history?                             | In the same shape as a move, with `from` equal to `to` and a `fields` list. `criterion accept` does the same with `via: "criterion-accept"`. DESIGN.md §2.1 and PLAN.md slices 3 and 6 say so.                                                                                                            | `602cba8`                               |
+| 4. Refusals for an item in review say approve and reject don't exist | Right for now. Slice 9's _Done when_ now checks that every such refusal names them and that `allowed` lists them.                                                                                                                                                                                         | `a568739`                               |
+| 5. Two items in progress at once                                     | The review was wrong that the tests do this: they submit XX-1 before starting XX-2. The real problem is that G1 refuses `start` for an item with no criteria, which is nearly every test here. Slice 6's prompt now says to give those items a criterion through the test helper.                         | `e405dad`                               |
 
 ### Security items
 

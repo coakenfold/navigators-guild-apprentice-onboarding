@@ -1,5 +1,6 @@
 //! DESIGN.md, PLAN.md, walkthrough.html and judge-eval/ moved into this
-//! folder together in slice 1. Their relative links must still resolve.
+//! folder together in slice 1, and DESIGN.md and PLAN.md later into `docs/`.
+//! Their relative links must still resolve.
 
 use std::fs;
 use std::path::Path;
@@ -50,9 +51,9 @@ fn line_range(anchor: &str) -> Option<(usize, usize)> {
 #[test]
 fn design_doc_still_links_to_the_files_moved_with_it() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let design = fs::read_to_string(crate_root.join("DESIGN.md")).unwrap();
+    let design = fs::read_to_string(crate_root.join("docs/DESIGN.md")).unwrap();
     let links = relative_links(&design);
-    for expected in ["judge-eval/", "PLAN.md", "walkthrough.html"] {
+    for expected in ["../judge-eval/", "PLAN.md", "../walkthrough.html"] {
         assert!(
             links.iter().any(|link| link == expected),
             "DESIGN.md no longer links to {expected}"
@@ -60,36 +61,47 @@ fn design_doc_still_links_to_the_files_moved_with_it() {
     }
 }
 
-/// The docs whose links are checked: the ones at the crate root, judge-eval's
-/// README, and every markdown file in `docs/`, so a new doc there is checked
-/// without being listed here.
+/// The docs whose links are checked: CLAUDE.md, judge-eval's README, and
+/// every markdown file in `docs/` and the folders under it, DESIGN.md, PLAN.md
+/// and the reviews included, so a new doc there is checked without being
+/// listed here.
 fn docs() -> Vec<String> {
-    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut docs: Vec<String> = ["DESIGN.md", "PLAN.md", "CLAUDE.md", "judge-eval/README.md"]
+    let mut docs: Vec<String> = ["CLAUDE.md", "judge-eval/README.md"]
         .map(String::from)
         .to_vec();
-    let mut in_docs: Vec<String> = fs::read_dir(crate_root.join("docs"))
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
-        .filter(|name| name.ends_with(".md"))
-        .map(|name| format!("docs/{name}"))
-        .collect();
+    let mut in_docs = Vec::new();
+    markdown_in("docs", &mut in_docs);
     in_docs.sort();
     docs.extend(in_docs);
     docs
 }
 
+/// Adds every markdown file in `folder`, relative to the crate root, and in
+/// the folders under it, to `found`.
+fn markdown_in(folder: &str, found: &mut Vec<String>) {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for entry in fs::read_dir(crate_root.join(folder)).unwrap() {
+        let entry = entry.unwrap();
+        let name = format!("{folder}/{}", entry.file_name().into_string().unwrap());
+        if entry.file_type().unwrap().is_dir() {
+            markdown_in(&name, found);
+        } else if name.ends_with(".md") {
+            found.push(name);
+        }
+    }
+}
+
 #[test]
 fn the_docs_folder_is_checked() {
     let docs = docs();
-    assert!(
-        docs.contains(&"docs/slice-1-readme.md".to_string()),
-        "{docs:?}"
-    );
-    assert!(
-        docs.contains(&"docs/slice-1-review-1.md".to_string()),
-        "{docs:?}"
-    );
+    for doc in [
+        "docs/DESIGN.md",
+        "docs/PLAN.md",
+        "docs/slice-1-readme.md",
+        "docs/reviews/slice-1-review-1.md",
+    ] {
+        assert!(docs.contains(&doc.to_string()), "{doc} isn't in {docs:?}");
+    }
 }
 
 #[test]
