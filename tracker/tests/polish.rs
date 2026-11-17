@@ -12,7 +12,7 @@ use unicode_width::UnicodeWidthStr;
 const ESC: char = '\u{1b}';
 
 /// Every command, as typed after `tracker`, with its first line of help.
-const COMMANDS: [(&[&str], &str); 15] = [
+const COMMANDS: [(&[&str], &str); 22] = [
     (&[], "A verification-gated work tracker"),
     (&["init"], "Create the store"),
     (&["project"], "Register projects and list them"),
@@ -34,6 +34,16 @@ const COMMANDS: [(&[&str], &str); 15] = [
     (&["status"], "Move an item to a state"),
     (&["show"], "Show everything about one item"),
     (&["delete"], "Delete an item for good"),
+    (&["gates"], "Run the gates submit runs"),
+    (&["criterion"], "Add, change, remove or accept"),
+    (&["criterion", "add"], "Add a criterion"),
+    (&["criterion", "set"], "Give a criterion a script check"),
+    (&["criterion", "remove"], "Remove a criterion"),
+    (
+        &["criterion", "accept"],
+        "Record the criteria's text as written",
+    ),
+    (&["evidence"], "Record where to look"),
 ];
 
 #[test]
@@ -85,7 +95,7 @@ fn busy_store() -> Env {
     env.add_project("XX", "xx");
     env.add_project("YY", "yy");
     for title in ["open one", "started", "finished", "put away"] {
-        env.json(&[
+        let item = env.json(&[
             "create",
             title,
             "--project",
@@ -95,11 +105,14 @@ fn busy_store() -> Env {
             "--label",
             "bug",
         ]);
+        env.add_criterion(item["item"]["id"].as_str().unwrap());
     }
     env.create("YY", "other project");
-    env.json(&["start", "XX-2"]);
+    // XX-3 first, since gate G1 starts no item while another in the
+    // project is in progress.
     env.json(&["start", "XX-3"]);
     env.json(&["submit", "XX-3"]);
+    env.json(&["start", "XX-2"]);
     env.json(&["shelve", "XX-4", "--reason", "later"]);
     env
 }

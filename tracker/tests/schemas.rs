@@ -82,7 +82,7 @@ fn a_wrong_output_is_caught() {
 
     // A field the schema doesn't name, or a missing one.
     let mut extra = item();
-    extra["written"] = json!(["71ac3e"]);
+    extra["owner"] = json!("me");
     fails("item", extra);
     let mut missing = item();
     missing.as_object_mut().unwrap().remove("updated");
@@ -380,4 +380,142 @@ fn a_wrong_show_or_delete_output_is_caught() {
         bad[field] = value;
         fails("deleted", bad);
     }
+}
+
+#[test]
+fn a_wrong_criterion_or_gate_output_is_caught() {
+    // Criteria and their written fingerprints (slice 6, DESIGN.md §2.3).
+    let sha = "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb";
+    let mut criteria = item();
+    criteria["written"] = json!([sha]);
+    criteria["criteria"] = json!([
+        { "text": "a" },
+        { "text": "b", "check": "cargo test b" },
+        { "text": "c", "evidence": "docs/c.png" }
+    ]);
+    check_schema("item", &criteria);
+    check_schema(
+        "criterion",
+        &json!({ "criterion": 1, "item": criteria.clone() }),
+    );
+    fails(
+        "criterion",
+        json!({ "criterion": 0, "item": criteria.clone() }),
+    );
+    fails("criterion", json!({ "item": criteria.clone() }));
+    for (pointer, value) in [
+        ("/written", json!([])),
+        ("/written", json!(["71ac3e"])),
+        ("/written", json!([sha.to_uppercase()])),
+        ("/criteria", json!([])),
+        ("/criteria/0/text", json!("")),
+        ("/criteria/0/text", json!("two\nlines")),
+        ("/criteria/1/check", json!("")),
+        ("/criteria/1/check", json!("a\nb")),
+        ("/criteria/2/evidence", json!("")),
+        ("/criteria/0/kind", json!("script")),
+        // Only a manual criterion has evidence.
+        ("/criteria/1/evidence", json!("trust me")),
+    ] {
+        let mut bad = criteria.clone();
+        let (parent, field) = pointer.rsplit_once('/').unwrap();
+        bad.pointer_mut(parent).unwrap()[field] = value;
+        fails("item", bad);
+    }
+    let mut bad = criteria.clone();
+    bad["criteria"][0].as_object_mut().unwrap().remove("text");
+    fails("item", bad);
+
+    // A criterion accept's history entry: from equal to to, naming written.
+    let accept = json!({
+        "at": "2026-11-15T22:03:00Z", "from": "open", "to": "open",
+        "via": "criterion-accept", "interactive": true, "fields": ["written"]
+    });
+    let mut accepted = criteria.clone();
+    accepted["history"] = json!([accept.clone()]);
+    check_schema("item", &accepted);
+    check_schema(
+        "criterion-accept",
+        &json!({ "accepted": true, "item": accepted.clone() }),
+    );
+    fails("criterion-accept", json!({ "item": accepted.clone() }));
+    for change in [
+        ("fields", json!(["title"])),
+        ("fields", json!(["written", "title"])),
+        ("reason", json!("why")),
+        ("kind_before", json!("capability")),
+    ] {
+        let mut entry = accept.clone();
+        entry[change.0] = change.1;
+        let mut bad = criteria.clone();
+        bad["history"] = json!([entry]);
+        fails("item", bad);
+    }
+    let mut entry = accept.clone();
+    entry.as_object_mut().unwrap().remove("fields");
+    let mut bad = criteria.clone();
+    bad["history"] = json!([entry]);
+    fails("item", bad);
+    // An edit can't claim to have changed written.
+    let mut bad = criteria.clone();
+    bad["history"] = json!([{
+        "at": "2026-11-15T22:03:00Z", "from": "open", "to": "open", "via": "edit",
+        "interactive": false, "fields": ["written"]
+    }]);
+    fails("item", bad);
+
+    // The gates dry run, when every gate passed.
+    let gates = json!({
+        "id": "XX-1", "status": "open", "result": "passed",
+        "gates": [{ "gate": "G2", "ok": true }, { "gate": "G6", "ok": true }]
+    });
+    check_schema("gates", &gates);
+    for (field, value) in [
+        ("result", json!("refused")),
+        ("gates", json!([])),
+        ("gates", json!([{ "gate": "G2", "ok": false }])),
+        ("gates", json!([{ "gate": "T1", "ok": true }])),
+        ("status", json!("closed")),
+    ] {
+        let mut bad = gates.clone();
+        bad[field] = value;
+        fails("gates", bad);
+    }
+
+    // A gate's refusal: the error shape, exit 2, with every failure.
+    let refusal = json!({
+        "error": "XX-1 can't be submitted: G2 failed. Nothing was changed.",
+        "exit_code": 2,
+        "id": "XX-1",
+        "result": "refused",
+        "gates": [{ "gate": "G2", "ok": false }, { "gate": "G6", "ok": true }],
+        "failures": [
+            { "gate": "G2", "criterion": 1, "message": "no evidence" },
+            { "gate": "G6", "message": "no section" }
+        ]
+    });
+    check_schema("error", &refusal);
+    let mut bad = refusal.clone();
+    bad["exit_code"] = json!(1);
+    fails("error", bad);
+    for field in ["id", "gates", "failures"] {
+        let mut bad = refusal.clone();
+        bad.as_object_mut().unwrap().remove(field);
+        fails("error", bad);
+    }
+    for (pointer, value) in [
+        ("/failures/0/criterion", json!(0)),
+        ("/failures/0/message", json!("")),
+        ("/failures/0/extra", json!(1)),
+        ("/result", json!("held")),
+    ] {
+        let mut bad = refusal.clone();
+        let (parent, field) = pointer.rsplit_once('/').unwrap();
+        bad.pointer_mut(parent).unwrap()[field] = value;
+        fails("error", bad);
+    }
+    fails(
+        "error",
+        json!({ "error": "x", "exit_code": 1, "gates": [{ "gate": "G1", "ok": false }] }),
+    );
 }

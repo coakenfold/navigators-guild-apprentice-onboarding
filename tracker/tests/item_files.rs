@@ -151,10 +151,7 @@ fn update_item_refuses_a_file_it_would_lose_fields_from() {
     let original = fs::read_to_string(&path).unwrap();
 
     // A field from a newer tracker: rewriting the file would lose it.
-    let edited = original.replace(
-        "  \"created\"",
-        "  \"written\": [\"71ac3e\"],\n  \"created\"",
-    );
+    let edited = original.replace("  \"created\"", "  \"owner\": \"me\",\n  \"created\"");
     assert_ne!(edited, original);
     fs::write(&path, &edited).unwrap();
     // Still listed: only rewriting it would lose something.
@@ -162,7 +159,7 @@ fn update_item_refuses_a_file_it_would_lose_fields_from() {
 
     let error = store.update_item(&item).unwrap_err();
     assert_eq!(error.code, 3);
-    assert!(error.message.contains("written"), "{}", error.message);
+    assert!(error.message.contains("owner"), "{}", error.message);
     assert!(error.message.contains("newer tracker"), "{}", error.message);
     assert_eq!(fs::read_to_string(&path).unwrap(), edited);
 }
@@ -220,9 +217,10 @@ fn save_item_never_overwrites_a_file() {
     assert_eq!(fs::read_to_string(env.item_path("XX-1")).unwrap(), original);
 }
 
-/// Adds a history entry the way slice 6's `criterion accept` will write
-/// one, with a `via` this version doesn't know, and returns the file's new
-/// text.
+/// Adds a history entry from a newer tracker, with a `via` this version
+/// doesn't know, and returns the file's new text. `archive` is made up, so
+/// no later slice makes it known (slice 6 made `criterion-accept` known,
+/// which these tests used before).
 fn add_newer_entry(env: &Env, id: &str) -> String {
     let path = env.item_path(id);
     let mut item: serde_json::Value =
@@ -232,7 +230,7 @@ fn add_newer_entry(env: &Env, id: &str) -> String {
         "at": "2026-11-16T12:00:00Z",
         "from": status,
         "to": status,
-        "via": "criterion-accept",
+        "via": "archive",
         "interactive": true,
     });
     match item["history"].as_array_mut() {
@@ -268,7 +266,7 @@ fn a_history_entry_from_a_newer_tracker_still_lists() {
 
 #[test]
 fn a_move_refuses_an_item_whose_history_has_a_command_it_doesnt_know() {
-    // Writing the item back would turn `criterion-accept` into `unknown`.
+    // Writing the item back would turn `archive` into `unknown`.
     // Other items are unaffected.
     let env = Env::new();
     env.add_project("XX", "xx");
@@ -310,9 +308,10 @@ fn a_move_refuses_an_item_whose_history_has_a_command_it_doesnt_know() {
         ["XX-1", "medium", "change", "in-progress", "a"],
         "{text}"
     );
+    // Shelved, since G1 won't start it while XX-1 is in progress.
     assert_eq!(
-        env.json(&["start", "XX-2"])["item"]["status"],
-        "in-progress"
+        env.json(&["shelve", "XX-2", "--reason", "later"])["item"]["status"],
+        "shelved"
     );
 }
 
@@ -363,7 +362,7 @@ fn lost_on_rewrite_tells_unknown_fields_from_values_written_differently() {
     assert_eq!(lost.unknown, ["verification", "owner"]);
     assert_eq!(
         lost.respelled,
-        ["updated", "history", "labels", "description", "criteria"]
+        ["updated", "criteria", "history", "labels", "description"]
     );
     assert_eq!(
         lost.fields(),
@@ -371,10 +370,10 @@ fn lost_on_rewrite_tells_unknown_fields_from_values_written_differently() {
             "verification",
             "owner",
             "updated",
+            "criteria",
             "history",
             "labels",
-            "description",
-            "criteria"
+            "description"
         ]
     );
 

@@ -8,11 +8,16 @@ use serde_json::Value;
 #[derive(Debug)]
 pub struct Error {
     pub code: u8,
+    /// One line, which `--json` prints as `error`.
     pub message: String,
-    /// For a move the diagram doesn't draw (§2.2), the moves that are
-    /// allowed, so an agent can read them under `--json` rather than parse
-    /// the message.
-    pub allowed: Option<Value>,
+    /// Fields `--json` adds after `error` and `exit_code`, in order, so an
+    /// agent can read them rather than parse the message: `allowed` for a
+    /// move the diagram doesn't draw (§2.2), and `id`, `result`, `gates`
+    /// and `failures` for a gate's refusal (§3).
+    pub fields: Vec<(String, Value)>,
+    /// Lines the text prints below the message, indented, such as each
+    /// reason a gate failed. `--json` holds the same news in `fields`.
+    pub details: Vec<String>,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -23,7 +28,8 @@ impl Error {
         Error {
             code: 1,
             message,
-            allowed: None,
+            fields: Vec::new(),
+            details: Vec::new(),
         }
     }
 
@@ -32,7 +38,18 @@ impl Error {
         Error {
             code: 3,
             message,
-            allowed: None,
+            fields: Vec::new(),
+            details: Vec::new(),
+        }
+    }
+
+    /// Exit code 2: refused by a gate (§2.4). `details` lists every reason.
+    pub fn gate(message: String, fields: Vec<(String, Value)>, details: Vec<String>) -> Error {
+        Error {
+            code: 2,
+            message,
+            fields,
+            details,
         }
     }
 }

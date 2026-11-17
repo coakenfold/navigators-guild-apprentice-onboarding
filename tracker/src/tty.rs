@@ -18,8 +18,27 @@ pub fn is_interactive() -> bool {
     std::io::stdin().is_terminal()
 }
 
-/// The confirmation every human-only command asks for (§2.7): `delete`
-/// now, and later `criterion accept`, `approve`, `reject` and `digest ack`.
+/// Step 1 of `confirm` on its own: refuses, with exit 1, unless stdin is a
+/// terminal. For a human-only command that may have nothing to confirm,
+/// such as `criterion accept` when `written` already matches, so that it
+/// refuses an agent either way.
+pub fn require_interactive(command: &str, id: &str, otherwise: &str) -> Result<()> {
+    if is_interactive() {
+        return Ok(());
+    }
+    let mut message = format!(
+        "`{command}` needs a human at an interactive terminal, who types {id} to confirm it, \
+         and stdin here isn't a terminal. Nothing was changed."
+    );
+    if !otherwise.is_empty() {
+        message.push(' ');
+        message.push_str(otherwise);
+    }
+    Err(Error::input(message))
+}
+
+/// The confirmation every human-only command asks for (§2.7): `delete` and
+/// `criterion accept` now, and later `approve`, `reject` and `digest ack`.
 ///
 /// 1. Refuses, with exit 1, unless stdin is a terminal (`is_interactive`).
 ///    `command` is how the command was run, such as `tracker delete XX-1`,
@@ -36,17 +55,7 @@ pub fn is_interactive() -> bool {
 /// take the lock with `Store::lock_unchanged`, which refuses if the item
 /// changed from what the warning described (§4.4).
 pub fn confirm(command: &str, id: &str, warning: &str, otherwise: &str) -> Result<()> {
-    if !is_interactive() {
-        let mut message = format!(
-            "`{command}` needs a human at an interactive terminal, who types {id} to \
-             confirm it, and stdin here isn't a terminal. Nothing was changed."
-        );
-        if !otherwise.is_empty() {
-            message.push(' ');
-            message.push_str(otherwise);
-        }
-        return Err(Error::input(message));
-    }
+    require_interactive(command, id, otherwise)?;
 
     // Escaped like every other output, since the warning can hold a title
     // edited by hand.

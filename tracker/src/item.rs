@@ -23,6 +23,15 @@ pub struct Item {
     pub design: Option<String>,
     pub created: Timestamp,
     pub updated: Timestamp,
+    /// One fingerprint per criterion's text as it was written at `create`
+    /// (§2.1), in no particular order. Only a `criterion` command run from
+    /// an interactive terminal changes it afterwards, so slice 11's T5 can
+    /// tell when an agent reworded or dropped a criterion it was given.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub written: Vec<String>,
+    /// The **Done when** list (§2.3), numbered from 1 in commands.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub criteria: Vec<Criterion>,
     /// Filled in when the item reaches done (§2.7), and present only while
     /// it's done: reopening moves it to `previous_verification`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -36,6 +45,39 @@ pub struct Item {
     pub history: Vec<HistoryEntry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+}
+
+/// One **Done when** criterion (§2.3): what must be true, and how it's
+/// verified. A criterion with a `check` is a script criterion. One with
+/// neither a check nor (from slice 12) a judge is manual, and only it has
+/// `evidence`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Criterion {
+    pub text: String,
+    /// A shell command, run in the project root, whose exit code 0 means
+    /// the criterion holds. Slice 7 runs it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check: Option<String>,
+    /// For a manual criterion, a note saying where to look (G2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<String>,
+}
+
+impl Criterion {
+    /// Whether nothing can run it, so only a human can verify it (T6).
+    pub fn is_manual(&self) -> bool {
+        self.check.is_none()
+    }
+}
+
+/// The fingerprint `written` keeps for a criterion's text: its SHA-256, in
+/// lower-case hex.
+pub fn fingerprint(text: &str) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(text.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// How an item reached done (§2.1, §2.7). Later slices add the commit, its
@@ -78,7 +120,8 @@ impl VerifiedBy {
     }
 }
 
-/// One move between states, or one `edit`, which has `from` equal to `to`.
+/// One move between states, or one `edit` or `criterion accept`, which has
+/// `from` equal to `to`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HistoryEntry {
     pub at: Timestamp,
@@ -94,7 +137,8 @@ pub struct HistoryEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     /// For an entry that doesn't change the state, such as an `edit`, the
-    /// names of the fields it changed (§2.1).
+    /// names of the fields it changed (§2.1). `criterion accept` names
+    /// `written`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<String>,
     /// For an `edit` that changed `kind`, the kind it replaced, so the
@@ -109,7 +153,7 @@ pub struct HistoryEntry {
 }
 
 /// The commands that add a history entry: the ones that move an item
-/// between states (§2.2, §3), and `edit`.
+/// between states (§2.2, §3), `edit` and `criterion accept`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Via {
@@ -119,6 +163,10 @@ pub enum Via {
     Reopen,
     /// Changes an item's details without moving it, so no move has it.
     Edit,
+    /// Records the criteria's text in `written` (§2.7). It doesn't move
+    /// the item, so no move has it.
+    #[serde(rename = "criterion-accept")]
+    CriterionAccept,
     /// A command this version doesn't know, such as `approve`, in a file
     /// written by a newer tracker. The file still loads and lists, but the
     /// command's name is lost, so `Store::update_item` refuses to write the
@@ -136,6 +184,7 @@ impl Via {
             Via::Shelve => "shelve",
             Via::Reopen => "reopen",
             Via::Edit => "edit",
+            Via::CriterionAccept => "criterion-accept",
             Via::Unknown => "unknown",
         }
     }

@@ -463,6 +463,12 @@ fn every_command(root: &Path) -> Vec<Vec<String>> {
         &["status", "XX-1", "open", "--reason", "back"],
         &["show", "XX-1"],
         &["delete", "XX-1"],
+        &["gates", "XX-1"],
+        &["criterion", "add", "XX-1", "works", "--check", "true"],
+        &["criterion", "set", "XX-1", "1", "--check", "true"],
+        &["evidence", "XX-1", "1", "here"],
+        &["criterion", "remove", "XX-1", "1"],
+        &["criterion", "accept", "XX-1"],
     ]
     .iter()
     .map(|args| args.iter().map(|arg| arg.to_string()).collect())

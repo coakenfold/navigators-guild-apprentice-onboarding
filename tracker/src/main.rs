@@ -12,8 +12,9 @@ use unicode_width::UnicodeWidthStr;
 
 use tracker::config::{self, Project};
 use tracker::error::{Error, Result};
+use tracker::gates::{self, Run};
 use tracker::item::{
-    self, HistoryEntry, Item, Kind, Priority, Status, Verification, VerifiedBy, Via,
+    self, Criterion, HistoryEntry, Item, Kind, Priority, Status, Verification, VerifiedBy, Via,
 };
 use tracker::states;
 use tracker::store::{Skipped, Store};
@@ -75,18 +76,50 @@ enum Command {
     List(ListArgs),
     /// Start work on an open item: open → in-progress
     ///
-    /// Later versions run the gates and each criterion's check here first
+    /// Gate G1 runs first: the item needs at least one criterion, and no
+    /// other item in its project may be in progress or in review. If it
+    /// fails, start is refused with exit 2 and every reason, and nothing
+    /// changes
     Start {
         /// The item's ID, such as BM-12
         id: String,
     },
     /// Submit an in-progress item: → done
     ///
-    /// Until the gates exist, it goes straight to done, with a verification
-    /// record that says it's unchecked
+    /// Gates G2 and G6 run first, as `tracker gates` runs them. If any
+    /// fails, submit is refused with exit 2 and every reason, and nothing
+    /// changes. Until checks run (a later version), an item that passes goes
+    /// to done with a verification record that says it's unchecked
     Submit {
         /// The item's ID, such as BM-12
         id: String,
+    },
+    /// Run the gates submit runs, without changing anything
+    ///
+    /// Says what would block a submit now: every gate that ran, and every
+    /// reason one failed. Exits 2 if any failed, as submit would, and 0 if
+    /// they all passed
+    Gates {
+        /// The item's ID, such as BM-12
+        id: String,
+    },
+    /// Add, change, remove or accept an item's Done-when criteria
+    Criterion {
+        #[command(subcommand)]
+        command: CriterionCommand,
+    },
+    /// Record where to look for a manual criterion's proof
+    ///
+    /// Only a manual criterion, one with no check, takes evidence: a
+    /// check's own output is its proof. Gate G2 refuses a submit while a
+    /// manual criterion has none. Replaces any evidence it had
+    Evidence {
+        /// The item's ID, such as BM-12
+        id: String,
+        /// The criterion's number, from 1, as `tracker show` lists them
+        n: usize,
+        /// Where to look, on one line of at most 500 characters
+        evidence: String,
     },
     // `reason` is optional to clap, so that a missing one gets tracker's
     // own message saying how to give it. The usage line shows it as needed.
@@ -170,6 +203,64 @@ struct CreateArgs {
     /// relative to the root
     #[arg(long)]
     design: Option<String>,
+    /// A Done-when criterion: what must be true for the item to be done, on one line of at most
+    /// 500 characters. Repeat it for more than one. Each is manual until `tracker criterion
+    /// set` gives it a check
+    #[arg(long = "done-when", value_name = "CRITERION")]
+    done_when: Vec<String>,
+}
+
+#[derive(Subcommand)]
+enum CriterionCommand {
+    /// Add a criterion: with --check, a script criterion, and without, a manual one
+    ///
+    /// Before start, an agent can add criteria freely. From an interactive
+    /// terminal, the new criterion's text is also recorded in `written`, as
+    /// one written at create is
+    Add {
+        /// The item's ID, such as BM-12
+        id: String,
+        /// What must be true, on one line of at most 500 characters
+        text: String,
+        /// A shell command, run in the project's root, whose exit code 0 shows the criterion
+        /// holds, such as "cargo test filter_by_label"
+        #[arg(long)]
+        check: Option<String>,
+    },
+    /// Give a criterion a script check, replacing what it had
+    ///
+    /// The criterion keeps its text. A manual criterion's evidence is
+    /// removed, since a check's own output is its proof
+    Set {
+        /// The item's ID, such as BM-12
+        id: String,
+        /// The criterion's number, from 1, as `tracker show` lists them
+        n: usize,
+        /// A shell command, run in the project's root, whose exit code 0 shows the criterion
+        /// holds
+        #[arg(long)]
+        check: String,
+    },
+    /// Remove a criterion. The ones after it move up one
+    ///
+    /// From an interactive terminal, its text is also taken out of
+    /// `written`
+    Remove {
+        /// The item's ID, such as BM-12
+        id: String,
+        /// The criterion's number, from 1, as `tracker show` lists them
+        n: usize,
+    },
+    /// Record the criteria's text as written. Only from an interactive terminal
+    ///
+    /// After a human edits a criterion by hand, this records every
+    /// criterion's text as it is now in `written`, so the edit doesn't
+    /// count as an agent's. Says what it records, then asks for the ID to be
+    /// typed back, and adds a history entry
+    Accept {
+        /// The item's ID, such as BM-12
+        id: String,
+    },
 }
 
 #[derive(Args)]
@@ -349,6 +440,14 @@ fn main() -> ExitCode {
         Command::List(args) => list(&store, args),
         Command::Start { id } => move_item(&store, &id, Via::Start, None),
         Command::Submit { id } => move_item(&store, &id, Via::Submit, None),
+        Command::Gates { id } => gates_dry_run(&store, &id),
+        Command::Criterion { command } => match command {
+            CriterionCommand::Add { id, text, check } => criterion_add(&store, &id, &text, check),
+            CriterionCommand::Set { id, n, check } => criterion_set(&store, &id, n, &check),
+            CriterionCommand::Remove { id, n } => criterion_remove(&store, &id, n),
+            CriterionCommand::Accept { id } => criterion_accept(&store, &id),
+        },
+        Command::Evidence { id, n, evidence } => record_evidence(&store, &id, n, &evidence),
         Command::Shelve { id, reason } => move_item(&store, &id, Via::Shelve, reason),
         Command::Reopen { id, reason } => move_item(&store, &id, Via::Reopen, reason),
         Command::Status { id, state, reason } => {
@@ -401,12 +500,18 @@ fn fail(err: &Error, json: bool) -> ExitCode {
     let code = ExitCode::from(err.code);
     if json {
         let mut object = json!({ "error": err.message, "exit_code": err.code });
-        if let Some(allowed) = &err.allowed {
-            object["allowed"] = allowed.clone();
+        for (name, value) in &err.fields {
+            object[name] = value.clone();
         }
         print_out(&json_text(&object), code)
     } else {
         report(styled::ERROR, "error:", &err.message);
+        // Each detail on its own line, escaped like the message.
+        let mut details = String::new();
+        for line in &err.details {
+            details.push_str(&format!("  {}\n", text::for_terminal(line, false)));
+        }
+        let _ = write!(std::io::stderr(), "{details}");
         code
     }
 }
@@ -706,6 +811,28 @@ fn create(store: &Store, args: CreateArgs) -> Result<Output> {
         .map(check_design)
         .transpose()?
         .flatten();
+    let mut criteria: Vec<Criterion> = Vec::new();
+    for text in &args.done_when {
+        let text = check_criterion_text(text)?;
+        if let Some(n) = criteria.iter().position(|c| c.text == text) {
+            return Err(Error::input(format!(
+                "\"{text}\" is given to --done-when twice. Each criterion is kept once, so give \
+                 it once, or say what makes the two different (it's criterion {}).",
+                n + 1
+            )));
+        }
+        criteria.push(Criterion {
+            text,
+            check: None,
+            evidence: None,
+        });
+    }
+    // Taken at create, by whoever creates the item, so T5 can tell when a
+    // criterion it was given is reworded or dropped (§2.1).
+    let written = criteria
+        .iter()
+        .map(|c| item::fingerprint(&c.text))
+        .collect();
 
     let _lock = store.lock()?;
     let config = config::load(store)?;
@@ -744,6 +871,8 @@ fn create(store: &Store, args: CreateArgs) -> Result<Output> {
         design,
         created: now,
         updated: now,
+        written,
+        criteria,
         verification: None,
         previous_verification: None,
         history: Vec::new(),
@@ -751,10 +880,20 @@ fn create(store: &Store, args: CreateArgs) -> Result<Output> {
     };
     store.save_item(&item)?;
 
-    Ok(Output::plain(
-        format!("Created {}: {}\n", item.id, item.title),
-        json!({ "item": item }),
-    ))
+    let mut text = format!("Created {}: {}\n", item.id, item.title);
+    let id = &item.id;
+    match item.criteria.len() {
+        0 => {}
+        1 => text.push_str(&format!(
+            "1 manual criterion: give it a check with `tracker criterion set {id} 1 --check \
+             \"…\"`.\n"
+        )),
+        count => text.push_str(&format!(
+            "{count} manual criteria: give each a check with `tracker criterion set {id} <n> \
+             --check \"…\"`.\n"
+        )),
+    }
+    Ok(Output::plain(text, json!({ "item": item })))
 }
 
 /// The longest title `create` and `edit --title` take, in characters. A
@@ -1144,6 +1283,404 @@ fn edit(store: &Store, args: EditArgs) -> Result<Output> {
     ))
 }
 
+/// The longest criterion and evidence note `criterion add`, `create
+/// --done-when` and `evidence` take, in characters. Each is printed on a
+/// line of `show` and in gate output, like a reason, so the details belong
+/// in the item's description.
+const MAX_CRITERION: usize = 500;
+
+/// A criterion's text, trimmed. Refuses one that's empty, doesn't fit on a
+/// line, or is longer than `MAX_CRITERION`.
+fn check_criterion_text(text: &str) -> Result<String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err(Error::input(
+            "A criterion can't be empty or only whitespace. Say what must be true for the item \
+             to be done, such as \"Clicking a tag shows only bookmarks with that tag\"."
+                .to_string(),
+        ));
+    }
+    check_printable(
+        text,
+        "A criterion",
+        "Say what must be true in one line, and put the details in the item's description.",
+    )?;
+    let length = text.chars().count();
+    if length > MAX_CRITERION {
+        return Err(Error::input(format!(
+            "A criterion can be at most {MAX_CRITERION} characters, and this one has {length}. \
+             Say what must be true in a sentence, and put the details in the item's description."
+        )));
+    }
+    Ok(text.to_string())
+}
+
+/// A `--check` command, trimmed. Refuses one that's empty or doesn't fit on
+/// a line, since it's printed before it runs and in gate output.
+fn check_command(command: &str) -> Result<String> {
+    let command = command.trim();
+    if command.is_empty() {
+        return Err(Error::input(
+            "A --check command can't be empty. Give the command that proves the criterion, \
+             such as --check \"cargo test filter_by_label\"."
+                .to_string(),
+        ));
+    }
+    check_printable(
+        command,
+        "A --check command",
+        "Join the steps with && on one line, or put them in a script the check runs.",
+    )?;
+    Ok(command.to_string())
+}
+
+/// An evidence note, trimmed, with the same rules as a criterion's text.
+fn check_evidence(evidence: &str) -> Result<String> {
+    let evidence = evidence.trim();
+    if evidence.is_empty() {
+        return Err(Error::input(
+            "Evidence can't be empty. Say where to look, such as \"the tag chips in the \
+             screenshot in docs/tags.png\"."
+                .to_string(),
+        ));
+    }
+    check_printable(evidence, "Evidence", "Say where to look in one line.")?;
+    let length = evidence.chars().count();
+    if length > MAX_CRITERION {
+        return Err(Error::input(format!(
+            "Evidence can be at most {MAX_CRITERION} characters, and this has {length}. Say \
+             where to look in a sentence."
+        )));
+    }
+    Ok(evidence.to_string())
+}
+
+/// Refuses a change to `item`'s criteria while it's done, since its
+/// verification record is about the criteria it was verified against, and
+/// while it's in review unless the change comes from an interactive
+/// terminal, as `edit` does: a held item is mine to decide (§2.2).
+fn check_criteria_changeable(item: &Item) -> Result<()> {
+    let id = &item.id;
+    if item.status == Status::Done {
+        return Err(Error::input(format!(
+            "{id} is done, so its criteria can't be changed: its verification record is about \
+             the criteria it was verified against. Reopen it first with `{}`.",
+            states::command(id, Via::Reopen)
+        )));
+    }
+    if item.status == Status::Review && !tty::is_interactive() {
+        return Err(Error::input(format!(
+            "{id} is in review, waiting for a human to approve or reject it, so its criteria \
+             can only be changed from an interactive terminal. Wait for the decision."
+        )));
+    }
+    Ok(())
+}
+
+/// The index in `item.criteria` of criterion `n`, which commands number
+/// from 1. Refuses a number the item has no criterion for.
+fn criterion_index(item: &Item, n: usize) -> Result<usize> {
+    let id = &item.id;
+    let count = item.criteria.len();
+    if n >= 1 && n <= count {
+        return Ok(n - 1);
+    }
+    Err(Error::input(match count {
+        0 => format!(
+            "{id} has no criteria yet, so it has no criterion {n}. Add one with `tracker \
+             criterion add {id} \"…\"`."
+        ),
+        1 => format!("{id} has no criterion {n}. It has 1, numbered 1."),
+        _ => format!(
+            "{id} has no criterion {n}. It has {count}, numbered from 1 to {count}, as `tracker \
+             show {id}` lists them."
+        ),
+    }))
+}
+
+/// `criterion add`: adds a script criterion with `check`, or a manual one
+/// without (§3). From an interactive terminal, its text also goes in
+/// `written`, so it counts as mine (§2.1).
+fn criterion_add(store: &Store, id: &str, text: &str, check: Option<String>) -> Result<Output> {
+    store.require_exists()?;
+    let id = normalize_id(id);
+    let text = check_criterion_text(text)?;
+    let check = check.as_deref().map(check_command).transpose()?;
+
+    let _lock = store.lock()?;
+    let mut item = store.load_item(&id)?;
+    check_criteria_changeable(&item)?;
+    if let Some(i) = item.criteria.iter().position(|c| c.text == text) {
+        return Err(Error::input(format!(
+            "{id} already has that criterion, as criterion {}. Give it a check with `tracker \
+             criterion set {id} {} --check \"…\"`.",
+            i + 1,
+            i + 1
+        )));
+    }
+    let fingerprint = item::fingerprint(&text);
+    if tty::is_interactive() && !item.written.contains(&fingerprint) {
+        item.written.push(fingerprint);
+    }
+    item.criteria.push(Criterion {
+        text,
+        check,
+        evidence: None,
+    });
+    item.updated = item::now();
+    store.update_item(&item)?;
+
+    let n = item.criteria.len();
+    let added = &item.criteria[n - 1];
+    let mut text = format!("Added criterion {n} to {id}: {}\n", added.text);
+    if added.is_manual() {
+        text.push_str(&format!(
+            "It's manual, so nothing can run it. Give it a check with `tracker criterion set \
+             {id} {n} --check \"…\"`, or record where to look with `tracker evidence {id} {n} \
+             \"…\"`.\n"
+        ));
+    }
+    Ok(Output::plain(text, json!({ "criterion": n, "item": item })))
+}
+
+/// `criterion set <n> --check`: gives criterion `n` a script check, in
+/// place of what it had (§3). It keeps its text. A manual criterion's
+/// evidence goes, since a check's own output is its proof (§2.3).
+fn criterion_set(store: &Store, id: &str, n: usize, check: &str) -> Result<Output> {
+    store.require_exists()?;
+    let id = normalize_id(id);
+    let check = check_command(check)?;
+
+    let _lock = store.lock()?;
+    let mut item = store.load_item(&id)?;
+    check_criteria_changeable(&item)?;
+    let i = criterion_index(&item, n)?;
+    let criterion = &mut item.criteria[i];
+    if criterion.check.as_deref() == Some(check.as_str()) {
+        return Ok(Output::plain(
+            format!("Criterion {n} of {id} already has that check. Nothing changed.\n"),
+            json!({ "criterion": n, "item": item }),
+        ));
+    }
+    criterion.check = Some(check);
+    let evidence = criterion.evidence.take();
+    item.updated = item::now();
+    store.update_item(&item)?;
+
+    let mut text = format!("Criterion {n} of {id} now has a check.\n");
+    if let Some(evidence) = evidence {
+        text.push_str(&format!(
+            "Its evidence, \"{evidence}\", was removed: a check's own output is its proof.\n"
+        ));
+    }
+    Ok(Output::plain(text, json!({ "criterion": n, "item": item })))
+}
+
+/// `criterion remove <n>`: removes criterion `n` (§3). From an interactive
+/// terminal, its text also leaves `written`.
+fn criterion_remove(store: &Store, id: &str, n: usize) -> Result<Output> {
+    store.require_exists()?;
+    let id = normalize_id(id);
+
+    let _lock = store.lock()?;
+    let mut item = store.load_item(&id)?;
+    check_criteria_changeable(&item)?;
+    let i = criterion_index(&item, n)?;
+    let removed = item.criteria.remove(i);
+    if tty::is_interactive() {
+        let fingerprint = item::fingerprint(&removed.text);
+        if let Some(at) = item.written.iter().position(|f| *f == fingerprint) {
+            item.written.remove(at);
+        }
+    }
+    item.updated = item::now();
+    store.update_item(&item)?;
+
+    let mut text = format!("Removed criterion {n} from {id}: {}\n", removed.text);
+    if i < item.criteria.len() {
+        text.push_str("The ones after it moved up one.\n");
+    }
+    Ok(Output::plain(text, json!({ "criterion": n, "item": item })))
+}
+
+/// `criterion accept`: from an interactive terminal only, records every
+/// criterion's text as it is now in `written`, after a human edits one by
+/// hand, and adds a history entry with `via: "criterion-accept"` (§2.1,
+/// §2.7).
+fn criterion_accept(store: &Store, id: &str) -> Result<Output> {
+    store.require_exists()?;
+    let id = normalize_id(id);
+    let command = format!("tracker criterion accept {id}");
+    let otherwise = "Only a human accepts criteria. An agent never rewords or removes a \
+                     criterion it was given: it adds one, or says what's wrong in its report.";
+    // Refused before anything else, so an agent learns nothing from it.
+    tty::require_interactive(&command, &id, otherwise)?;
+
+    let (item, before) = store.load_item_with_text(&id)?;
+    if item.status == Status::Done {
+        return Err(Error::input(format!(
+            "{id} is done, so its criteria are the ones it was verified against. Reopen it \
+             first with `{}`.",
+            states::command(&id, Via::Reopen)
+        )));
+    }
+    let written: Vec<String> = item
+        .criteria
+        .iter()
+        .map(|c| item::fingerprint(&c.text))
+        .collect();
+    // `written` has no order, so the same fingerprints in another order
+    // already match.
+    let sorted = |list: &[String]| {
+        let mut list = list.to_vec();
+        list.sort();
+        list
+    };
+    if sorted(&written) == sorted(&item.written) {
+        return Ok(Output::plain(
+            format!("{id}'s written criteria already match its criteria. Nothing changed.\n"),
+            json!({ "accepted": false, "item": item }),
+        ));
+    }
+    tty::confirm(
+        &command,
+        &id,
+        &acceptance_warning(&item, &written),
+        otherwise,
+    )?;
+
+    // The lock wasn't held while I decided, so nothing happens if the item
+    // changed meanwhile (§4.4).
+    let _lock = store.lock_unchanged(&id, &before, &command)?;
+    let mut item = item;
+    let now = item::now();
+    item.written = written;
+    item.updated = now;
+    item.history.push(HistoryEntry {
+        at: now,
+        from: item.status,
+        to: item.status,
+        via: Via::CriterionAccept,
+        interactive: tty::is_interactive(),
+        reason: None,
+        fields: vec!["written".to_string()],
+        kind_before: None,
+        labels_removed: Vec::new(),
+    });
+    store.update_item(&item)?;
+
+    Ok(Output::plain(
+        format!(
+            "Accepted {id}'s criteria: written now records the text of {}.\n",
+            match item.criteria.len() {
+                0 => "none, since it has none".to_string(),
+                1 => "its 1 criterion".to_string(),
+                count => format!("all {count}"),
+            }
+        ),
+        json!({ "accepted": true, "item": item }),
+    ))
+}
+
+/// What `criterion accept` says before asking for the ID: each criterion,
+/// and whether its text is already in `written`, and how many written
+/// fingerprints no criterion matches now, which accepting drops.
+fn acceptance_warning(item: &Item, written: &[String]) -> String {
+    let id = &item.id;
+    let mut warning = format!(
+        "Accepting records the text of each of {id}'s criteria as it is now in written, so a \
+         human's edit isn't taken for an agent's:\n"
+    );
+    for (i, (criterion, fingerprint)) in item.criteria.iter().zip(written).enumerate() {
+        let state = if item.written.contains(fingerprint) {
+            "already written"
+        } else {
+            "new to written"
+        };
+        warning.push_str(&format!("  {}. {}  ({state})\n", i + 1, criterion.text));
+    }
+    let dropped = item
+        .written
+        .iter()
+        .filter(|fingerprint| !written.contains(fingerprint))
+        .count();
+    if dropped == 1 {
+        warning.push_str("1 written criterion matches none of them now, and is dropped.\n");
+    } else if dropped > 1 {
+        warning.push_str(&format!(
+            "{dropped} written criteria match none of them now, and are dropped.\n"
+        ));
+    }
+    warning
+}
+
+/// `evidence <n>`: records where to look for manual criterion `n` (§3).
+/// Refused for a script criterion, whose output is its proof (§2.3).
+fn record_evidence(store: &Store, id: &str, n: usize, evidence: &str) -> Result<Output> {
+    store.require_exists()?;
+    let id = normalize_id(id);
+    let evidence = check_evidence(evidence)?;
+
+    let _lock = store.lock()?;
+    let mut item = store.load_item(&id)?;
+    check_criteria_changeable(&item)?;
+    let i = criterion_index(&item, n)?;
+    let criterion = &mut item.criteria[i];
+    if let Some(check) = &criterion.check {
+        return Err(Error::input(format!(
+            "Criterion {n} of {id} has a check, `{check}`, and a check's own output is its \
+             proof, so it takes no evidence. Evidence is only for a manual criterion, one \
+             nothing can run."
+        )));
+    }
+    if criterion.evidence.as_deref() == Some(evidence.as_str()) {
+        return Ok(Output::plain(
+            format!("Criterion {n} of {id} already has that evidence. Nothing changed.\n"),
+            json!({ "criterion": n, "item": item }),
+        ));
+    }
+    criterion.evidence = Some(evidence);
+    item.updated = item::now();
+    store.update_item(&item)?;
+    Ok(Output::plain(
+        format!("Recorded evidence for criterion {n} of {id}.\n"),
+        json!({ "criterion": n, "item": item }),
+    ))
+}
+
+/// `gates`: runs the gates `submit` runs, G2 and G6, without changing
+/// anything (§2.4). Exits 2, listing every failure, if any fails.
+fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
+    store.require_exists()?;
+    let id = normalize_id(id);
+    let item = store.load_item(&id)?;
+    let config = config::load(store)?;
+    let report = gates::submit(&item, &config);
+    if !report.passed() {
+        return Err(report.refusal(&id, Run::DryRun));
+    }
+    let ran: Vec<String> = report.ran.iter().map(|gate| gate.to_string()).collect();
+    let mut text = format!(
+        "{id} passes the gates submit runs: {}.\n",
+        states::join(&ran, "and")
+    );
+    if item.status != Status::InProgress {
+        text.push_str(&format!(
+            "It's {}, and only an in-progress item can be submitted.\n",
+            item.status.phrase()
+        ));
+    }
+    Ok(Output::plain(
+        text,
+        json!({
+            "id": id,
+            "status": item.status.as_str(),
+            "result": "passed",
+            "gates": report.gates_json(),
+        }),
+    ))
+}
+
 fn unknown_project(config: &config::Config, key: &str) -> String {
     if config.projects.is_empty() {
         format!(
@@ -1470,13 +2007,31 @@ fn check_reason(id: &str, via: Via, reason: Option<String>, how: &str) -> Result
 }
 
 /// Makes `step` on `item`, which was read under the lock, adds its history
-/// entry, and writes the item.
+/// entry, and writes the item. A move that has gates runs them first, and
+/// refuses with exit 2, changing nothing, if any fails (§2.4): G1 for
+/// `start`, and G2 and G6 for `submit`.
 fn apply(
     store: &Store,
     mut item: Item,
     step: states::Move,
     reason: Option<String>,
 ) -> Result<Output> {
+    let report = match step.via {
+        Via::Start => {
+            // A file that can't be read as an item can't say whether it's
+            // in progress, so it's left out, as `list` leaves it out (§4.4).
+            let (items, _) = store.load_items()?;
+            Some((gates::start(&item, &items), Run::Start))
+        }
+        Via::Submit => Some((gates::submit(&item, &config::load(store)?), Run::Submit)),
+        _ => None,
+    };
+    if let Some((report, run)) = &report
+        && !report.passed()
+    {
+        return Err(report.refusal(&item.id, *run));
+    }
+
     let now = item::now();
     item.status = step.to;
     item.updated = now;
@@ -1498,6 +2053,7 @@ fn apply(
             at: now,
             note: Some(states::UNCHECKED_NOTE.to_string()),
         });
+        text.push("Gates G2 and G6 passed.\n");
         text.push(&format!("Unchecked. {}\n", states::UNCHECKED_NOTE));
     }
     item.history.push(HistoryEntry {
@@ -1513,14 +2069,14 @@ fn apply(
     });
     store.update_item(&item)?;
     let json = if step.via == Via::Submit {
-        // §3's shape for a submit. The gates (slice 6) fill in `gates`, and
-        // the triggers (slice 9) fill in `triggers` and `holds` and can make
-        // the result `held`.
+        // §3's shape for a submit. The triggers (slice 9) fill in
+        // `triggers` and `holds` and can make the result `held`.
+        let gates = report.map_or(json!([]), |(report, _)| report.gates_json());
         json!({
             "id": item.id,
             "result": "done",
             "status": item.status.as_str(),
-            "gates": [],
+            "gates": gates,
             "triggers": [],
             "holds": [],
             "item": item,
@@ -1598,6 +2154,25 @@ fn show(store: &Store, id: &str) -> Result<Output> {
             }
             text.push(line);
             text.push("\n");
+        }
+    }
+
+    if item.criteria.is_empty() {
+        section(&mut text, "Done when:", " no criteria yet.");
+    } else {
+        section(&mut text, "Done when:", "");
+        for (i, criterion) in item.criteria.iter().enumerate() {
+            let how = match (&criterion.check, &criterion.evidence) {
+                (Some(check), _) => format!("check: {check}"),
+                (None, Some(evidence)) => format!("manual, evidence: {evidence}"),
+                (None, None) => "manual, no evidence yet".to_string(),
+            };
+            text.push(&format!(
+                "  {}. {}\n       {}\n",
+                i + 1,
+                text::for_terminal(&criterion.text, false),
+                text::for_terminal(&how, false)
+            ));
         }
     }
 
@@ -1804,15 +2379,20 @@ fn deletion_warning(item: &Item) -> String {
             VerifiedBy::Auto => format!("done, verified by its gates at {}", record.at),
             VerifiedBy::Human => format!("done, approved by a human at {}", record.at),
             // Nothing verified it, so the warning mustn't say it was.
-            VerifiedBy::Unchecked => format!("done at {}, unchecked: no gates ran", record.at),
+            VerifiedBy::Unchecked => format!("done at {}, unchecked: no checks ran", record.at),
         },
         (Status::Done, None) => "done, with no verification record".to_string(),
         (Status::InProgress, _) => "in-progress, so someone may be working on it".to_string(),
         (Status::Review, _) => "in review, waiting for a human's decision".to_string(),
         (status, _) => status.as_str().to_string(),
     };
-    // Later slices add its criteria and, for a done item, its git ref.
+    // Slice 8 adds a done item's git ref.
     let mut lost = vec!["its file".to_string()];
+    match item.criteria.len() {
+        0 => {}
+        1 => lost.push("its criterion".to_string()),
+        count => lost.push(format!("its {count} criteria")),
+    }
     if !item.history.is_empty() {
         lost.push(format!("its history ({})", entries(item.history.len())));
     }

@@ -43,7 +43,10 @@ fn list_text(env: &Env, dir: &Path, args: &[&str]) -> String {
 fn create(env: &Env, project: &str, title: &str, flags: &[&str]) -> String {
     let mut args = vec!["create", title, "--project", project];
     args.extend_from_slice(flags);
-    env.json(&args)["item"]["id"].as_str().unwrap().to_string()
+    let id = env.json(&args)["item"]["id"].as_str().unwrap().to_string();
+    // So gate G1 lets it start (slice 6), as `Env::create` does.
+    env.add_criterion(&id);
+    id
 }
 
 /// Runs `edit` with `--json` and returns its output, after checking that
@@ -873,20 +876,21 @@ fn two_label_filters_keep_items_with_both() {
 
 /// A store with one XX item in each state: XX-1 open, XX-2 in-progress,
 /// XX-3 in review (set by hand, since only slice 9's triggers reach it),
-/// XX-4 done and XX-5 shelved.
+/// XX-4 done and XX-5 shelved. XX-4 goes first, since gate G1 starts no
+/// item while another in the project is in progress or in review.
 fn env_with_every_state() -> Env {
     let env = Env::new();
     env.add_project("XX", "xx");
     for title in ["open", "in-progress", "review", "done", "shelved"] {
         env.create("XX", title);
     }
+    env.json(&["start", "XX-4"]);
+    env.json(&["submit", "XX-4"]);
     env.json(&["start", "XX-2"]);
     let path = env.item_path("XX-3");
     let mut item = env.item("XX-3");
     item["status"] = json!("review");
     fs::write(&path, serde_json::to_string_pretty(&item).unwrap() + "\n").unwrap();
-    env.json(&["start", "XX-4"]);
-    env.json(&["submit", "XX-4"]);
     env.json(&["shelve", "XX-5", "--reason", "later"]);
     env
 }

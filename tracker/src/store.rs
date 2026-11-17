@@ -526,7 +526,7 @@ impl Store {
                 continue;
             }
             match read_listed(&path)? {
-                Listed::Item(item) => items.push(item),
+                Listed::Item(item) => items.push(*item),
                 Listed::Skipped(problem) => skipped.push(problem),
                 Listed::Gone => {}
             }
@@ -539,7 +539,8 @@ impl Store {
 
 /// What `load_items` made of one `.json` file in `items/`.
 enum Listed {
-    Item(Item),
+    /// Boxed, since an item is far larger than the other variants.
+    Item(Box<Item>),
     /// A file that can't be read as the item its name says.
     Skipped(Skipped),
     /// A file that was removed after the folder was listed.
@@ -563,7 +564,7 @@ fn read_listed(path: &Path) -> Result<Listed> {
         Err(e) => return Err(error::io("read", path, &e)),
     };
     Ok(match check_item(path, &text) {
-        Ok(item) => Listed::Item(item),
+        Ok(item) => Listed::Item(Box::new(item)),
         Err(problem) => Listed::Skipped(problem),
     })
 }

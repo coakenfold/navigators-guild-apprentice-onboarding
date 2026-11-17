@@ -307,10 +307,27 @@ impl Env {
         root
     }
 
-    /// Creates an item in `project` and returns its ID.
+    /// Creates an item in `project` and returns its ID. It gets one script
+    /// criterion, as `add_criterion` adds, so that gate G1 lets it start
+    /// and G2 lets it be submitted (slice 6), and the tests of moves still
+    /// test moves.
     pub fn create(&self, project: &str, title: &str) -> String {
+        let id = self.create_bare(project, title);
+        self.add_criterion(&id);
+        id
+    }
+
+    /// Creates an item in `project` with no criteria, as `tracker create`
+    /// does, and returns its ID. G1 won't let it start.
+    pub fn create_bare(&self, project: &str, title: &str) -> String {
         let output = self.json(&["create", title, "--project", project]);
         output["item"]["id"].as_str().unwrap().to_string()
+    }
+
+    /// Gives item `id` a script criterion whose check is `true`, so that
+    /// G1 lets it start and G2 needs no evidence for it.
+    pub fn add_criterion(&self, id: &str) {
+        self.json(&["criterion", "add", id, "it works", "--check", "true"]);
     }
 
     /// Reads an item's file as JSON.
@@ -409,6 +426,9 @@ pub fn schema_for(args: &[&str]) -> &'static str {
         ["start" | "shelve" | "reopen" | "status", ..] => "move",
         ["show", ..] => "show",
         ["delete", ..] => "delete",
+        ["gates", ..] => "gates",
+        ["criterion", "accept", ..] => "criterion-accept",
+        ["criterion", ..] | ["evidence", ..] => "criterion",
         _ => panic!(
             "No schema for `tracker {}`. Add one to schemas/.",
             args.join(" ")
