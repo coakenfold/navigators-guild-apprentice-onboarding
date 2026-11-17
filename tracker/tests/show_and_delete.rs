@@ -323,6 +323,38 @@ fn delete_refuses_a_file_from_a_newer_tracker_before_asking() {
 }
 
 #[test]
+fn the_terminal_harness_fails_rather_than_hangs_when_the_prompt_never_comes() {
+    // A question reworded, or a second question, would leave the command
+    // waiting for an answer the harness never types.
+    let env = env_with_project();
+    env.create("XX", "a");
+    let started = std::time::Instant::now();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        env.in_terminal_typing_within(
+            &["delete", "XX-1"],
+            "a prompt delete never prints",
+            "XX-1",
+            std::time::Duration::from_secs(2),
+        )
+    }));
+    let message = match result {
+        // `script` isn't installed.
+        Ok(None) => return,
+        Ok(Some((output, _))) => panic!("The harness didn't time out:\n{output}"),
+        Err(panic) => panic.downcast::<String>().map(|m| *m).unwrap_or_default(),
+    };
+    assert!(
+        message.contains("still waiting for the prompt"),
+        "{message}"
+    );
+    // With the output so far, which holds delete's own question.
+    assert!(message.contains("Type XX-1 to confirm"), "{message}");
+    assert!(started.elapsed() < std::time::Duration::from_secs(10));
+    // The command was killed before it deleted anything.
+    assert!(env.item_path("XX-1").exists());
+}
+
+#[test]
 fn delete_of_a_missing_id_exits_1_and_writes_nothing() {
     let env = env_with_project();
     env.error(&["delete", "XX-1"], 1);

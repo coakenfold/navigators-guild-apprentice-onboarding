@@ -36,7 +36,7 @@ After slice 4 you can **see an item's full record, and delete one from a real te
 - `deleted.json`, one JSON object per line, holding the ID, title, state, time and `interactive` of each deleted item, and nothing else of it.
 - `create`'s check against a lost or reset `counters.json` now reads `deleted.json` too, so deleting a project's newest item doesn't remove the last trace of its number.
 - `show.schema.json`, `delete.schema.json` and `deleted.schema.json`.
-- `Env::in_terminal_typing` in the test harness, which types an answer into a command running under `script`, so the confirmation is tested automatically.
+- `Env::in_terminal_typing` in the test harness, which types an answer into a command running under `script`, so the confirmation is tested automatically. If the prompt never appears, or the command never ends, it kills the command and fails after `TERMINAL_TIMEOUT` (20 seconds), showing the output so far, rather than hang.
 - Slice 3's two fixes before slice 4: `create` and `edit --label` refuse a capital with no lower-case form, such as `ℂ`, and `edit` keeps and removes a label written twice by hand once ([below](#slice-3s-fixes-before-slice-4)).
 
 **Not built yet:**
@@ -323,7 +323,7 @@ This is §2.8's example, which review 1 brought into line with the code. It name
 | [src/store.rs](../src/store.rs) | `deleted_path`, `item_text`, which reads an item file's text exactly as it is on disk, `load_item_with_text`, which reads the item and that text in one read, `lock_unchanged`, which takes the lock and refuses if that text has changed, and `delete_item`. `next_id`'s tripwire becomes `highest_number_used`, which reads `items/` and, through `read_deleted`, `deleted.json`, and says which it found. |
 | [schemas/show.schema.json](../schemas/show.schema.json), [schemas/delete.schema.json](../schemas/delete.schema.json), [schemas/deleted.schema.json](../schemas/deleted.schema.json) | New, as described under [JSON output](#json-output). |
 | [tests/show_and_delete.rs](../tests/show_and_delete.rs) | Every test for `show` and `delete`. `deleted` reads `deleted.json` and checks each line against its schema. `edit_file` changes an item's file as a hand edit would. `PROMPT` is the end of the question the tests wait for. |
-| [tests/common/mod.rs](../tests/common/mod.rs) | `Env::in_terminal_typing` and `Env::in_terminal_typing_sh`, through `typing`, and `script_cmd`, which `in_terminal` now shares, takes any command, and sets `TRACKER` to the binary. `schema_for` maps `show` and `delete` to their schemas. |
+| [tests/common/mod.rs](../tests/common/mod.rs) | `Env::in_terminal_typing` and `Env::in_terminal_typing_sh`, through `typing`, and `script_cmd`, which `in_terminal` now shares, takes any command, and sets `TRACKER` to the binary. `typing` reads `script`'s output on its own thread, and `read_until` waits for it with a deadline. `in_terminal_typing_within` takes a shorter deadline, for the test of the deadline itself. `schema_for` maps `show` and `delete` to their schemas. |
 | [tests/organise.rs](../tests/organise.rs) | `a_label_with_no_lower_case_form_is_refused` and `a_label_written_twice_by_hand_is_kept_and_removed_once`, for slice 3's fixes. |
 | [tests/fixtures.rs](../tests/fixtures.rs) | `the_binary_shows_every_fixture_with_each_history_time`. |
 | [tests/item_files.rs](../tests/item_files.rs) | `show_prints_an_item_whose_history_has_a_command_it_doesnt_know`. |
