@@ -337,7 +337,7 @@ fn in_a_terminal_typing_the_id_deletes_an_item_in_each_state() {
         (
             "XX-3",
             "done",
-            &format!("XX-3 \"finished\" is done, verified unchecked at {done_at}."),
+            &format!("XX-3 \"finished\" is done at {done_at}, unchecked: no gates ran."),
             "removes its file, its history (2 entries) and its verification record.",
         ),
         (

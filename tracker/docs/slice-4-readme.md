@@ -286,7 +286,7 @@ Appending reads the whole file, adds a newline if the last line has none, adds t
 | open | `BM-1 "title" is open.` |
 | in-progress | `BM-1 "title" is in-progress, so someone may be working on it.` |
 | review | `BM-1 "title" is in review, waiting for a human's decision.` |
-| done | `BM-1 "title" is done, verified unchecked at 2026-11-17T11:53:10Z.`, or "done, with no verification record" for a file edited by hand |
+| done | `BM-1 "title" is done at 2026-11-17T11:53:10Z, unchecked: no gates ran.`, or "done, with no verification record" for a file edited by hand |
 | shelved | `BM-1 "title" is shelved.` |
 
 The second line lists, as they apply: "its file", "its history (N entries)", "its verification record", and "the verification record from before it was reopened". The third says that commits scoped to the item stay in git, that the ID won't be used again, and that `deleted.json` records the delete for the digest. The title is escaped on its own, so a line break in a hand-edited title can't add a line to the warning.

@@ -1568,9 +1568,12 @@ fn delete(store: &Store, id: &str) -> Result<Output> {
 fn deletion_warning(item: &Item) -> String {
     let id = &item.id;
     let state = match (item.status, &item.verification) {
-        (Status::Done, Some(record)) => {
-            format!("done, verified {} at {}", record.by.as_str(), record.at)
-        }
+        (Status::Done, Some(record)) => match record.by {
+            VerifiedBy::Auto => format!("done, verified by its gates at {}", record.at),
+            VerifiedBy::Human => format!("done, approved by a human at {}", record.at),
+            // Nothing verified it, so the warning mustn't say it was.
+            VerifiedBy::Unchecked => format!("done at {}, unchecked: no gates ran", record.at),
+        },
         (Status::Done, None) => "done, with no verification record".to_string(),
         (Status::InProgress, _) => "in-progress, so someone may be working on it".to_string(),
         (Status::Review, _) => "in review, waiting for a human's decision".to_string(),
