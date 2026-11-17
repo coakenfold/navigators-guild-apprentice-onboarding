@@ -40,13 +40,22 @@ fn slice_1_wrote_two_fixtures() {
 }
 
 /// XX-3 is done and unchecked. XX-4 was done, then reopened and shelved, so
-/// it has a verification record and history entries with reasons.
+/// it has a verification record and history entries with reasons: slice 2
+/// kept the record on reopen until review 1. XX-5, written after review 1,
+/// was done and then reopened, so its record is in `previous_verification`.
 #[test]
-fn slice_2_wrote_two_fixtures_with_history() {
-    assert_eq!(names_in("slice-2"), ["XX-3.json", "XX-4.json"]);
+fn slice_2_wrote_three_fixtures_with_history() {
+    assert_eq!(names_in("slice-2"), ["XX-3.json", "XX-4.json", "XX-5.json"]);
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/slice-2");
-    let item: Value =
-        serde_json::from_str(&fs::read_to_string(root.join("XX-4.json")).unwrap()).unwrap();
+    let read = |name: &str| -> Value {
+        serde_json::from_str(&fs::read_to_string(root.join(name)).unwrap()).unwrap()
+    };
+
+    let item = read("XX-5.json");
+    assert!(item.get("verification").is_none());
+    assert_eq!(item["previous_verification"]["by"], "unchecked");
+
+    let item = read("XX-4.json");
     assert_eq!(item["verification"]["by"], "unchecked");
     let vias: Vec<&str> = item["history"]
         .as_array()

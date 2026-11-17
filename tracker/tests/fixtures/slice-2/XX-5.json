@@ -1,0 +1,39 @@
+{
+  "id": "XX-5",
+  "title": "Done, then reopened",
+  "project": "XX",
+  "kind": "change",
+  "status": "open",
+  "priority": "medium",
+  "created": "2026-11-17T00:25:13Z",
+  "updated": "2026-11-17T00:25:13Z",
+  "previous_verification": {
+    "by": "unchecked",
+    "at": "2026-11-17T00:25:13Z",
+    "note": "No gates ran: this version of tracker has none yet, so nothing checked the work."
+  },
+  "history": [
+    {
+      "at": "2026-11-17T00:25:13Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-17T00:25:13Z",
+      "from": "in-progress",
+      "to": "done",
+      "via": "submit",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-17T00:25:13Z",
+      "from": "done",
+      "to": "open",
+      "via": "reopen",
+      "interactive": false,
+      "reason": "The tag chips don't wrap on narrow screens."
+    }
+  ]
+}
