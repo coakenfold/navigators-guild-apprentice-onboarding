@@ -4,6 +4,7 @@ use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use anstyle::Style;
 use clap::builder::PossibleValuesParser;
 use clap::{Args, Parser, Subcommand};
 use serde_json::{Value, json};
@@ -15,12 +16,23 @@ use tracker::item::{
     self, HistoryEntry, Item, Kind, Priority, Status, Verification, VerifiedBy, Via,
 };
 use tracker::states;
-use tracker::store::Store;
+use tracker::store::{Skipped, Store};
+use tracker::styled::{self, Styled};
 use tracker::text::{self, check_printable};
 use tracker::tty;
 
 #[derive(Parser)]
-#[command(name = "tracker", version, about = "A verification-gated work tracker")]
+#[command(
+    name = "tracker",
+    version,
+    about = "A verification-gated work tracker",
+    long_about = "A verification-gated work tracker: one central list of work items across \
+                  all your projects, kept in $TRACKER_HOME, or ~/.tracker. Run `tracker init` \
+                  to create it, then `tracker project add` to register a project.",
+    after_help = "Exit codes: 0 success, 1 bad input or not found, 2 refused by a gate, \
+                  3 the store, a file or git can't be read.\n\
+                  Run `tracker <COMMAND> --help` for a command's options."
+)]
 struct Cli {
     /// Print one JSON object instead of text
     #[arg(long, global = true)]
@@ -33,6 +45,9 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Create the store (`$TRACKER_HOME`, or ~/.tracker) if it doesn't exist
+    ///
+    /// Run it again to put back any part of the store that's missing, such
+    /// as counters.json. It never changes a part that's already there
     Init,
     /// Register projects and list them
     Project {
@@ -40,6 +55,10 @@ enum Command {
         command: ProjectCommand,
     },
     /// Create an open item
+    ///
+    /// It goes in the project whose root holds the current folder, unless
+    /// --project names one. Its ID is the project's key and the next
+    /// number, such as BM-12, and is never used again
     Create(CreateArgs),
     /// Change an item's details, such as its priority or labels
     ///
@@ -55,6 +74,8 @@ enum Command {
     /// in-progress and review items. The filters combine
     List(ListArgs),
     /// Start work on an open item: open → in-progress
+    ///
+    /// Later versions run the gates and each criterion's check here first
     Start {
         /// The item's ID, such as BM-12
         id: String,
@@ -104,6 +125,9 @@ enum Command {
         reason: Option<String>,
     },
     /// Show everything about one item: its fields, verification record and history
+    ///
+    /// With --json, the item as this version reads it, and a warning if
+    /// its file holds fields a newer tracker added
     Show {
         /// The item's ID, such as BM-12
         id: String,
@@ -122,7 +146,7 @@ enum Command {
 
 #[derive(Args)]
 struct CreateArgs {
-    /// What the item is, on one line
+    /// What the item is, on one line of at most 200 characters
     title: String,
     /// Free markdown, stored in the item's `description` field
     #[arg(long)]
@@ -152,7 +176,7 @@ struct CreateArgs {
 struct EditArgs {
     /// The item's ID, such as BM-12
     id: String,
-    /// A new title, on one line
+    /// A new title, on one line of at most 200 characters
     #[arg(long)]
     title: Option<String>,
     /// A new kind
@@ -232,6 +256,10 @@ fn priorities() -> PossibleValuesParser {
 #[derive(Subcommand)]
 enum ProjectCommand {
     /// Register a project
+    ///
+    /// Commands run inside its root use it without --project. The root can
+    /// be a repository's top or a folder inside one, and must be a folder
+    /// no other project uses as its root
     Add {
         /// The key that starts each item ID, such as BM for BM-12
         key: String,
@@ -251,8 +279,23 @@ enum ProjectCommand {
 
 /// What a command prints: `text` normally, or `json` with `--json`.
 struct Output {
-    text: String,
+    text: Styled,
     json: Value,
+    /// Printed on stderr before `text`, each after `warning:`, such as an
+    /// item file `list` skipped. Not printed with `--json`, whose `json`
+    /// holds the same news as data.
+    warnings: Vec<String>,
+}
+
+impl Output {
+    /// Output with plain text and no warnings.
+    fn plain(text: String, json: Value) -> Output {
+        Output {
+            text: text.into(),
+            json,
+            warnings: Vec::new(),
+        }
+    }
 }
 
 fn main() -> ExitCode {
@@ -321,7 +364,10 @@ fn main() -> ExitCode {
             let text = if cli.json {
                 json_text(&output.json)
             } else {
-                text::for_terminal(&output.text, true)
+                for warning in &output.warnings {
+                    report(styled::WARNING, "warning:", warning);
+                }
+                output.text.render()
             };
             print_out(&text, ExitCode::SUCCESS)
         }
@@ -332,8 +378,11 @@ fn main() -> ExitCode {
 /// Writes `text` to stdout and returns `code`. A reader that has gone away,
 /// as in `tracker list | head -1`, isn't an error: it just didn't want the
 /// rest. `println!` would panic there instead.
+///
+/// It goes through anstream, which drops colour codes when stdout isn't a
+/// terminal, so `tracker list | cat` and every test see plain text.
 fn print_out(text: &str, code: ExitCode) -> ExitCode {
-    let mut stdout = std::io::stdout().lock();
+    let mut stdout = anstream::stdout().lock();
     match stdout
         .write_all(text.as_bytes())
         .and_then(|()| stdout.flush())
@@ -357,13 +406,22 @@ fn fail(err: &Error, json: bool) -> ExitCode {
         }
         print_out(&json_text(&object), code)
     } else {
-        // Ignored if stderr is closed: there's nowhere left to report it.
-        // Messages can repeat input, such as an unknown project key, so
-        // they're escaped like every other output.
-        let message = text::for_terminal(&err.message, false);
-        let _ = writeln!(std::io::stderr(), "error: {message}");
+        report(styled::ERROR, "error:", &err.message);
         code
     }
+}
+
+/// Writes `message` on one line of stderr after `label`, such as `error:`,
+/// in `style` when stderr is a terminal. Ignored if stderr is closed:
+/// there's nowhere left to report it. Messages can repeat input, such as an
+/// unknown project key, so they're escaped like every other output.
+fn report(style: Style, label: &str, message: &str) {
+    let mut line = Styled::new();
+    line.push_styled(label, style);
+    line.push(" ");
+    line.push(&text::for_terminal(message, false));
+    line.push("\n");
+    let _ = write!(anstream::stderr(), "{}", line.render());
 }
 
 /// `value` as pretty-printed JSON with a final newline, with every
@@ -406,10 +464,10 @@ fn init(store: &Store) -> Result<Output> {
             _ => "- items/ is empty. Any items that were in it are gone.\n",
         });
     }
-    Ok(Output {
+    Ok(Output::plain(
         text,
-        json: json!({ "home": store.home, "created": init.created, "repaired": init.repaired }),
-    })
+        json!({ "home": store.home, "created": init.created, "repaired": init.repaired }),
+    ))
 }
 
 fn project_add(
@@ -424,14 +482,16 @@ fn project_add(
     let name = name.trim();
     if name.is_empty() {
         return Err(Error::input(
-            "A project's --name can't be empty.".to_string(),
+            "A project's --name can't be empty. Give it a readable name, such as --name \
+             bookmarks."
+                .to_string(),
         ));
     }
     check_printable(name, "A project's --name", "Use plain text.")?;
 
     let root = std::fs::canonicalize(root).map_err(|e| {
         Error::input(format!(
-            "Can't use {} as a project root: {e}",
+            "Can't use {} as a project root: {e}. Check the path, or create the folder first.",
             root.display()
         ))
     })?;
@@ -474,21 +534,21 @@ fn project_add(
     }
     config::add_project(store, &key, &project)?;
 
-    Ok(Output {
-        text: format!("Registered {key} ({}) at {}.\n", project.name, project.root),
-        json: json!({
+    Ok(Output::plain(
+        format!("Registered {key} ({}) at {}.\n", project.name, project.root),
+        json!({
             "key": key,
             "name": project.name,
             "root": project.root,
             "design": project.design,
         }),
-    })
+    ))
 }
 
 fn project_list(store: &Store) -> Result<Output> {
     store.require_exists()?;
     let config = config::load(store)?;
-    let items = store.load_items()?;
+    let (items, skipped) = store.load_items()?;
 
     // A project's item counts for all five states, as JSON and as cells.
     let counts_for = |key: &str| {
@@ -539,35 +599,97 @@ fn project_list(store: &Store) -> Result<Output> {
         unregistered.push(json!({ "key": key, "counts": counts }));
     }
 
-    let mut text = if rows.is_empty() {
-        "No projects yet. Register one with `tracker project add KEY --name NAME --root PATH`.\n"
-            .to_string()
+    let mut text = Styled::new();
+    if rows.is_empty() {
+        text.push(
+            "No projects yet. Register one with `tracker project add KEY --name NAME --root PATH`.\n",
+        );
     } else {
         let mut header = vec!["KEY".to_string(), "NAME".to_string()];
         for status in Status::ALL {
             header.push(status.as_str().to_uppercase());
         }
         header.push("ROOT".to_string());
-        rows.insert(0, header);
-        table(&rows)
-    };
+        let mut cells = vec![heading_cells(&header)];
+        cells.extend(rows.iter().map(|row| plain_cells(row)));
+        for line in styled_table(&cells) {
+            text.append(line);
+        }
+    }
     if !unregistered_keys.is_empty() {
         let (them, have) = if unregistered_keys.len() == 1 {
             ("it", "has")
         } else {
             ("them", "have")
         };
-        text.push_str(&format!(
+        text.push(&format!(
             "\n{} {have} items but no project in config.json. Register {them} again with \
              `tracker project add`.\n",
             unregistered_keys.join(", ")
         ));
     }
+    if !skipped.is_empty() {
+        text.push(&format!("\n{}\n", skipped_note(&skipped, "counted")));
+    }
 
     Ok(Output {
         text,
-        json: json!({ "projects": projects, "unregistered": unregistered }),
+        json: json!({
+            "projects": projects,
+            "unregistered": unregistered,
+            "skipped": skipped_json(&skipped),
+        }),
+        warnings: skipped_warnings(&skipped),
     })
+}
+
+/// A heading row: each cell in bold.
+fn heading_cells(row: &[String]) -> Vec<Cell> {
+    row.iter()
+        .map(|cell| (cell.clone(), styled::HEADING))
+        .collect()
+}
+
+/// The item files `load_items` skipped, for `--json`: each one's file, the
+/// parser's line and column, or null when the problem isn't the JSON's,
+/// and the reason.
+fn skipped_json(skipped: &[Skipped]) -> Value {
+    let files: Vec<Value> = skipped
+        .iter()
+        .map(|file| {
+            json!({
+                "file": file.file.display().to_string(),
+                "line": file.line,
+                "column": file.column,
+                "reason": file.reason,
+            })
+        })
+        .collect();
+    Value::Array(files)
+}
+
+/// One warning per skipped item file, with its name, line and reason, and
+/// how to fix it (§4.4).
+fn skipped_warnings(skipped: &[Skipped]) -> Vec<String> {
+    skipped
+        .iter()
+        .map(|file| format!("Skipped {} {}", file.describe(), file.fix))
+        .collect()
+}
+
+/// The line after a list that says files were skipped, so the list isn't
+/// taken for the whole store when its stdout is read on its own. `left`
+/// says what they weren't, such as `listed`.
+fn skipped_note(skipped: &[Skipped], left: &str) -> String {
+    let files = if skipped.len() == 1 {
+        "1 item file can't be read as an item, so it isn't".to_string()
+    } else {
+        format!(
+            "{} item files can't be read as items, so they aren't",
+            skipped.len()
+        )
+    };
+    format!("{files} {left}. The warnings on stderr say which, and why.")
 }
 
 fn create(store: &Store, args: CreateArgs) -> Result<Output> {
@@ -629,13 +751,20 @@ fn create(store: &Store, args: CreateArgs) -> Result<Output> {
     };
     store.save_item(&item)?;
 
-    Ok(Output {
-        text: format!("Created {}: {}\n", item.id, item.title),
-        json: json!({ "item": item }),
-    })
+    Ok(Output::plain(
+        format!("Created {}: {}\n", item.id, item.title),
+        json!({ "item": item }),
+    ))
 }
 
-/// A title, trimmed. Refuses one that's empty or doesn't fit on a line.
+/// The longest title `create` and `edit --title` take, in characters. A
+/// title is printed in every `list` row and heads `show`, so it says what
+/// the item is in a line, and the details go in its description. 200 is
+/// room for a long sentence, and four times a label's limit.
+const MAX_TITLE: usize = 200;
+
+/// A title, trimmed. Refuses one that's empty, doesn't fit on a line, or
+/// is longer than `MAX_TITLE`.
 fn check_title(title: &str) -> Result<String> {
     let title = title.trim();
     if title.is_empty() {
@@ -646,6 +775,13 @@ fn check_title(title: &str) -> Result<String> {
         ));
     }
     check_printable(title, "A title", "Put the details in --description.")?;
+    let length = title.chars().count();
+    if length > MAX_TITLE {
+        return Err(Error::input(format!(
+            "A title can be at most {MAX_TITLE} characters, and this one has {length}. Say what \
+             the item is in a line, and put the details in --description."
+        )));
+    }
     Ok(title.to_string())
 }
 
@@ -1002,10 +1138,10 @@ fn edit(store: &Store, args: EditArgs) -> Result<Output> {
             states::join(&quoted, "or")
         ));
     }
-    Ok(Output {
+    Ok(Output::plain(
         text,
-        json: json!({ "fields": fields, "labels_not_found": not_found, "item": item }),
-    })
+        json!({ "fields": fields, "labels_not_found": not_found, "item": item }),
+    ))
 }
 
 fn unknown_project(config: &config::Config, key: &str) -> String {
@@ -1043,11 +1179,10 @@ fn list(store: &Store, args: ListArgs) -> Result<Output> {
     let mut labels = Vec::new();
     add_labels(&mut labels, &check_labels(&args.labels)?);
     let config = config::load(store)?;
-    let mut items = store.load_items()?;
-    let store_is_empty = items.is_empty();
+    let (mut items, skipped) = store.load_items()?;
 
     // Which project: the one named, every one, or the one whose root holds
-    // the current folder. `scope_hint` says how to see every project.
+    // the current folder.
     let project = if args.all {
         None
     } else if let Some(key) = args.project {
@@ -1064,6 +1199,10 @@ fn list(store: &Store, args: ListArgs) -> Result<Output> {
             .map_err(|e| Error::input(format!("Can't read the current folder: {e}")))?;
         config::project_for_dir(&config, &cwd)
     };
+    items.retain(|item| project.as_ref().is_none_or(|key| &item.project == key));
+    // Whether the project, or the store, has no items at all, for the
+    // empty state.
+    let none_in_scope = items.is_empty();
 
     // Without --status, the active states, unless --by asks for done items.
     let statuses: Vec<Status> = if !args.status.is_empty() {
@@ -1097,8 +1236,7 @@ fn list(store: &Store, args: ListArgs) -> Result<Output> {
         .map(|name| VerifiedBy::parse(name).expect("clap only accepts ways of verifying"));
 
     items.retain(|item| {
-        project.as_ref().is_none_or(|key| &item.project == key)
-            && statuses.contains(&item.status)
+        statuses.contains(&item.status)
             && priority.is_none_or(|priority| item.priority == priority)
             && kind.is_none_or(|kind| item.kind == kind)
             && labels.iter().all(|label| item.labels.contains(label))
@@ -1113,52 +1251,29 @@ fn list(store: &Store, args: ListArgs) -> Result<Output> {
     // the items stay in number order.
     items.sort_by_key(|item| (item.project.clone(), item.priority.rank(), item.number()));
 
-    let mut text = String::new();
-    if store_is_empty {
-        text.push_str("No items yet. Create one with `tracker create \"title\"`.\n");
-    } else if items.is_empty() {
-        text.push_str("No items match.\n");
-    }
-    // One table for every row, so the columns line up across projects, with
-    // a heading line before each project's first item.
-    let rows: Vec<Vec<String>> = items
-        .iter()
-        .map(|item| {
-            let labels = if item.labels.is_empty() {
-                String::new()
-            } else {
-                format!("[{}]", item.labels.join(", "))
-            };
-            vec![
-                format!("  {}", item.id),
-                item.priority.as_str().to_string(),
-                item.kind.as_str().to_string(),
-                item.status.as_str().to_string(),
-                item.title.clone(),
-                labels,
-            ]
-        })
-        .collect();
-    let table = table(&rows);
-    for (i, (item, line)) in items.iter().zip(table.lines()).enumerate() {
-        if i == 0 || items[i - 1].project != item.project {
-            let heading = match config.projects.get(&item.project) {
-                Some(p) => format!("{}  {}", item.project, p.name),
-                None => item.project.clone(),
-            };
-            text.push_str(&text::for_terminal(&heading, false));
-            text.push('\n');
-        }
-        text.push_str(line);
-        text.push('\n');
+    let mut text = Styled::new();
+    if items.is_empty() {
+        let only_defaults = args.status.is_empty()
+            && by.is_none()
+            && priority.is_none()
+            && kind.is_none()
+            && labels.is_empty();
+        text.push(&empty_list(
+            &config,
+            project.as_deref(),
+            none_in_scope,
+            only_defaults,
+        ));
+    } else {
+        text.append(list_table(&items, &config));
     }
 
     // What the list covered, so a filtered list is never mistaken for an
     // empty store (§3).
-    text.push('\n');
+    text.push("\n");
     match &project {
-        Some(key) => text.push_str(&format!("{key} only. `--all` for every project.\n")),
-        None => text.push_str("Every project.\n"),
+        Some(key) => text.push(&format!("{key} only. `--all` for every project.\n")),
+        None => text.push("Every project.\n"),
     }
     let mut filters = Vec::new();
     if !args.status.is_empty() {
@@ -1180,18 +1295,101 @@ fn list(store: &Store, args: ListArgs) -> Result<Output> {
         filters.push(format!("verified by {} (done items only)", by.as_str()));
     }
     if args.status.is_empty() && by.is_none() {
-        text.push_str(
-            "Open, in-progress and review items. `--status done,shelved` for the others.\n",
-        );
+        text.push("Open, in-progress and review items. `--status done,shelved` for the others.\n");
     }
     if !filters.is_empty() {
-        text.push_str(&format!("Filters: {}.\n", filters.join(", ")));
+        text.push(&format!("Filters: {}.\n", filters.join(", ")));
+    }
+    if !skipped.is_empty() {
+        text.push(&format!("{}\n", skipped_note(&skipped, "listed")));
     }
 
     Ok(Output {
         text,
-        json: json!({ "project": project, "items": items }),
+        json: json!({ "project": project, "items": items, "skipped": skipped_json(&skipped) }),
+        warnings: skipped_warnings(&skipped),
     })
+}
+
+/// What `list` says when it has no rows, by what's missing: projects,
+/// any item at all in `project` (or the store, for `None`), items in the
+/// states it shows by default, when `only_defaults` says no filter was
+/// given, or items that match the filters.
+fn empty_list(
+    config: &config::Config,
+    project: Option<&str>,
+    none_in_scope: bool,
+    only_defaults: bool,
+) -> String {
+    if config.projects.is_empty() && none_in_scope {
+        return "No projects yet. Register one with `tracker project add KEY --name NAME --root \
+                PATH`, then create items in it with `tracker create \"title\"`.\n"
+            .to_string();
+    }
+    if none_in_scope {
+        return match project {
+            Some(key) => format!(
+                "No {key} items yet. Create one with `tracker create \"title\" --project {key}`.\n"
+            ),
+            None => "No items yet. Create one with `tracker create \"title\" --project KEY`.\n"
+                .to_string(),
+        };
+    }
+    if only_defaults {
+        return "No open items. Nice work!\n".to_string();
+    }
+    "No items match these filters.\n".to_string()
+}
+
+/// `list`'s rows: a heading row naming each column, then each item,
+/// with a line naming its project before the project's first item. The
+/// rows are one table, so the columns line up across projects and with
+/// the heading row.
+fn list_table(items: &[Item], config: &config::Config) -> Styled {
+    let mut header: Vec<String> = ["  ID", "PRIORITY", "KIND", "STATUS", "TITLE", "LABELS"]
+        .map(String::from)
+        .to_vec();
+    if items.iter().all(|item| item.labels.is_empty()) {
+        header.pop();
+    }
+    let mut rows = vec![heading_cells(&header)];
+    for item in items {
+        let labels = if item.labels.is_empty() {
+            String::new()
+        } else {
+            format!("[{}]", item.labels.join(", "))
+        };
+        rows.push(vec![
+            (format!("  {}", item.id), Style::new()),
+            (
+                item.priority.as_str().to_string(),
+                styled::priority(item.priority),
+            ),
+            (item.kind.as_str().to_string(), Style::new()),
+            (
+                item.status.as_str().to_string(),
+                styled::status(item.status),
+            ),
+            (item.title.clone(), Style::new()),
+            (labels, Style::new()),
+        ]);
+    }
+
+    let mut lines = styled_table(&rows).into_iter();
+    let mut text = Styled::new();
+    text.append(lines.next().expect("the heading row"));
+    for (i, (item, line)) in items.iter().zip(lines).enumerate() {
+        if i == 0 || items[i - 1].project != item.project {
+            let heading = match config.projects.get(&item.project) {
+                Some(p) => format!("{}  {}", item.project, p.name),
+                None => item.project.clone(),
+            };
+            text.push_styled(&text::for_terminal(&heading, false), styled::HEADING);
+            text.push("\n");
+        }
+        text.append(line);
+    }
+    text
 }
 
 /// Runs one of the commands that move an item between states (§2.2):
@@ -1282,12 +1480,10 @@ fn apply(
     let now = item::now();
     item.status = step.to;
     item.updated = now;
-    let mut text = format!(
-        "{}: {} → {}\n",
-        item.id,
-        step.from.as_str(),
-        step.to.as_str()
-    );
+    let mut text = Styled::new();
+    text.push(&format!("{}: {} → ", item.id, step.from.as_str()));
+    text.push_styled(step.to.as_str(), styled::status(step.to));
+    text.push("\n");
     // `verification` is only present while the item is done (§2.1). A file
     // written by slice 2 can still hold one on a shelved item, so this
     // doesn't check that the move starts from done.
@@ -1302,7 +1498,7 @@ fn apply(
             at: now,
             note: Some(states::UNCHECKED_NOTE.to_string()),
         });
-        text.push_str(&format!("Unchecked. {}\n", states::UNCHECKED_NOTE));
+        text.push(&format!("Unchecked. {}\n", states::UNCHECKED_NOTE));
     }
     item.history.push(HistoryEntry {
         at: now,
@@ -1332,7 +1528,11 @@ fn apply(
     } else {
         json!({ "item": item })
     };
-    Ok(Output { text, json })
+    Ok(Output {
+        text,
+        json,
+        warnings: Vec::new(),
+    })
 }
 
 /// `show`: everything about one item (§3): every field, its verification
@@ -1353,55 +1553,78 @@ fn show(store: &Store, id: &str) -> Result<Output> {
         Some(project) => format!("{} ({})", item.project, project.name),
         None => format!("{} (not in config.json)", item.project),
     };
+    let field = |name: &str, value: String, style: Style| {
+        vec![(format!("  {name}"), Style::new()), (value, style)]
+    };
     let mut rows = vec![
-        vec!["  project".to_string(), project],
-        vec!["  kind".to_string(), item.kind.as_str().to_string()],
-        vec!["  status".to_string(), item.status.as_str().to_string()],
-        vec!["  priority".to_string(), item.priority.as_str().to_string()],
+        field("project", project, Style::new()),
+        field("kind", item.kind.as_str().to_string(), Style::new()),
+        field(
+            "status",
+            item.status.as_str().to_string(),
+            styled::status(item.status),
+        ),
+        field(
+            "priority",
+            item.priority.as_str().to_string(),
+            styled::priority(item.priority),
+        ),
     ];
     if !item.labels.is_empty() {
-        rows.push(vec!["  labels".to_string(), item.labels.join(", ")]);
+        rows.push(field("labels", item.labels.join(", "), Style::new()));
     }
     if let Some(design) = &item.design {
-        rows.push(vec!["  design".to_string(), design.clone()]);
+        rows.push(field("design", design.clone(), Style::new()));
     }
-    rows.push(vec!["  created".to_string(), item.created.to_string()]);
-    rows.push(vec!["  updated".to_string(), item.updated.to_string()]);
+    rows.push(field("created", item.created.to_string(), Style::new()));
+    rows.push(field("updated", item.updated.to_string(), Style::new()));
 
-    let mut text = format!("{}  {}\n", item.id, text::for_terminal(&item.title, false));
-    text.push_str(&table(&rows));
+    let mut text = Styled::new();
+    text.push_styled(
+        &format!("{}  {}", item.id, text::for_terminal(&item.title, false)),
+        styled::HEADING,
+    );
+    text.push("\n");
+    for line in styled_table(&rows) {
+        text.append(line);
+    }
 
     if let Some(description) = &item.description {
-        text.push_str("\nDescription:\n");
+        section(&mut text, "Description:", "");
         // Indented, except for blank lines, which stay empty.
         for line in text::for_terminal(description, true).lines() {
             if !line.is_empty() {
-                text.push_str("  ");
+                text.push("  ");
             }
-            text.push_str(line);
-            text.push('\n');
+            text.push(line);
+            text.push("\n");
         }
     }
 
     match &item.verification {
         Some(record) => {
-            text.push_str("\nVerification:\n");
-            text.push_str(&verification_rows(record));
+            section(&mut text, "Verification:", "");
+            text.push(&verification_rows(record));
         }
-        None => text.push_str("\nVerification: none.\n"),
+        None => section(&mut text, "Verification:", " none."),
     }
     if let Some(record) = &item.previous_verification {
-        text.push_str("\nPrevious verification, from before it was last reopened:\n");
-        text.push_str(&verification_rows(record));
+        section(
+            &mut text,
+            "Previous verification,",
+            " from before it was last reopened:",
+        );
+        text.push(&verification_rows(record));
     }
 
     if item.history.is_empty() {
-        text.push_str("\nHistory: none yet.\n");
+        section(&mut text, "History:", " none yet.");
     } else {
-        text.push_str(&format!(
-            "\nHistory, oldest first ({}):\n",
-            entries(item.history.len())
-        ));
+        section(
+            &mut text,
+            "History,",
+            &format!(" oldest first ({}):", entries(item.history.len())),
+        );
         let rows: Vec<Vec<String>> = item
             .history
             .iter()
@@ -1425,8 +1648,8 @@ fn show(store: &Store, id: &str) -> Result<Output> {
             })
             .collect();
         for (entry, line) in item.history.iter().zip(table(&rows).lines()) {
-            text.push_str(line);
-            text.push('\n');
+            text.push(line);
+            text.push("\n");
             let mut details = Vec::new();
             if let Some(reason) = &entry.reason {
                 details.push(format!("reason: {reason}"));
@@ -1444,7 +1667,7 @@ fn show(store: &Store, id: &str) -> Result<Output> {
                 ));
             }
             for detail in details {
-                text.push_str(&format!("      {}\n", text::for_terminal(&detail, false)));
+                text.push(&format!("      {}\n", text::for_terminal(&detail, false)));
             }
         }
     }
@@ -1456,10 +1679,23 @@ fn show(store: &Store, id: &str) -> Result<Output> {
              full: {}. It was probably written by a newer tracker, so use that one to see them.",
             unknown.join(", ")
         );
-        text.push_str(&format!("\n{}\n", text::for_terminal(&warning, false)));
+        text.push(&format!("\n{}\n", text::for_terminal(&warning, false)));
         json["warning"] = json!(warning);
     }
-    Ok(Output { text, json })
+    Ok(Output {
+        text,
+        json,
+        warnings: Vec::new(),
+    })
+}
+
+/// Starts a section of `show`: a blank line, then `heading` in bold and
+/// `rest` plain, on one line.
+fn section(text: &mut Styled, heading: &str, rest: &str) {
+    text.push("\n");
+    text.push_styled(heading, styled::HEADING);
+    text.push(rest);
+    text.push("\n");
 }
 
 /// The top-level fields of an item file that this version doesn't know, or
@@ -1550,13 +1786,13 @@ fn delete(store: &Store, id: &str) -> Result<Output> {
     let line = serde_json::to_string(&record).expect("JSON values always serialize");
     store.delete_item(&id, &text::for_json(&line))?;
 
-    Ok(Output {
-        text: format!(
+    Ok(Output::plain(
+        format!(
             "Deleted {id}. Its line in deleted.json records the delete, and {id} won't be used \
              again.\n"
         ),
-        json: json!({ "deleted": record }),
-    })
+        json!({ "deleted": record }),
+    ))
 }
 
 /// What `delete` says before asking for the ID (§2.8): the item's state,
@@ -1599,41 +1835,96 @@ fn normalize_id(id: &str) -> String {
     id.trim().to_ascii_uppercase()
 }
 
-/// Lines up rows of cells into columns two spaces apart. The last column
-/// isn't padded. Widths are counted in terminal columns, so a CJK
-/// character or an emoji, which takes two, keeps its row in line. Each cell is escaped first, so a title or name edited by
-/// hand can't break its line or change what the terminal shows.
-fn table(rows: &[Vec<String>]) -> String {
-    let rows: Vec<Vec<String>> = rows
+/// One cell of a table: its text and its colour.
+type Cell = (String, Style);
+
+/// Plain cells, for a row with no colour.
+fn plain_cells(row: &[String]) -> Vec<Cell> {
+    row.iter()
+        .map(|cell| (cell.clone(), Style::new()))
+        .collect()
+}
+
+/// Lines up rows of cells into columns two spaces apart, and returns one
+/// line per row, each ending in a newline. Empty cells at the end of a row
+/// aren't printed, and the last one printed isn't padded, so no line ends
+/// in spaces. Widths are counted in terminal columns, so a CJK character
+/// or an emoji, which takes two, keeps its row in line. Each cell is
+/// escaped first, so a title or name edited by hand can't break its line
+/// or change what the terminal shows, and its colour goes round the cell,
+/// never the padding, so the columns line up with colour or without.
+fn styled_table(rows: &[Vec<Cell>]) -> Vec<Styled> {
+    let rows: Vec<Vec<Cell>> = rows
         .iter()
         .map(|row| {
             row.iter()
-                .map(|cell| text::for_terminal(cell, false))
+                .map(|(cell, style)| (text::for_terminal(cell, false), *style))
                 .collect()
         })
         .collect();
-    let rows = &rows;
     let columns = rows.iter().map(|row| row.len()).max().unwrap_or(0);
     let mut widths = vec![0; columns];
-    for row in rows {
-        for (i, cell) in row.iter().enumerate() {
+    for row in &rows {
+        for (i, (cell, _)) in row.iter().enumerate() {
             widths[i] = widths[i].max(cell.width());
         }
     }
 
-    let mut text = String::new();
-    for row in rows {
-        let mut line = String::new();
-        for (i, cell) in row.iter().enumerate() {
-            if i + 1 == row.len() {
-                line.push_str(cell);
+    let mut lines = Vec::new();
+    for row in &rows {
+        let used = row
+            .iter()
+            .rposition(|(cell, _)| !cell.trim_end().is_empty())
+            .map_or(0, |last| last + 1);
+        let mut line = Styled::new();
+        for (i, (cell, style)) in row[..used].iter().enumerate() {
+            if i + 1 == used {
+                line.push_styled(cell.trim_end(), *style);
             } else {
-                line.push_str(cell);
-                line.push_str(&" ".repeat(widths[i] - cell.width() + 2));
+                line.push_styled(cell, *style);
+                line.push(&" ".repeat(widths[i] - cell.width() + 2));
             }
         }
-        text.push_str(line.trim_end());
-        text.push('\n');
+        line.push("\n");
+        lines.push(line);
     }
-    text
+    lines
+}
+
+/// `styled_table` for rows with no colour, as one piece of text.
+fn table(rows: &[Vec<String>]) -> String {
+    let rows: Vec<Vec<Cell>> = rows.iter().map(|row| plain_cells(row)).collect();
+    styled_table(&rows).iter().map(Styled::plain).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::CommandFactory;
+
+    use super::Cli;
+
+    #[test]
+    fn the_command_line_is_well_formed() {
+        Cli::command().debug_assert();
+    }
+
+    /// Slice 5: every command and every flag says what it's for in
+    /// `--help`, so a new one without a doc comment fails here.
+    #[test]
+    fn every_command_and_flag_has_help_text() {
+        fn check(command: &clap::Command, path: &str) {
+            assert!(command.get_about().is_some(), "`{path}` has no help text");
+            for arg in command.get_arguments() {
+                let id = arg.get_id().as_str();
+                if id == "help" || id == "version" {
+                    continue;
+                }
+                assert!(arg.get_help().is_some(), "`{path}`'s {id} has no help text");
+            }
+            for sub in command.get_subcommands() {
+                check(sub, &format!("{path} {}", sub.get_name()));
+            }
+        }
+        check(&Cli::command(), "tracker");
+    }
 }

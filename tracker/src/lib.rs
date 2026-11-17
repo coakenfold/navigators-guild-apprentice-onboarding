@@ -6,5 +6,6 @@ pub mod error;
 pub mod item;
 pub mod states;
 pub mod store;
+pub mod styled;
 pub mod text;
 pub mod tty;

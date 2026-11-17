@@ -1,0 +1,47 @@
+{
+  "id": "XX-12",
+  "title": "Shelved after a reopen",
+  "project": "XX",
+  "kind": "change",
+  "status": "shelved",
+  "priority": "medium",
+  "created": "2026-11-17T18:15:43Z",
+  "updated": "2026-11-17T18:15:43Z",
+  "previous_verification": {
+    "by": "unchecked",
+    "at": "2026-11-17T18:15:43Z",
+    "note": "No gates ran: this version of tracker has none yet, so nothing checked the work."
+  },
+  "history": [
+    {
+      "at": "2026-11-17T18:15:43Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-17T18:15:43Z",
+      "from": "in-progress",
+      "to": "done",
+      "via": "submit",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-17T18:15:43Z",
+      "from": "done",
+      "to": "open",
+      "via": "reopen",
+      "interactive": false,
+      "reason": "The fix was wrong."
+    },
+    {
+      "at": "2026-11-17T18:15:43Z",
+      "from": "open",
+      "to": "shelved",
+      "via": "shelve",
+      "interactive": false,
+      "reason": "Later."
+    }
+  ]
+}

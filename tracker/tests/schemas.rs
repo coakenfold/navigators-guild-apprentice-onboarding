@@ -116,12 +116,37 @@ fn a_wrong_output_is_caught() {
     let mut bad = item();
     bad["status"] = json!("closed");
     fails("create", json!({ "item": bad.clone() }));
-    fails("list", json!({ "project": null, "items": [item(), bad] }));
+    fails(
+        "list",
+        json!({ "project": null, "items": [item(), bad], "skipped": [] }),
+    );
     // list says which project it covered: a key, or null for every one.
-    check_schema("list", &json!({ "project": "XX", "items": [item()] }));
-    check_schema("list", &json!({ "project": null, "items": [] }));
-    fails("list", json!({ "items": [item()] }));
-    fails("list", json!({ "project": "xx", "items": [] }));
+    check_schema(
+        "list",
+        &json!({ "project": "XX", "items": [item()], "skipped": [] }),
+    );
+    check_schema(
+        "list",
+        &json!({ "project": null, "items": [], "skipped": [] }),
+    );
+    fails("list", json!({ "items": [item()], "skipped": [] }));
+    fails(
+        "list",
+        json!({ "project": "xx", "items": [], "skipped": [] }),
+    );
+    // And which files it skipped: always there, with a line or null.
+    fails("list", json!({ "project": "XX", "items": [] }));
+    check_schema(
+        "list",
+        &json!({ "project": "XX", "items": [], "skipped": [
+            { "file": "/s/items/XX-2.json", "line": 3, "column": 5, "reason": "expected `,`" },
+            { "file": "/s/items/notes.json", "line": null, "column": null, "reason": "not an ID" },
+        ] }),
+    );
+    fails(
+        "list",
+        json!({ "project": "XX", "items": [], "skipped": [{ "file": "/s/items/XX-2.json" }] }),
+    );
     // create's item is wrapped, never bare.
     fails("create", item());
 

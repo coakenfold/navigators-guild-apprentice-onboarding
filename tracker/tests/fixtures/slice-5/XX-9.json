@@ -1,0 +1,33 @@
+{
+  "id": "XX-9",
+  "title": "Every field, edited",
+  "project": "XX",
+  "kind": "fix",
+  "status": "open",
+  "priority": "high",
+  "labels": [
+    "feature"
+  ],
+  "design": "DESIGN.md#2.5",
+  "created": "2026-11-17T18:15:43Z",
+  "updated": "2026-11-17T18:15:43Z",
+  "history": [
+    {
+      "at": "2026-11-17T18:15:43Z",
+      "from": "open",
+      "to": "open",
+      "via": "edit",
+      "interactive": false,
+      "fields": [
+        "title",
+        "kind",
+        "labels"
+      ],
+      "kind_before": "capability",
+      "labels_removed": [
+        "needs-review"
+      ]
+    }
+  ],
+  "description": "Written by slice 5."
+}

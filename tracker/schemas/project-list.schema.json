@@ -3,7 +3,7 @@
   "$id": "https://tracker.invalid/schemas/project-list.schema.json",
   "title": "tracker project list --json",
   "type": "object",
-  "required": ["projects", "unregistered"],
+  "required": ["projects", "unregistered", "skipped"],
   "properties": {
     "projects": {
       "description": "Every registered project, sorted by key.",
@@ -33,6 +33,10 @@
         },
         "additionalProperties": false
       }
+    },
+    "skipped": {
+      "description": "Item files that can't be read, which aren't counted (DESIGN.md §4.4).",
+      "$ref": "list.schema.json#/$defs/skipped"
     }
   },
   "additionalProperties": false,

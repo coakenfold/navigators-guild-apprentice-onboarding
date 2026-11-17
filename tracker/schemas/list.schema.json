@@ -4,7 +4,7 @@
   "title": "tracker list --json",
   "description": "The items list covered, after its filters (DESIGN.md §3).",
   "type": "object",
-  "required": ["project", "items"],
+  "required": ["project", "items", "skipped"],
   "properties": {
     "project": {
       "description": "The project the list covered: the key, or null for every project. Inside a project root it's that project's, unless --project or --all says otherwise.",
@@ -14,7 +14,41 @@
       "description": "The items that match every filter, sorted by project, then by priority from high to low, then by number.",
       "type": "array",
       "items": { "$ref": "item.schema.json" }
-    }
+    },
+    "skipped": { "$ref": "#/$defs/skipped" }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "skipped": {
+      "description": "Item files that can't be read as the item their name says, such as one that isn't valid JSON, sorted by file. Each is skipped, and the other items are still listed (DESIGN.md §4.4). Empty when every file was read.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "line", "column", "reason"],
+        "properties": {
+          "file": {
+            "description": "The file's path.",
+            "type": "string",
+            "minLength": 1
+          },
+          "line": {
+            "description": "Where the JSON parser stopped, from 1, or null when the JSON parsed but isn't the item the file's name says.",
+            "type": ["integer", "null"],
+            "minimum": 1
+          },
+          "column": {
+            "description": "The column the JSON parser stopped at, or null with line.",
+            "type": ["integer", "null"],
+            "minimum": 0
+          },
+          "reason": {
+            "description": "Why it was skipped, such as the parser's message.",
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
 }

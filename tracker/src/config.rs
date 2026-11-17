@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Error, Result};
+use crate::error::{self, Error, Result};
 use crate::store::{self, Store};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,11 +40,16 @@ impl Project {
     }
 }
 
+/// What to do about a `config.json` that can't be parsed.
+const CONFIG_FIX: &str = "It's JSON, laid out as in DESIGN.md §4.2, so fix it by hand. Every \
+                          command refuses until it parses, so a broken config is never \
+                          mistaken for one with no projects.";
+
 pub fn load(store: &Store) -> Result<Config> {
     let path = store.config_path();
     let text = store::read_file(&path)?;
-    let config: Config = serde_json::from_str(&text)
-        .map_err(|e| Error::store(format!("Can't parse {}: {e}", path.display())))?;
+    let config: Config =
+        serde_json::from_str(&text).map_err(|e| error::parse(&path, &e, CONFIG_FIX))?;
     // Keys written by hand are checked too: a key becomes part of every item
     // ID, and so of a file path, and a key such as `../x` would put item
     // files outside the store.
@@ -81,8 +86,8 @@ pub fn add_project(store: &Store, key: &str, project: &Project) -> Result<()> {
     let text = store::read_file(&path)?;
     // Edited as plain JSON, not as `Config`, so that settings this version
     // doesn't know about yet are kept, in the order they were written.
-    let mut config: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| Error::store(format!("Can't parse {}: {e}", path.display())))?;
+    let mut config: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| error::parse(&path, &e, CONFIG_FIX))?;
     let Some(projects) = config
         .as_object_mut()
         .map(|top| top.entry("projects").or_insert(serde_json::json!({})))
