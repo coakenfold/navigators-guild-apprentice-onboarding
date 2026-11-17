@@ -439,7 +439,7 @@ Nothing from this slice's own _Done when_ checks is uncovered, and the one that 
 
 - **A hand-edited timestamp is blamed on "a newer tracker"** (slice 2 review 2, item 4).
 - **`status <id> closed` is refused** (slice 2 review 2, item 5).
-- **Commands on an item whose project isn't in `config.json`** (slice 2 review 2, item 7). `show` and `delete` now work on one too, and no test pins that.
+- **Commands on an item whose project isn't in `config.json`** (slice 2 review 2, item 7). `show` and `delete` now work on one too, which `show_and_delete_work_on_an_item_whose_project_isnt_in_config_json` pins. The moves and `edit` still have no such test.
 - **`error.schema.json`'s `allowed[].via` enum lists only today's four moves** (slice 2 review 2, item 3). `delete` isn't a move, so it doesn't appear there.
 - **Concurrent moves on one item aren't tested**, and neither are a delete and a move on one item at the same moment, beyond the re-read test.
 - **The text output of `shelve` and `reopen` isn't tested.**

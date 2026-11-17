@@ -110,6 +110,38 @@ fn show_names_the_fields_of_a_file_from_a_newer_tracker() {
 }
 
 #[test]
+fn show_and_delete_work_on_an_item_whose_project_isnt_in_config_json() {
+    // §3: a command that takes an item ID needs no project, because the
+    // ID names it.
+    let env = env_with_project();
+    env.create("XX", "a");
+    env.create("XX", "b");
+    let config = env.home.path().join("config.json");
+    let mut value = env.read_store_file("config.json");
+    value["projects"].as_object_mut().unwrap().remove("XX");
+    fs::write(
+        &config,
+        serde_json::to_string_pretty(&value).unwrap() + "\n",
+    )
+    .unwrap();
+
+    assert_eq!(env.json(&["show", "XX-1"])["item"]["project"], "XX");
+    let shown = text(&env, &["show", "XX-1"]);
+    assert!(
+        shown.contains("  project   XX (not in config.json)\n"),
+        "{shown}"
+    );
+
+    let Some((output, ok)) = env.in_terminal_typing(&["delete", "XX-2"], PROMPT, "XX-2", || {})
+    else {
+        return;
+    };
+    assert!(ok, "{output}");
+    assert!(!env.item_path("XX-2").exists());
+    assert_eq!(deleted(&env)[0]["id"], "XX-2");
+}
+
+#[test]
 fn show_prints_every_field_the_verification_records_and_history_with_times() {
     let env = env_with_project();
     let root = env.work.path().join("xx");
