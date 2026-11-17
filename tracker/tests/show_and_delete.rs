@@ -272,6 +272,8 @@ fn echo_the_id_into_delete_is_refused_and_the_file_remains() {
         .code(1);
     let stderr = String::from_utf8_lossy(&output.get_output().stderr).to_string();
     assert!(stderr.contains("interactive terminal"), "{stderr}");
+    // It names what to type, which for `digest ack` won't be an ID.
+    assert!(stderr.contains("who types XX-1 to confirm it"), "{stderr}");
     // It says what an agent can do instead.
     assert!(stderr.contains("tracker shelve XX-1"), "{stderr}");
     let output = env

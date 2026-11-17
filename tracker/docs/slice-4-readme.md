@@ -144,7 +144,7 @@ error: There's no item BM-9.
     "updated": "2026-11-17T11:53:10Z"
   }
 }
-error: `tracker delete BM-2` needs a human at an interactive terminal, who types the ID to confirm it, and stdin here isn't a terminal. Nothing was changed. Only a human deletes items. An item that shouldn't be done is shelved instead, with `tracker shelve BM-2 --reason "…"`, and a human decides whether to delete it.
+error: `tracker delete BM-2` needs a human at an interactive terminal, who types BM-2 to confirm it, and stdin here isn't a terminal. Nothing was changed. Only a human deletes items. An item that shouldn't be done is shelved instead, with `tracker shelve BM-2 --reason "…"`, and a human decides whether to delete it.
 BM-2 "Sort by date" is open.
 Deleting it removes its file.
 Any commits scoped to it stay in git, the ID won't be used again, and deleted.json records the delete for the digest.

@@ -38,7 +38,7 @@ pub fn is_interactive() -> bool {
 pub fn confirm(command: &str, id: &str, warning: &str, otherwise: &str) -> Result<()> {
     if !is_interactive() {
         let mut message = format!(
-            "`{command}` needs a human at an interactive terminal, who types the ID to \
+            "`{command}` needs a human at an interactive terminal, who types {id} to \
              confirm it, and stdin here isn't a terminal. Nothing was changed."
         );
         if !otherwise.is_empty() {
