@@ -192,7 +192,9 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - `reject --reason`, which sends the item back to in-progress
   - `show --diff`, which prints the item's commits and their combined diff
 
-  `status` refuses an item in review and points to `approve` and `reject`."
+  `status` refuses an item in review and points to `approve` and `reject`.
+
+  Add the diagram's arrows to the move table: `submit` from in-progress to review, `approve` from review to done, and `reject` from review to in-progress. `states::find` returns the first row for a command and state, so change it to answer whether the command has any move from that state, and let `submit` pick done or review from the triggers. `allowed` keeps one entry per arrow, each with a single `to`, as §3 describes."
 
 - **Done when:**
   - A manual criterion with evidence is held under T6. A `needs-review` item is held under T9. An item with neither still auto-verifies.
@@ -202,6 +204,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - An approve whose gate re-run fails leaves the item in review. A reject puts its reason in history.
   - Every move refused for an item in review, through a command or through `status`, names `approve` and `reject`, and its `allowed` lists both. Until now the message says this version can't do either, and `allowed` is empty.
   - `show XX-1 --diff` includes XX-1's commits and none of XX-12's.
+  - A refused move from in-progress lists `submit` twice in `allowed`, once to done and once to review, with the same command.
 
 ### Slice 10: Risky changes are held
 

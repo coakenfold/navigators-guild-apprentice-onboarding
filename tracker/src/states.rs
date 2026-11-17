@@ -17,9 +17,12 @@ const fn step(via: Via, from: Status, to: Status) -> Move {
     Move { via, from, to }
 }
 
-/// Every move in §2.2's diagram that this version has a command for.
-/// `submit`'s move to review, and `approve` and `reject`, arrive with the
-/// triggers in slice 9. `delete` isn't a move: the item is gone.
+/// Every move in §2.2's diagram that this version has a command for, one
+/// row per arrow. `allowed_json` lists one entry per row (§3), so a command
+/// with two outcomes gets two rows. `submit`'s move to review, and
+/// `approve` and `reject`, arrive with the triggers in slice 9, and `find`
+/// must then stop assuming one row per command and state. `delete` isn't a
+/// move: the item is gone.
 pub const MOVES: [Move; 6] = [
     step(Via::Start, Status::Open, Status::InProgress),
     step(Via::Submit, Status::InProgress, Status::Done),

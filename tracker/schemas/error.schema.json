@@ -16,7 +16,7 @@
       "enum": [1, 2, 3]
     },
     "allowed": {
-      "description": "Only when a move was refused because the state diagram (DESIGN.md §2.2) doesn't draw it: every move allowed from the item's state, in the diagram's order. Empty for an item in review.",
+      "description": "Only when a move was refused because the state diagram (DESIGN.md §2.2) doesn't draw it: every move allowed from the item's state, in the diagram's order. One entry per arrow in the diagram, so a command with two outcomes, such as submit from in-progress once triggers exist (slice 9), is listed once for each, with the same command. Empty for an item in review.",
       "type": "array",
       "items": {
         "type": "object",
