@@ -193,6 +193,111 @@ fn a_symlink_to_a_missing_file_is_skipped_and_named_without_suggesting_init() {
     assert!(!nowhere.exists());
 }
 
+/// Runs `tracker <args> --json`, stopped after 10 seconds so a command
+/// that hangs fails the test rather than the suite, expects exit `code`,
+/// and returns the JSON.
+#[cfg(unix)]
+fn json_within_10s(env: &Env, args: &[&str], code: i32) -> Value {
+    let output = env
+        .cmd()
+        .args(args)
+        .arg("--json")
+        .timeout(std::time::Duration::from_secs(10))
+        .assert()
+        .code(code);
+    let value = common::parse(&output.get_output().stdout);
+    let stderr = String::from_utf8(output.get_output().stderr.clone()).unwrap();
+    assert!(stderr.is_empty(), "{args:?}: {stderr}");
+    value
+}
+
+// Review 2's bug 1 and finding 4: anything in items/ that isn't a regular
+// file once symlinks are followed costs one item, like a file that doesn't
+// parse. Before, a symlink loop stopped the whole list, and a pipe made
+// every command that read it hang, a writing one while holding the lock.
+#[cfg(unix)]
+#[test]
+fn an_entry_that_isnt_a_regular_file_is_skipped_and_never_read() {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    env.create("XX", "b");
+    std::os::unix::fs::symlink("XX-5.json", env.item_path("XX-5")).unwrap();
+    std::os::unix::fs::symlink("XX-7.json", env.item_path("XX-6")).unwrap();
+    std::os::unix::fs::symlink("XX-6.json", env.item_path("XX-7")).unwrap();
+    std::os::unix::fs::symlink("/dev/null", env.item_path("XX-8")).unwrap();
+    let made = std::process::Command::new("mkfifo")
+        .arg(env.item_path("XX-9"))
+        .status()
+        .unwrap();
+    assert!(made.success());
+
+    for args in [&["list"][..], &["project", "list"]] {
+        let listed = json_within_10s(&env, args, 0);
+        let skipped: Vec<(String, String)> = listed["skipped"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|file| {
+                let name = Path::new(file["file"].as_str().unwrap())
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string();
+                (name, file["reason"].as_str().unwrap().to_string())
+            })
+            .collect();
+        let names: Vec<&str> = skipped.iter().map(|(name, _)| name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "XX-5.json",
+                "XX-6.json",
+                "XX-7.json",
+                "XX-8.json",
+                "XX-9.json"
+            ],
+            "{args:?}: {listed:#}"
+        );
+        for (name, reason) in &skipped[..3] {
+            assert!(
+                reason.starts_with("it's a symlink that can't be followed"),
+                "{name}: {reason}"
+            );
+        }
+        for (name, reason) in &skipped[3..] {
+            assert_eq!(reason, "it isn't a regular file", "{name}");
+        }
+    }
+    let list = json_within_10s(&env, &["list"], 0);
+    assert_eq!(ids(&list), ["XX-1", "XX-2"]);
+
+    // A command that names one refuses with the same reason and the fix,
+    // and one that writes, such as start, doesn't hang holding the lock.
+    for id in ["XX-5", "XX-8", "XX-9"] {
+        for command in ["show", "start", "edit", "delete"] {
+            let mut args = vec![command, id];
+            if command == "edit" {
+                args.extend(["--priority", "low"]);
+            }
+            let error = json_within_10s(&env, &args, 3);
+            let message = error["error"].as_str().unwrap();
+            assert!(
+                message.contains("symlink that can't be followed")
+                    || message.contains("isn't a regular file"),
+                "{args:?}: {message}"
+            );
+            assert!(
+                message.contains("Remove it from items/.")
+                    || message.contains("Move it out of items/."),
+                "{args:?}: {message}"
+            );
+        }
+    }
+    // The other items still work.
+    json_within_10s(&env, &["start", "XX-1"], 0);
+}
+
 /// Runs `tracker <args> --json` with `TRACKER_HOME` set to `home`, or
 /// unset for `None`, expects exit 3, and returns the error message.
 fn store_error(env: &Env, home: Option<&Path>, args: &[&str]) -> String {

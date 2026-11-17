@@ -361,21 +361,26 @@ impl Store {
     }
 
     /// The text of an item's file, exactly as it is on disk. Fails with
-    /// exit 1 if there's no such item, and exit 3 if its file is a symlink
-    /// to a file that doesn't exist.
+    /// exit 1 if there's no such item, and exit 3 if its file isn't a
+    /// regular file once symlinks are followed, such as a symlink that
+    /// leads nowhere or a pipe, which is never read (§4.4).
     pub fn item_text(&self, id: &str) -> Result<String> {
         let path = self.item_path(id)?;
+        let no_item = || {
+            Error::input(format!(
+                "There's no item {id}. `tracker list --all --status \
+                 open,in-progress,review,done,shelved` lists every item."
+            ))
+        };
+        match entry_at(&path)? {
+            Entry::File => {}
+            Entry::Gone => return Err(no_item()),
+            Entry::Other(problem) => return Err(problem.error()),
+        }
         match fs::read_to_string(&path) {
             Ok(text) => Ok(text),
-            Err(e) if e.kind() == ErrorKind::NotFound => {
-                if is_broken_symlink(&path) {
-                    return Err(broken_symlink(&path).error());
-                }
-                Err(Error::input(format!(
-                    "There's no item {id}. `tracker list --all --status \
-                     open,in-progress,review,done,shelved` lists every item."
-                )))
-            }
+            // Removed since `entry_at` looked.
+            Err(e) if e.kind() == ErrorKind::NotFound => Err(no_item()),
             Err(e) if e.kind() == ErrorKind::InvalidData => Err(not_utf8(&path).error()),
             Err(e) => Err(error::io("read", &path, &e)),
         }
@@ -499,8 +504,10 @@ impl Store {
     /// the files it skipped (§4.4). A file that can't be read as the item
     /// its name says, such as one that isn't valid JSON, costs that one
     /// item, not the whole list, so it's skipped and reported instead.
-    /// A symlink to a file that doesn't exist is skipped and reported the
-    /// same way. A file removed between listing the folder and reading it,
+    /// Anything that isn't a regular file once symlinks are followed, such
+    /// as a folder, a pipe or a symlink that leads nowhere, is skipped and
+    /// reported the same way, without being read: a pipe would never
+    /// finish. A file removed between listing the folder and reading it,
     /// by a `delete` that ran meanwhile, is left out without a word, since
     /// that item is gone. A folder or file the store can't read at all, such
     /// as one without permission, still fails, with exit 3: that's the
@@ -542,24 +549,16 @@ enum Listed {
 /// only when the file is there but can't be read at all, such as one
 /// without permission.
 fn read_listed(path: &Path) -> Result<Listed> {
-    if path.is_dir() {
-        return Ok(Listed::Skipped(Skipped {
-            file: path.to_path_buf(),
-            line: None,
-            column: None,
-            reason: "it's a folder, not a file".to_string(),
-            fix: "Move it out of items/.".to_string(),
-        }));
+    match entry_at(path)? {
+        Entry::File => {}
+        Entry::Gone => return Ok(Listed::Gone),
+        Entry::Other(problem) => return Ok(Listed::Skipped(problem)),
     }
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
         Err(e) if e.kind() == ErrorKind::InvalidData => return Ok(Listed::Skipped(not_utf8(path))),
-        Err(e) if e.kind() == ErrorKind::NotFound => {
-            if is_broken_symlink(path) {
-                return Ok(Listed::Skipped(broken_symlink(path)));
-            }
-            return Ok(Listed::Gone);
-        }
+        // Removed since `entry_at` looked.
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Listed::Gone),
         Err(e) => return Err(error::io("read", path, &e)),
     };
     Ok(match check_item(path, &text) {
@@ -615,21 +614,66 @@ fn not_utf8(path: &Path) -> Skipped {
     }
 }
 
-/// Whether `path` is there, but only as a symlink to something that isn't:
-/// reading it says "not found", though the link itself exists.
-fn is_broken_symlink(path: &Path) -> bool {
-    fs::symlink_metadata(path).is_ok() && fs::metadata(path).is_err()
+/// What is at a path in `items/`, looked at before it's read.
+enum Entry {
+    /// A regular file, or a symlink to one: it can be read.
+    File,
+    /// Nothing: there's no such file, or it was removed.
+    Gone,
+    /// Something that can't be read as an item without being opened,
+    /// such as a folder, a pipe or a symlink that leads nowhere.
+    Other(Skipped),
 }
 
-/// A symlink in `items/` whose target doesn't exist. `init` can't help, and
-/// the item it pointed to, if it was one, is gone.
-fn broken_symlink(path: &Path) -> Skipped {
-    Skipped {
-        file: path.to_path_buf(),
-        line: None,
-        column: None,
-        reason: "it's a symlink to a file that doesn't exist".to_string(),
-        fix: "Remove it from items/.".to_string(),
+/// Looks at `path`, following symlinks, without opening it. Only a regular
+/// file is read: a pipe would make the read wait forever, while holding the
+/// lock in a command that writes, and a device such as `/dev/zero` would
+/// never end. Fails, with exit 3, when the store can't be read there, such
+/// as a folder without permission.
+fn entry_at(path: &Path) -> Result<Entry> {
+    let skipped = |reason: String, fix: &str| {
+        Entry::Other(Skipped {
+            file: path.to_path_buf(),
+            line: None,
+            column: None,
+            reason,
+            fix: fix.to_string(),
+        })
+    };
+    let followed = match fs::metadata(path) {
+        Ok(meta) if meta.is_file() => return Ok(Entry::File),
+        Ok(meta) if meta.is_dir() => {
+            return Ok(skipped(
+                "it's a folder, not a file".to_string(),
+                "Move it out of items/.",
+            ));
+        }
+        Ok(_) => {
+            return Ok(skipped(
+                "it isn't a regular file".to_string(),
+                "Move it out of items/.",
+            ));
+        }
+        Err(e) => e,
+    };
+    // It can't be followed. Either it isn't there at all, or it's a
+    // symlink whose target is missing, loops or can't be reached.
+    match fs::symlink_metadata(path) {
+        Ok(link) if link.file_type().is_symlink() => {
+            // A target in a folder without permission is the store's
+            // problem, like any file without permission.
+            if followed.kind() == ErrorKind::PermissionDenied {
+                return Err(error::io("read", path, &followed));
+            }
+            let reason = if followed.kind() == ErrorKind::NotFound {
+                "it's a symlink to a file that doesn't exist".to_string()
+            } else {
+                format!("it's a symlink that can't be followed: {followed}")
+            };
+            Ok(skipped(reason, "Remove it from items/."))
+        }
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(Entry::Gone),
+        _ => Err(error::io("read", path, &followed)),
     }
 }
 
