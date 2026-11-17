@@ -6,10 +6,10 @@ After slice 4 you can **see an item's full record, and delete one from a real te
 
 | | |
 | --- | --- |
-| Status | Every _Done when_ check has a test, and every test passes, as does the test command. The by-hand check is done too: a person deleted an item in each state by typing its ID in a real terminal, and a wrong ID cancelled ([Checks done by hand](#checks-done-by-hand)). Slice 3's two fixes before slice 4 are done, each in its own commit ([below](#slice-3s-fixes-before-slice-4)). There's no review of this slice yet, and the branch isn't merged into `main`. What's left is listed under [Still open](#still-open). |
+| Status | Every _Done when_ check has a test, and every test passes, as does the test command. The by-hand check is done too: a person deleted an item in each state by typing its ID in a real terminal, and a wrong ID cancelled ([Checks done by hand](#checks-done-by-hand)). Slice 3's two fixes before slice 4 are done, each in its own commit ([below](#slice-3s-fixes-before-slice-4)). From [review 1](reviews/slice-4-review-1.md), four bugs, both security items, two DESIGN.md items and five test gaps are done ([below](#fixes-after-review-1)). The branch isn't merged into `main`. What's left is listed under [Still open](#still-open). |
 | Branch | `feat/tracker/slice-4`: `c980317` (`feat: slice 4 first pass`), then `bf229d0` and `1d2f64e` (slice 3's fixes) and `c1a08b2` (slice 3's docs pointed at them) |
 | Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/` |
-| Tests | 158: 38 in `tests/create_and_list.rs`, 34 in `tests/organise.rs`, 27 in `tests/states.rs`, 15 in `tests/show_and_delete.rs`, 11 each in `tests/docs_links.rs` and `tests/item_files.rs`, 6 each in `tests/fixtures.rs` and `tests/output.rs`, 4 each in `tests/schemas.rs` and `tests/store_writes.rs`, and 2 in `tests/item_ids.rs` |
+| Tests | 166: 38 in `tests/create_and_list.rs`, 34 in `tests/organise.rs`, 27 in `tests/states.rs`, 22 in `tests/show_and_delete.rs`, 12 in `tests/item_files.rs`, 11 in `tests/docs_links.rs`, 6 each in `tests/fixtures.rs` and `tests/output.rs`, 4 each in `tests/schemas.rs` and `tests/store_writes.rs`, and 2 in `tests/item_ids.rs` |
 
 ## Contents
 
@@ -23,6 +23,7 @@ After slice 4 you can **see an item's full record, and delete one from a real te
 - [Code tour](#code-tour)
 - [Testing](#testing)
 - [Decisions worth knowing](#decisions-worth-knowing)
+- [Fixes after review 1](#fixes-after-review-1)
 - [Still open](#still-open)
 - [Limits, and what later slices change](#limits-and-what-later-slices-change)
 
@@ -408,12 +409,53 @@ The demo under [Try it](#try-it) was run against the debug binary, and its outpu
 - **The capital check uses `char::is_uppercase`**, with no new crate. Run over every Unicode character after lowercasing, it refuses all 471 that the schema's `\p{Lu}\p{Lt}` pattern forbids. It also refuses 78 enclosed capitals, such as `🄰` and `🅰`, which the schema allows because they aren't letters. They read as capitals, so refusing them too costs nothing.
 - **`edit` rebuilds the labels only when it's given `--label` or `--unlabel`.** Then a label written twice by hand is kept once and recorded once. An edit of other fields leaves the labels as the file holds them, so `edit --priority low` doesn't report a labels change it wasn't asked for. The cost is that its `--json` still prints the duplicate, which breaks `item.schema.json` until a label edit tidies it (slice 3 review 1's finding 4, still open).
 
+## Fixes after review 1
+
+[slice-4-review-1.md](reviews/slice-4-review-1.md) reviewed the branch at `75ba405`. It found five bugs, two security notes, four places where the code and DESIGN.md disagree or the design is unclear, six test gaps and three process points. Each fix below is in its own commit. Findings 3, 10 and 11, and test gap 5, are under [Still open](#still-open).
+
+### Bugs
+
+| Finding | Commit | Fix | Tests |
+| --- | --- | --- | --- |
+| 1. `show --json` isn't "the item exactly as its file holds it" | `6c1a831` | The review's option (a). `show` calls `item::lost_on_rewrite` and names the fields this version doesn't know, or can't show in full, at the end of the text and as `warning` beside `item`. `show.schema.json`, this readme and the test name no longer claim exactness. `Store::load_item_with_text` reads the item and its text in one read. | `show_names_the_fields_of_a_file_from_a_newer_tracker`, `show_prints_an_item_whose_history_has_a_command_it_doesnt_know` |
+| 2. `delete`'s refusal tells an agent to shelve items that can't be shelved | `ca0d1b3` | The shelve advice is given only where §2.2 draws a shelve, for open and in-progress items. Review, done and shelved items are told only that a human decides. | `delete_refused_without_a_terminal_suggests_shelve_only_where_it_works` |
+| 4. The warning calls an unchecked done item "verified" | `9ed9576` | "done at <time>, unchecked: no gates ran". An `auto` record reads "verified by its gates" and a `human` one "approved by a human". | `in_a_terminal_typing_the_id_deletes_an_item_in_each_state` |
+| 5. `delete`'s warning understates what's lost in a file from a newer tracker | `bef1a78` | The review's second option: `delete` exits 3 before asking, naming the fields, as `update_item` does. A newer tracker may have more to remove, such as slice 8's ref, and a delete can't be undone. | `delete_refuses_a_file_from_a_newer_tracker_before_asking` |
+
+### Security items
+
+| Finding | Commit | Fix |
+| --- | --- | --- |
+| 6. The readme carries a recipe for getting past the terminal check | `41a1197` | No code change. §7 and [Try it](#try-it) say that the `script` recipe is the bypass §7 describes, and that only the digest tells a delete made through it from mine. |
+| 7. A forged `deleted.json` line blocks `create` for its project | `f7dd832` | No code change. §3's `audit` row and PLAN.md's slice 16 _Done when_ have `audit` report a `deleted.json` ID at or above its project's counter. |
+
+### Design
+
+| Finding | Commit | Fix |
+| --- | --- | --- |
+| 8. §2.8's example is out of date | `fc24732` | The example now shows what `delete` prints: the title, "deleted.json records the delete for the digest" and the shared question. Its commit and `refs/tracker/BM-12` stay, for slice 8. |
+| 9. `tty::confirm` doesn't own the re-read under the lock | `5a51de2` | `Store::lock_unchanged(id, before, command)` takes the lock and refuses with exit 1 if the item was removed or changed. `delete` calls it, and `criterion accept`, `approve` and `reject` will. `lock_unchanged_holds_the_lock_only_while_the_file_is_as_it_was` tests it, including the removal, which had no test. |
+
+### Test gaps
+
+| Gap | Commit | Test |
+| --- | --- | --- |
+| 1. The terminal harness hangs rather than fails | `ef82659` | `typing` reads `script`'s output on a thread and gives up after `TERMINAL_TIMEOUT`, killing the command and panicking with the output so far. `the_terminal_harness_fails_rather_than_hangs_when_the_prompt_never_comes` |
+| 2. `delete_item`'s rollback isn't tested | `b44b843` | `a_delete_whose_file_cant_be_removed_takes_its_record_back_out`, seen failing with the rollback removed |
+| 3. No test of a newer tracker's file in `show --json` or `delete` | `6c1a831`, `bef1a78` | The tests for findings 1 and 5 |
+| 4. A cancelled delete with `--json` | `ce27825` | `delete_json_in_a_terminal_cancelled_prints_only_the_error_on_stdout` |
+| 6. `show` of an item whose project isn't in `config.json` | `96ee241` | `show_and_delete_work_on_an_item_whose_project_isnt_in_config_json` |
+
 ## Still open
 
-Nothing from this slice's own _Done when_ checks is uncovered, and the one that needs a person has been done. There's no review of this slice yet. Everything below but the first group is carried over from [slice 3's readme](slice-3-readme.md#still-open), which carries slice 2's open items as well.
+Nothing from this slice's own _Done when_ checks is uncovered, and the one that needs a person has been done. Everything below but the first group is carried over from [slice 3's readme](slice-3-readme.md#still-open), which carries slice 2's open items as well.
 
-**This slice**
+**This slice** (review 1)
 
+- **3. A title holding a line break breaks `deleted.schema.json`**, in `delete --json` and in the line kept in `deleted.json`.
+- **10. What `digest ack` asks me to type**, and how it notices a digest that changed while I decided. It has no item to re-read, so `Store::lock_unchanged` doesn't fit it as it is.
+- **11. `show` needs a `config.json` that parses**, though it only reads a project's name from it. Slice 5's bad-data work could have it print "(config.json can't be read)" instead.
+- **Test gap 5. The terminal tests have only run on macOS.** The util-linux branch of `script_cmd` is untried with piped stdin.
 - **The slice landed as one commit** (`c980317`, 1197 lines added across 14 files), as slices 2 and 3 did. The earlier slices' reviews asked for one commit per step rather than one for the whole slice. That's in the history and stays.
 
 **Security** (slice 3 review 2)
