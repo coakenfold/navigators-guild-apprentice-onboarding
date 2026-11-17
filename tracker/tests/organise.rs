@@ -186,6 +186,38 @@ fn a_label_with_no_lower_case_form_is_refused() {
 }
 
 #[test]
+fn a_label_written_twice_by_hand_is_kept_and_removed_once() {
+    // `labels_removed` is never rewritten, so a label recorded twice there
+    // would break `item.schema.json` for good.
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    let id = create(&env, "XX", "a", &[]);
+    let write_labels = |labels: Value| {
+        let mut item = env.item(&id);
+        item["labels"] = labels;
+        fs::write(
+            env.item_path(&id),
+            serde_json::to_string_pretty(&item).unwrap() + "\n",
+        )
+        .unwrap();
+    };
+
+    write_labels(json!(["bug", "ui", "bug"]));
+    let output = edit(&env, &[&id, "--unlabel", "bug"]);
+    assert_eq!(output["fields"], json!(["labels"]));
+    assert_eq!(output["item"]["labels"], json!(["ui"]));
+    let entry = history(&output["item"]).last().unwrap().clone();
+    assert_eq!(entry["labels_removed"], json!(["bug"]));
+
+    // Adding a label keeps each one once, and records nothing removed.
+    write_labels(json!(["bug", "bug"]));
+    let output = edit(&env, &[&id, "--label", "x"]);
+    assert_eq!(output["item"]["labels"], json!(["bug", "x"]));
+    let entry = history(&output["item"]).last().unwrap().clone();
+    assert!(entry.get("labels_removed").is_none(), "{entry}");
+}
+
+#[test]
 fn a_label_is_at_most_50_characters() {
     // A label is printed in every list row, so a long one widens the table.
     let env = Env::new();

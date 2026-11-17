@@ -926,22 +926,32 @@ fn edit(store: &Store, args: EditArgs) -> Result<Output> {
         .cloned()
         .collect();
     add_labels(&mut not_found, &missing);
-    let mut labels: Vec<String> = item
-        .labels
-        .iter()
-        .filter(|label| !remove.contains(label))
-        .cloned()
-        .collect();
-    add_labels(&mut labels, &add);
-    let labels_removed: Vec<String> = item
-        .labels
-        .iter()
-        .filter(|label| !labels.contains(label))
-        .cloned()
-        .collect();
-    if labels != item.labels {
-        item.labels = labels;
-        fields.push("labels");
+    // The labels are rebuilt only when the edit names some, through
+    // add_labels, so a label a hand edit wrote twice is kept once, and
+    // recorded once in labels_removed: item.schema.json wants each unique,
+    // and no command rewrites a history entry.
+    let mut labels_removed = Vec::new();
+    if !add.is_empty() || !remove.is_empty() {
+        let kept: Vec<String> = item
+            .labels
+            .iter()
+            .filter(|label| !remove.contains(label))
+            .cloned()
+            .collect();
+        let mut labels = Vec::new();
+        add_labels(&mut labels, &kept);
+        add_labels(&mut labels, &add);
+        let gone: Vec<String> = item
+            .labels
+            .iter()
+            .filter(|label| !labels.contains(label))
+            .cloned()
+            .collect();
+        add_labels(&mut labels_removed, &gone);
+        if labels != item.labels {
+            item.labels = labels;
+            fields.push("labels");
+        }
     }
     if let Some(design) = design
         && design != item.design
