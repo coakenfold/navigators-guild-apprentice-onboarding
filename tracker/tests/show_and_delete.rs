@@ -69,7 +69,7 @@ fn show_of_a_missing_id_exits_1() {
 }
 
 #[test]
-fn show_json_is_the_item_exactly_as_its_file_holds_it() {
+fn show_json_is_the_item_as_its_file_holds_it_when_this_version_wrote_it() {
     let env = env_with_project();
     env.create("XX", "a");
     env.json(&["edit", "XX-1", "--label", "bug", "--description", "d"]);
@@ -81,9 +81,32 @@ fn show_json_is_the_item_exactly_as_its_file_holds_it() {
 
     let shown = env.json(&["show", "XX-1"]);
     assert_eq!(shown["item"], env.item("XX-1"));
+    assert!(shown.get("warning").is_none(), "{shown}");
     assert!(shown["item"]["verification"].is_object());
     assert!(shown["item"]["previous_verification"].is_object());
     assert_eq!(shown["item"]["history"].as_array().unwrap().len(), 6);
+}
+
+#[test]
+fn show_names_the_fields_of_a_file_from_a_newer_tracker() {
+    // A newer tracker's file, with a field this version doesn't know. The
+    // item is shown as this version reads it, and the field is named
+    // rather than left out unsaid.
+    let env = env_with_project();
+    env.create("XX", "a");
+    edit_file(&env, "XX-1", |item| {
+        item["criteria"] = json!([{ "kind": "script", "run": "cargo test" }]);
+    });
+
+    let shown = env.json(&["show", "XX-1"]);
+    assert!(shown["item"].get("criteria").is_none(), "{shown}");
+    let warning = shown["warning"].as_str().unwrap();
+    assert!(warning.contains("doesn't know"), "{warning}");
+    assert!(warning.contains(": criteria."), "{warning}");
+    assert!(warning.contains("newer tracker"), "{warning}");
+
+    let shown = text(&env, &["show", "XX-1"]);
+    assert!(shown.ends_with(&format!("\n{warning}\n")), "{shown}");
 }
 
 #[test]

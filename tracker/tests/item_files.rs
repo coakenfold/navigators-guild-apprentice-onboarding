@@ -256,8 +256,12 @@ fn show_prints_an_item_whose_history_has_a_command_it_doesnt_know() {
 
     let shown = env.json(&["show", "XX-1"]);
     assert_eq!(shown["item"]["history"][1]["via"], "unknown");
+    // And it says the history isn't shown in full.
+    let warning = shown["warning"].as_str().unwrap();
+    assert!(warning.contains(": history."), "{warning}");
     let output = env.cmd().args(["show", "XX-1"]).assert().success();
     let text = String::from_utf8(output.get_output().stdout.clone()).unwrap();
     assert!(text.contains("unknown"), "{text}");
+    assert!(text.contains(warning), "{text}");
     assert_eq!(fs::read_to_string(env.item_path("XX-1")).unwrap(), edited);
 }

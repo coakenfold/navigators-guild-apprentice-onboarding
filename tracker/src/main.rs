@@ -1338,10 +1338,15 @@ fn apply(
 /// `show`: everything about one item (§3): every field, its verification
 /// records, and its history with the time of each entry. Free text is
 /// escaped, since a file edited by hand can hold anything.
+///
+/// It shows the item as this version reads it. A file from a newer tracker
+/// can hold fields this version doesn't know, so `show` names them, in the
+/// text and as `warning` beside `item`, rather than leave them out unsaid.
 fn show(store: &Store, id: &str) -> Result<Output> {
     store.require_exists()?;
     let id = normalize_id(id);
-    let item = store.load_item(&id)?;
+    let (item, file) = store.load_item_with_text(&id)?;
+    let unknown = unknown_fields(&file);
     let config = config::load(store)?;
 
     let project = match config.projects.get(&item.project) {
@@ -1444,10 +1449,25 @@ fn show(store: &Store, id: &str) -> Result<Output> {
         }
     }
 
-    Ok(Output {
-        text,
-        json: json!({ "item": item }),
-    })
+    let mut json = json!({ "item": item });
+    if !unknown.is_empty() {
+        let warning = format!(
+            "{id}'s file has fields this version of tracker doesn't know, or can't show in \
+             full: {}. It was probably written by a newer tracker, so use that one to see them.",
+            unknown.join(", ")
+        );
+        text.push_str(&format!("\n{}\n", text::for_terminal(&warning, false)));
+        json["warning"] = json!(warning);
+    }
+    Ok(Output { text, json })
+}
+
+/// The top-level fields of an item file that this version doesn't know, or
+/// would read as something else, such as a field a newer tracker added or a
+/// history entry made by a command it doesn't have. `text` has already been
+/// parsed as an item, so it parses again here.
+fn unknown_fields(text: &str) -> Vec<String> {
+    item::lost_on_rewrite(text).unwrap_or_default()
 }
 
 /// A verification record's fields as indented rows.

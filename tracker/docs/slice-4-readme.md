@@ -30,7 +30,7 @@ After slice 4 you can **see an item's full record, and delete one from a real te
 
 **Built:**
 
-- `show <id>`, which prints every field the item has, its description as plain text, its verification record and the one from before it was last reopened, and its history, oldest first. Each history entry shows its time, command, move, whether it came from a terminal, and its reason or what an edit changed. Free text is escaped. `--json` prints the item exactly as its file holds it.
+- `show <id>`, which prints every field the item has, its description as plain text, its verification record and the one from before it was last reopened, and its history, oldest first. Each history entry shows its time, command, move, whether it came from a terminal, and its reason or what an edit changed. Free text is escaped. `--json` prints the item as this version reads it. If its file holds fields this version doesn't know, such as ones a newer tracker added, `show` names them: at the end of the text, and as `warning` beside `item` in the JSON.
 - `delete <id>`, which works on an item in any state, only from an interactive terminal. It says what state the item is in and what deleting it removes, asks for the ID to be typed back, and then adds one line to `deleted.json` and removes the item file.
 - `tty::confirm`, the one helper for human-only commands: it refuses without a terminal, prints what will be lost, and requires the ID. `delete` is its first user.
 - `deleted.json`, one JSON object per line, holding the ID, title, state, time and `interactive` of each deleted item, and nothing else of it.
@@ -303,7 +303,7 @@ This follows §2.8's example, with three differences. It names the title, so you
 
 | Command | Output | Schema |
 | --- | --- | --- |
-| `show` | `{"item": {…}}`: the item exactly as its file holds it | [show.schema.json](../schemas/show.schema.json) |
+| `show` | `{"item": {…}}`: the item as this version reads it, with `warning` beside it naming any field the file holds that this version doesn't know | [show.schema.json](../schemas/show.schema.json) |
 | `delete` | `{"deleted": {"id", "title", "status", "at", "interactive"}}`: the line just added to `deleted.json`. The warning and question go to stderr | [delete.schema.json](../schemas/delete.schema.json) |
 | A line of `deleted.json` | `{"id", "title", "status", "at", "interactive"}`, and nothing else | [deleted.schema.json](../schemas/deleted.schema.json) |
 | Any failure, including a refused or cancelled delete | `{"error", "exit_code"}`, as before | [error.schema.json](../schemas/error.schema.json) |

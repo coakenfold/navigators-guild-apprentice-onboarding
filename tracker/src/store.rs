@@ -398,6 +398,15 @@ impl Store {
         write_file(&path, &item::to_json(item))
     }
 
+    /// Reads one item by its ID, with its file's text exactly as it is on
+    /// disk. Both come from one read, so the text is what the item was
+    /// parsed from. Fails with exit 1 if there's no such item.
+    pub fn load_item_with_text(&self, id: &str) -> Result<(Item, String)> {
+        let text = self.item_text(id)?;
+        let item = parse_item(&self.item_path(id)?, &text)?;
+        Ok((item, text))
+    }
+
     /// Reads one item by its ID. Fails with exit 1 if there's no such item.
     pub fn load_item(&self, id: &str) -> Result<Item> {
         let path = self.item_path(id)?;
@@ -436,8 +445,12 @@ impl Store {
 /// or renamed by hand would otherwise list one ID twice, and a later write
 /// to `item_path(&item.id)` would overwrite the other item's file.
 fn read_item(path: &Path) -> Result<Item> {
-    let text = read_file(path)?;
-    let item = item::from_json(&text)
+    parse_item(path, &read_file(path)?)
+}
+
+/// Parses `text`, read from `path`, with `read_item`'s checks.
+fn parse_item(path: &Path, text: &str) -> Result<Item> {
+    let item = item::from_json(text)
         .map_err(|e| Error::store(format!("Can't parse {}: {e}", path.display())))?;
     let named = path
         .file_stem()
