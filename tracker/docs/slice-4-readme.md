@@ -6,7 +6,7 @@ After slice 4 you can **see an item's full record, and delete one from a real te
 
 | | |
 | --- | --- |
-| Status | Every _Done when_ check has a test, and every test passes, as does the test command. The by-hand check is done too: a person deleted an item in each state by typing its ID in a real terminal, and a wrong ID cancelled ([Checks done by hand](#checks-done-by-hand)). Slice 3's two fixes before slice 4 are done, each in its own commit ([below](#slice-3s-fixes-before-slice-4)). From [review 1](reviews/slice-4-review-1.md), four bugs, both security items, three DESIGN.md items and five test gaps are done ([below](#fixes-after-review-1)). The branch isn't merged into `main`. What's left is listed under [Still open](#still-open). |
+| Status | Every _Done when_ check has a test, and every test passes, as does the test command. The by-hand check is done too: a person deleted an item in each state by typing its ID in a real terminal, and a wrong ID cancelled ([Checks done by hand](#checks-done-by-hand)). Slice 3's two fixes before slice 4 are done, each in its own commit ([below](#slice-3s-fixes-before-slice-4)). From [review 1](reviews/slice-4-review-1.md), four bugs, both security items, all four DESIGN.md items and five test gaps are done ([below](#fixes-after-review-1)). The branch isn't merged into `main`. What's left is listed under [Still open](#still-open). |
 | Branch | `feat/tracker/slice-4`: `c980317` (`feat: slice 4 first pass`), then `bf229d0` and `1d2f64e` (slice 3's fixes) and `c1a08b2` (slice 3's docs pointed at them) |
 | Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/` |
 | Tests | 166: 38 in `tests/create_and_list.rs`, 34 in `tests/organise.rs`, 27 in `tests/states.rs`, 22 in `tests/show_and_delete.rs`, 12 in `tests/item_files.rs`, 11 in `tests/docs_links.rs`, 6 each in `tests/fixtures.rs` and `tests/output.rs`, 4 each in `tests/schemas.rs` and `tests/store_writes.rs`, and 2 in `tests/item_ids.rs` |
@@ -411,7 +411,7 @@ The demo under [Try it](#try-it) was run against the debug binary, and its outpu
 
 ## Fixes after review 1
 
-[slice-4-review-1.md](reviews/slice-4-review-1.md) reviewed the branch at `75ba405`. It found five bugs, two security notes, four places where the code and DESIGN.md disagree or the design is unclear, six test gaps and three process points. Each fix below is in its own commit. Findings 3 and 10, and test gap 5, are under [Still open](#still-open).
+[slice-4-review-1.md](reviews/slice-4-review-1.md) reviewed the branch at `75ba405`. It found five bugs, two security notes, four places where the code and DESIGN.md disagree or the design is unclear, six test gaps and three process points. Each fix below is in its own commit. Finding 3 and test gap 5 are under [Still open](#still-open).
 
 ### Bugs
 
@@ -435,6 +435,7 @@ The demo under [Try it](#try-it) was run against the debug binary, and its outpu
 | --- | --- | --- |
 | 8. §2.8's example is out of date | `fc24732` | The example now shows what `delete` prints: the title, "deleted.json records the delete for the digest" and the shared question. Its commit and `refs/tracker/BM-12` stay, for slice 8. |
 | 9. `tty::confirm` doesn't own the re-read under the lock | `5a51de2` | `Store::lock_unchanged(id, before, command)` takes the lock and refuses with exit 1 if the item was removed or changed. `delete` calls it, and `criterion accept`, `approve` and `reject` will. `lock_unchanged_holds_the_lock_only_while_the_file_is_as_it_was` tests it, including the removal, which had no test. |
+| 10. What `digest ack` asks me to type | `44b2d11` | I type `ack`, since a digest belongs to a project, not an item. It has no item file for `Store::lock_unchanged` to read again, so under the lock it builds the digest again, and if that differs from the one it showed, it records nothing and exits 1. §2.7, `tty::confirm`'s comment and PLAN.md's slice 16 say so. |
 | 11. `show` needs a `config.json` that parses | `1fcdeec` | Kept. `show` exits 3 when `config.json` can't be parsed, like every other command, rather than print the item with "(config.json can't be read)" for the project's name. §3 says so. |
 
 ### Test gaps
@@ -454,7 +455,6 @@ Nothing from this slice's own _Done when_ checks is uncovered, and the one that 
 **This slice** (review 1)
 
 - **3. A title holding a line break breaks `deleted.schema.json`**, in `delete --json` and in the line kept in `deleted.json`.
-- **10. What `digest ack` asks me to type**, and how it notices a digest that changed while I decided. It has no item to re-read, so `Store::lock_unchanged` doesn't fit it as it is.
 - **Test gap 5. The terminal tests have only run on macOS.** The util-linux branch of `script_cmd` is untried with piped stdin.
 - **The slice landed as one commit** (`c980317`, 1197 lines added across 14 files), as slices 2 and 3 did. The earlier slices' reviews asked for one commit per step rather than one for the whole slice. That's in the history and stays.
 
