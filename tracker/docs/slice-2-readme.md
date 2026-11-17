@@ -353,7 +353,7 @@ These weren't fixed in this round.
 
 ### Still open from review 1
 
-- The low-severity items not listed above: one outcome per command and state in the move table, a hand-edited timestamp blamed on "a newer tracker", one file with an unknown `via` stopping `list`, and `status <id> closed` being refused.
+- The low-severity items not listed above: one outcome per command and state in the move table, a hand-edited timestamp blamed on "a newer tracker", and `status <id> closed` being refused. One file with an unknown `via` stopping `list` was fixed after review 2.
 - Test gaps 2–5: concurrent moves on one item, the "would lose fields" refusal through a move command, `created` unchanged and the text output of `shelve` and `reopen`, and a move on an item whose project isn't registered.
 - The two process points: this readme now exists, and the slice still landed as one commit.
 
@@ -361,7 +361,7 @@ These weren't fixed in this round.
 
 - **Slice 3** adds `edit`, whose history entries take the shape above, and `list --by`, which must check the state as well as `verification`.
 - **Slice 4**'s helper for human-only commands calls `tty::is_interactive`, and `delete` writes its line to `deleted.json`.
-- **Slice 5** skips files it can't parse. A file with a `via` this version doesn't know, such as slice 9's `approve`, makes `list` exit 3 for the whole store until then, so slice 5 should test that with a file written by a later slice.
+- **Slice 5** skips files it can't parse. A history entry whose `via` this version doesn't know, such as slice 3's `edit` or slice 9's `approve`, doesn't stop the file from loading: `Via::Unknown` reads it, `--json` prints it as `unknown`, and `Store::update_item` refuses to write the file back, because that would lose the command's name.
 - **Slice 6**'s G1 refuses `start` without criteria, so the move tests need items with one. Its gates fill in `submit`'s `gates`, and a refused submit exits 2 with `id`, `result`, `gates` and `failures` added to the error.
 - **Slice 9** adds review, `approve` and `reject`. `states::find` returns the first move for a command and state, but `submit` from in-progress will lead to done or review depending on the triggers, so the table will need to name both outcomes and let the command pick one. Refusals for an item in review must then name approve and reject.
 - **Slice 16**'s digest reads `interactive` and lists every shelve and human action.

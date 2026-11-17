@@ -84,8 +84,8 @@
         "from": { "$ref": "#/$defs/state" },
         "to": { "$ref": "#/$defs/state" },
         "via": {
-          "description": "The command that made the move. `status <id> <state>` records the command it maps onto.",
-          "enum": ["start", "submit", "shelve", "reopen"]
+          "description": "The command that made the move. `status <id> <state>` records the command it maps onto. unknown appears only in --json output, never in a file: it stands for a command this version doesn't know, read from a file a newer tracker wrote. Such a file is listed, but this version never writes it back.",
+          "enum": ["start", "submit", "shelve", "reopen", "unknown"]
         },
         "interactive": {
           "description": "Whether stdin was a terminal: true for my own moves, false for an agent's (DESIGN.md §2.6).",

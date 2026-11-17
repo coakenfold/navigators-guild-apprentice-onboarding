@@ -79,6 +79,12 @@ pub enum Via {
     Submit,
     Shelve,
     Reopen,
+    /// A command this version doesn't know, such as `edit`, in a file
+    /// written by a newer tracker. The file still loads and lists, but the
+    /// command's name is lost, so `Store::update_item` refuses to write the
+    /// file back. No move has it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl Via {
@@ -89,6 +95,7 @@ impl Via {
             Via::Submit => "submit",
             Via::Shelve => "shelve",
             Via::Reopen => "reopen",
+            Via::Unknown => "unknown",
         }
     }
 
