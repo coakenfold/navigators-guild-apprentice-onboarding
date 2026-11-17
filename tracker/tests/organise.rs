@@ -150,6 +150,42 @@ fn labels_are_lowercased_and_stored_once() {
 }
 
 #[test]
+fn a_label_with_no_lower_case_form_is_refused() {
+    // `item.schema.json` forbids capitals in a label, but some capitals,
+    // such as ℂ, ϒ and 𝐀, have no lower-case form and survive lowercasing.
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    let id = create(&env, "XX", "a", &["--label", "bug"]);
+    let before = fs::read(env.item_path(&id)).unwrap();
+    for label in ["ℂ", "ϒ", "𝐀", "set-ℂ"] {
+        for args in [
+            vec!["create", "b", "--project", "XX", "--label", label],
+            vec!["edit", &id, "--label", label],
+        ] {
+            let message = env.error(&args, 1);
+            assert!(message.contains("lower-case"), "{args:?}: {message}");
+        }
+    }
+    assert!(!env.item_path("XX-2").exists());
+    assert_eq!(fs::read(env.item_path(&id)).unwrap(), before);
+
+    // One that lowercasing changes is still taken, in lower case.
+    let output = edit(&env, &[&id, "--label", "ǅ", "--label", "Ⓐ"]);
+    assert_eq!(output["item"]["labels"], json!(["bug", "ǆ", "ⓐ"]));
+
+    // One written into a file by hand can still be found and removed.
+    let mut item = env.item(&id);
+    item["labels"] = json!(["bug", "ℂ"]);
+    fs::write(
+        env.item_path(&id),
+        serde_json::to_string_pretty(&item).unwrap() + "\n",
+    )
+    .unwrap();
+    let output = edit(&env, &[&id, "--unlabel", "ℂ", "--unlabel", "ǆ"]);
+    assert_eq!(output["item"]["labels"], json!(["bug"]));
+}
+
+#[test]
 fn a_label_is_at_most_50_characters() {
     // A label is printed in every list row, so a long one widens the table.
     let env = Env::new();

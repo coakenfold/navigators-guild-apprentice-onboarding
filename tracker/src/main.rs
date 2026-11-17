@@ -137,7 +137,8 @@ struct CreateArgs {
     #[arg(long, default_value = "medium", value_parser = priorities())]
     priority: String,
     /// A label, such as bug, of at most 50 characters and with no comma. Repeat it for more than
-    /// one. Labels are lowercased, and each is kept once
+    /// one. Labels are lowercased, and each is kept once. A capital with no lower-case form, such
+    /// as ℂ, is refused
     #[arg(long = "label", value_name = "LABEL")]
     labels: Vec<String>,
     /// A reference into the project's design doc, such as DESIGN.md#2.4. The file is named
@@ -161,7 +162,8 @@ struct EditArgs {
     #[arg(long, value_parser = priorities())]
     priority: Option<String>,
     /// A label to add, such as needs-review, of at most 50 characters and with no comma. Repeat it
-    /// for more than one
+    /// for more than one. It's lowercased, and a capital with no lower-case form, such as ℂ, is
+    /// refused
     #[arg(long = "label", value_name = "LABEL")]
     labels: Vec<String>,
     /// A label to remove. Repeat it for more than one
@@ -670,12 +672,25 @@ fn check_labels(labels: &[String]) -> Result<Vec<String>> {
 const MAX_LABEL: usize = 50;
 
 /// Labels being added to an item: checked as `check_labels` does, each at
-/// most `MAX_LABEL` characters, and with no comma, since `list` prints them
-/// as `[a, b]`. `--unlabel` has neither rule, so a label written into a file
-/// by hand can still be removed.
+/// most `MAX_LABEL` characters, with no comma, since `list` prints them as
+/// `[a, b]`, and with no capital that lowercasing leaves as it is. `--unlabel`
+/// has none of these rules, so a label written into a file by hand can
+/// still be removed.
 fn check_new_labels(labels: &[String]) -> Result<Vec<String>> {
     let labels = check_labels(labels)?;
     for label in &labels {
+        // A few capitals, such as ℂ, have no lower-case form, so they're
+        // still capitals after `check_label`, and `item.schema.json` forbids
+        // them. `is_uppercase` also covers enclosed capitals such as 🅰,
+        // which the schema allows, but which read as capitals too.
+        if let Some(capital) = label.chars().find(|c| c.is_uppercase()) {
+            return Err(Error::input(format!(
+                "A label is stored in lower case, and \"{label}\" holds {capital} (U+{:04X}), \
+                 a capital with no lower-case form. Spell it with letters that have one, \
+                 such as --label c.",
+                capital as u32
+            )));
+        }
         if label.contains(',') {
             return Err(Error::input(format!(
                 "A label can't hold a comma, and \"{label}\" does: `list` separates labels \
