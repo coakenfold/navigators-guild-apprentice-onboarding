@@ -141,6 +141,28 @@ fn labels_are_lowercased_and_stored_once() {
 }
 
 #[test]
+fn a_label_is_at_most_50_characters() {
+    // A label is printed in every list row, so a long one widens the table.
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    let longest = "é".repeat(50);
+    let id = create(&env, "XX", "a", &["--label", &longest]);
+    assert_eq!(env.item(&id)["labels"], json!([longest]));
+
+    let too_long = "é".repeat(51);
+    for args in [
+        vec!["create", "b", "--project", "XX", "--label", &too_long],
+        vec!["edit", &id, "--label", &too_long],
+    ] {
+        let message = env.error(&args, 1);
+        assert!(message.contains("50"), "{message}");
+        assert!(message.contains("51"), "{message}");
+    }
+    assert!(!env.item_path("XX-2").exists());
+    assert_eq!(env.item(&id)["labels"], json!([longest]));
+}
+
+#[test]
 fn an_unknown_priority_or_kind_exits_1_and_names_the_allowed_values() {
     let env = Env::new();
     env.add_project("XX", "xx");

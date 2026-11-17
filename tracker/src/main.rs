@@ -120,7 +120,8 @@ struct CreateArgs {
     /// How soon it matters. `list` shows high first
     #[arg(long, default_value = "medium", value_parser = priorities())]
     priority: String,
-    /// A label, such as bug. Repeat it for more than one. Labels are lowercased, and each is kept once
+    /// A label, such as bug, of at most 50 characters. Repeat it for more than one. Labels are
+    /// lowercased, and each is kept once
     #[arg(long = "label", value_name = "LABEL")]
     labels: Vec<String>,
     /// A reference into the project's design doc, such as DESIGN.md#2.4
@@ -141,7 +142,7 @@ struct EditArgs {
     /// A new priority
     #[arg(long, value_parser = priorities())]
     priority: Option<String>,
-    /// A label to add, such as needs-review. Repeat it for more than one
+    /// A label to add, such as needs-review, of at most 50 characters. Repeat it for more than one
     #[arg(long = "label", value_name = "LABEL")]
     labels: Vec<String>,
     /// A label to remove. Repeat it for more than one
@@ -541,7 +542,7 @@ fn create(store: &Store, args: CreateArgs) -> Result<Output> {
     let kind = Kind::parse(&args.kind).expect("clap only accepts kinds");
     let priority = Priority::parse(&args.priority).expect("clap only accepts priorities");
     let mut labels = Vec::new();
-    add_labels(&mut labels, &check_labels(&args.labels)?);
+    add_labels(&mut labels, &check_new_labels(&args.labels)?);
     let design = args
         .design
         .as_deref()
@@ -627,6 +628,27 @@ fn check_labels(labels: &[String]) -> Result<Vec<String>> {
     labels.iter().map(|label| check_label(label)).collect()
 }
 
+/// The longest label `create` and `edit --label` take, in characters. A
+/// label is printed in every `list` row, so a long one widens the table.
+const MAX_LABEL: usize = 50;
+
+/// Labels being added to an item: checked as `check_labels` does, and each
+/// at most `MAX_LABEL` characters. `--unlabel` has no limit, so a long label
+/// written into a file by hand can still be removed.
+fn check_new_labels(labels: &[String]) -> Result<Vec<String>> {
+    let labels = check_labels(labels)?;
+    for label in &labels {
+        let length = label.chars().count();
+        if length > MAX_LABEL {
+            return Err(Error::input(format!(
+                "A label can be at most {MAX_LABEL} characters, and \"{label}\" has {length}. \
+                 Use a word or two, and put the details in --description."
+            )));
+        }
+    }
+    Ok(labels)
+}
+
 /// Adds each of `new` to `labels` that isn't there yet, so each label is
 /// kept once, in the order it was first given.
 fn add_labels(labels: &mut Vec<String>, new: &[String]) {
@@ -670,7 +692,7 @@ fn edit(store: &Store, args: EditArgs) -> Result<Output> {
         .priority
         .as_deref()
         .map(|priority| Priority::parse(priority).expect("clap only accepts priorities"));
-    let add = check_labels(&args.labels)?;
+    let add = check_new_labels(&args.labels)?;
     let remove = check_labels(&args.unlabels)?;
     if let Some(label) = add.iter().find(|label| remove.contains(label)) {
         return Err(Error::input(format!(
