@@ -285,9 +285,9 @@ fn read_design(path: &Path) -> Result<String, String> {
 /// Checks that markdown `text` has a numbered heading for `section`, such
 /// as `### 2.4 Gates` for `2.4`, with something under it before the next
 /// heading of the same level or higher. A trailing dot on either side is
-/// ignored, so `## 1. Overview` is section `1`. Lines in fenced code blocks
-/// are never headings. The error completes a sentence that starts with the
-/// file's name.
+/// ignored, so `## 1. Overview` is section `1`. Code is never a heading,
+/// and a code block's fences aren't something under it, as `lines` says.
+/// The error completes a sentence that starts with the file's name.
 pub fn check_section(text: &str, section: &str) -> Result<(), String> {
     let wanted = section.trim();
     let wanted = wanted.strip_suffix('.').unwrap_or(wanted);
@@ -298,10 +298,10 @@ pub fn check_section(text: &str, section: &str) -> Result<(), String> {
         ));
     }
 
-    let lines = outside_fences(text);
+    let lines = lines(text);
     let mut found = false;
-    for (i, (line, fenced)) in lines.iter().enumerate() {
-        let Some((level, title)) = heading(line).filter(|_| !fenced) else {
+    for (i, line) in lines.iter().enumerate() {
+        let Line::Heading(level, title) = *line else {
             continue;
         };
         if heading_number(title) != Some(wanted) {
@@ -310,8 +310,8 @@ pub fn check_section(text: &str, section: &str) -> Result<(), String> {
         found = true;
         let has_content = lines[i + 1..]
             .iter()
-            .take_while(|(line, fenced)| *fenced || heading(line).is_none_or(|(l, _)| l > level))
-            .any(|(line, fenced)| !line.trim().is_empty() && (*fenced || heading(line).is_none()));
+            .take_while(|line| !matches!(line, Line::Heading(l, _) if *l <= level))
+            .any(|line| matches!(line, Line::Content));
         if has_content {
             return Ok(());
         }
@@ -328,34 +328,86 @@ pub fn check_section(text: &str, section: &str) -> Result<(), String> {
     }
 }
 
-/// Each line of `text`, with whether it's inside a fenced code block. A
-/// line that opens or closes a fence counts as inside it.
-fn outside_fences(text: &str) -> Vec<(&str, bool)> {
-    let mut fence: Option<&str> = None;
+/// What one line of a design doc is, for G6.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Line<'a> {
+    /// A heading outside code: its level and text.
+    Heading(usize, &'a str),
+    /// Something under a heading: text, or a line of code that isn't blank.
+    Content,
+    /// A blank line, or a fence that opens or closes a code block.
+    Nothing,
+}
+
+/// What each line of `text` is, following CommonMark's rules for fenced
+/// code blocks: a fence is three or more backticks or tildes, with at most
+/// three spaces of indent, and only a fence of the same character, at
+/// least as long and with nothing after it, closes the block. A block left
+/// open runs to the end of the text. A line with four spaces of indent is
+/// indented code, so `heading` never takes it.
+fn lines(text: &str) -> Vec<Line<'_>> {
+    // The open fence's character and length.
+    let mut open: Option<(char, usize)> = None;
     let mut lines = Vec::new();
     for line in text.lines() {
-        let trimmed = line.trim_start();
-        let marker = ["```", "~~~"]
-            .into_iter()
-            .find(|marker| trimmed.starts_with(marker));
-        match (fence, marker) {
-            (None, Some(marker)) => {
-                fence = Some(marker);
-                lines.push((line, true));
+        let fence = fence(line);
+        let kind = if let Some((c, length)) = open {
+            let closes = fence.is_some_and(|(d, n, info)| d == c && n >= length && info.is_empty());
+            if closes {
+                open = None;
+                Line::Nothing
+            } else if line.trim().is_empty() {
+                Line::Nothing
+            } else {
+                Line::Content
             }
-            (Some(open), Some(marker)) if open == marker => {
-                fence = None;
-                lines.push((line, true));
-            }
-            (open, _) => lines.push((line, open.is_some())),
-        }
+        } else if let Some((c, length, _)) = fence {
+            open = Some((c, length));
+            Line::Nothing
+        } else if let Some((level, title)) = heading(line) {
+            Line::Heading(level, title)
+        } else if line.trim().is_empty() {
+            Line::Nothing
+        } else {
+            Line::Content
+        };
+        lines.push(kind);
     }
     lines
 }
 
+/// A code fence's character, its length and the rest of the line, its info
+/// string, trimmed: ```` ```rust ```` is `('`', 3, "rust")`.
+fn fence(line: &str) -> Option<(char, usize, &str)> {
+    let rest = without_indent(line)?;
+    let c = rest.chars().next().filter(|c| *c == '`' || *c == '~')?;
+    let length = rest.chars().take_while(|x| *x == c).count();
+    if length < 3 {
+        return None;
+    }
+    // Both characters are one byte long.
+    let info = &rest[length..];
+    // A backtick fence's info string can't hold a backtick (CommonMark),
+    // so a line like ```` ```a`b ```` is text, not a fence.
+    if c == '`' && info.contains('`') {
+        return None;
+    }
+    Some((c, length, info.trim()))
+}
+
+/// `line` without its indent, if that's at most three spaces. More, or a
+/// tab, makes indented code, which is never a heading or a fence.
+fn without_indent(line: &str) -> Option<&str> {
+    let rest = line.trim_start_matches(' ');
+    if line.len() - rest.len() > 3 || rest.starts_with('\t') {
+        return None;
+    }
+    Some(rest)
+}
+
 /// A markdown heading's level and text: `### 2.4 Gates` is `(3, "2.4 Gates")`.
 fn heading(line: &str) -> Option<(usize, &str)> {
-    let line = line.trim_start();
+    let line = without_indent(line)?;
     let level = line.chars().take_while(|c| *c == '#').count();
     if level == 0 || level > 6 {
         return None;
@@ -412,6 +464,67 @@ mod tests {
         ] {
             let error = check_section(DOC, section).unwrap_err();
             assert!(error.contains(why), "{section}: {error}");
+        }
+    }
+
+    #[test]
+    fn code_is_never_a_heading_and_an_empty_code_block_says_nothing() {
+        for (doc, section, why) in [
+            // A closing fence has no info string, so ```rust doesn't close
+            // the block, and the heading after it is code.
+            (
+                "```\ncode\n```rust\n## 2. Inside the fence\ntext\n```\n",
+                "2",
+                "no heading numbered 2",
+            ),
+            // Nor does a shorter fence, or one of the other character.
+            (
+                "````\n```\n~~~~\n## 2. Inside the fence\ntext\n````\n",
+                "2",
+                "no heading numbered 2",
+            ),
+            // Four spaces of indent, or a tab, make a code block.
+            (
+                "    ## 3. Indented code\n    text\n",
+                "3",
+                "no heading numbered 3",
+            ),
+            (
+                "\t## 3. Indented code\n\ttext\n",
+                "3",
+                "no heading numbered 3",
+            ),
+            // A code block's fences say nothing, with or without an info
+            // string, and neither does a blank line inside it.
+            (
+                "## 4. Empty code block\n```\n```\n",
+                "4",
+                "nothing under it",
+            ),
+            (
+                "## 4. Empty code block\n~~~rust\n\n~~~\n",
+                "4",
+                "nothing under it",
+            ),
+        ] {
+            let error = check_section(doc, section).unwrap_err();
+            assert!(error.contains(why), "{doc:?}: {error}");
+        }
+    }
+
+    #[test]
+    fn headings_and_fences_may_have_up_to_three_spaces_of_indent() {
+        for doc in [
+            "   ## 2. Indented three spaces\ntext\n",
+            "## 2. Code under it\n   ```\n   code\n   ```\n",
+            // A longer closing fence closes the block, and so does one with
+            // spaces after it.
+            "```\ncode\n`````\n## 2. After the block\ntext\n",
+            "~~~\ncode\n~~~  \n## 2. After the block\ntext\n",
+            // A fence of the other character is code inside the block.
+            "~~~\n```\n~~~\n## 2. After the block\ntext\n",
+        ] {
+            assert_eq!(check_section(doc, "2"), Ok(()), "{doc:?}");
         }
     }
 }
