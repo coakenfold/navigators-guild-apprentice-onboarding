@@ -198,6 +198,50 @@ fn a_move_the_diagram_doesnt_draw_is_still_exit_1_not_a_gate() {
     assert!(error.get("failures").is_none(), "{error}");
 }
 
+#[test]
+fn a_newer_trackers_file_is_refused_with_exit_3_before_any_gate_runs() {
+    // A judge criterion (slice 12) has `ask`, which this version doesn't
+    // know. Read without it, the criterion would look manual, and G2 would
+    // ask for evidence that `evidence` then refuses.
+    let (env, _) = env_with_project();
+    env.create("XX", "a");
+    let mut item = env.item("XX-1");
+    item["criteria"] = json!([{
+        "text": "Errors say what to do",
+        "ask": ["Does each error message say how to fix the problem?"],
+    }]);
+    fs::write(
+        env.item_path("XX-1"),
+        serde_json::to_string_pretty(&item).unwrap() + "\n",
+    )
+    .unwrap();
+
+    let refused_as_newer = |args: &[&str]| {
+        let before = fs::read(env.item_path("XX-1")).unwrap();
+        let error = env.error_json_in(&env.outside(), args, 3);
+        assert_eq!(fs::read(env.item_path("XX-1")).unwrap(), before, "{args:?}");
+        let message = error["error"].as_str().unwrap();
+        assert!(message.contains("newer tracker"), "{args:?}: {message}");
+        assert!(message.contains("criteria"), "{args:?}: {message}");
+        assert!(
+            message.contains("Nothing was changed"),
+            "{args:?}: {message}"
+        );
+        assert!(error.get("failures").is_none(), "{args:?}: {error}");
+    };
+    for args in [
+        &["gates", "XX-1"][..],
+        &["start", "XX-1"],
+        &["status", "XX-1", "in-progress"],
+    ] {
+        refused_as_newer(args);
+    }
+    set_status(&env, "XX-1", "in-progress");
+    for args in [&["submit", "XX-1"][..], &["status", "XX-1", "done"]] {
+        refused_as_newer(args);
+    }
+}
+
 // G2
 
 #[test]

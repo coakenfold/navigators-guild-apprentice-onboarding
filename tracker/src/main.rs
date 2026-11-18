@@ -1653,7 +1653,8 @@ fn record_evidence(store: &Store, id: &str, n: usize, evidence: &str) -> Result<
 fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
     store.require_exists()?;
     let id = normalize_id(id);
-    let item = store.load_item(&id)?;
+    let (item, file) = store.load_item_with_text(&id)?;
+    refuse_newer_file(store, &id, &file)?;
     let config = config::load(store)?;
     let report = gates::submit(&item, &config);
     if !report.passed() {
@@ -1935,12 +1936,12 @@ fn move_item(store: &Store, id: &str, via: Via, reason: Option<String>) -> Resul
     store.require_exists()?;
     let id = normalize_id(id);
     let _lock = store.lock()?;
-    let item = store.load_item(&id)?;
+    let (item, file) = store.load_item_with_text(&id)?;
     let Some(step) = states::find(via, item.status) else {
         return Err(states::not_from(&id, item.status, via));
     };
     let reason = check_reason(&id, via, reason, &states::command(&id, via))?;
-    apply(store, item, step, reason)
+    apply(store, item, &file, step, reason)
 }
 
 /// `status <id> <state>`: the alias that maps a state onto the command that
@@ -1949,7 +1950,7 @@ fn status(store: &Store, id: &str, to: Status, reason: Option<String>) -> Result
     store.require_exists()?;
     let id = normalize_id(id);
     let _lock = store.lock()?;
-    let item = store.load_item(&id)?;
+    let (item, file) = store.load_item_with_text(&id)?;
     let step = match states::via_to(to) {
         // A held item is mine to decide, with approve or reject (§2.7).
         Some(_) if item.status == Status::Review => None,
@@ -1970,7 +1971,7 @@ fn status(store: &Store, id: &str, to: Status, reason: Option<String>) -> Result
     }
     let how = format!("tracker status {id} {state} --reason \"…\"");
     let reason = check_reason(&id, step.via, reason, &how)?;
-    apply(store, item, step, reason)
+    apply(store, item, &file, step, reason)
 }
 
 /// The longest reason a move takes, in characters. A reason is printed on
@@ -2006,16 +2007,19 @@ fn check_reason(id: &str, via: Via, reason: Option<String>, how: &str) -> Result
     Ok(Some(reason))
 }
 
-/// Makes `step` on `item`, which was read under the lock, adds its history
-/// entry, and writes the item. A move that has gates runs them first, and
+/// Makes `step` on `item`, which was read under the lock from `file`, adds
+/// its history entry, and writes the item. A file from a newer tracker is
+/// refused first, with exit 3. A move that has gates runs them next, and
 /// refuses with exit 2, changing nothing, if any fails (§2.4): G1 for
 /// `start`, and G2 and G6 for `submit`.
 fn apply(
     store: &Store,
     mut item: Item,
+    file: &str,
     step: states::Move,
     reason: Option<String>,
 ) -> Result<Output> {
+    refuse_newer_file(store, &item.id, file)?;
     let report = match step.via {
         Via::Start => {
             // A file that can't be read as an item can't say whether it's
@@ -2283,6 +2287,24 @@ fn unknown_fields(text: &str) -> Vec<String> {
     item::lost_on_rewrite(text)
         .map(|lost| lost.unknown)
         .unwrap_or_default()
+}
+
+/// Refuses, with exit 3, item `id`'s file when it holds fields this version
+/// doesn't know, such as a newer tracker's judge criterion. The gates would
+/// read such an item as something else, a judge criterion as a manual one,
+/// and give the wrong reasons, so it's left to the tracker that wrote it,
+/// as `Store::update_item` leaves a rewrite.
+fn refuse_newer_file(store: &Store, id: &str, file: &str) -> Result<()> {
+    let unknown = unknown_fields(file);
+    if unknown.is_empty() {
+        return Ok(());
+    }
+    Err(Error::store(format!(
+        "{} has fields this version of tracker doesn't know: {}. It was probably written by a \
+         newer tracker, which knows what they mean, so use that one. Nothing was changed.",
+        store.item_path(id)?.display(),
+        unknown.join(", ")
+    )))
 }
 
 /// A verification record's fields as indented rows.
