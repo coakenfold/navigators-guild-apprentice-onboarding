@@ -9,7 +9,7 @@ After slice 6 you can **write Done-when criteria, and get refused when they're m
 | Status | Every _Done when_ check has a test, and every test passes, as does the test command. PLAN.md has slice 6 as `in review`. From [review 1](reviews/slice-6-review-1.md), both bugs, both security findings, the five DESIGN.md findings and all six test gaps are done ([below](#fixes-after-review-1)). The branch isn't merged into `main`. |
 | Branch | `feat/tracker/slice-6`, from `main` at `440628f` (slice 5 merged): `be91d1f` (sha2), `4d2d6ad` (the slice's code, schemas, tests and fixtures, in one commit, since the gates change what most existing tests set up), `6eb689d` (DESIGN.md §2.1, §2.3, §3 and §4.3), `095b250` (this readme and PLAN.md's status), `04fab3f` (review 1), then review 1's fixes, `9046539` to `0b6aa89`, and this readme's record of them |
 | Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/` |
-| Tests | 245: 39 in `tests/create_and_list.rs`, 34 in `tests/organise.rs`, 27 in `tests/states.rs`, 24 in `tests/show_and_delete.rs`, 22 in `tests/criteria.rs`, 20 in `tests/gates.rs`, 14 in `tests/item_files.rs`, 13 in `tests/bad_data.rs`, 11 in `tests/docs_links.rs`, 9 in `tests/polish.rs`, 8 in `tests/fixtures.rs`, 6 in `tests/output.rs`, 5 in `tests/schemas.rs`, 4 in `tests/store_writes.rs`, 2 in `tests/item_ids.rs`, 5 unit tests in the library (4 in `src/gates.rs`, 1 in `src/store.rs`) and 2 in `src/main.rs` |
+| Tests | 248: 39 in `tests/create_and_list.rs`, 34 in `tests/organise.rs`, 27 in `tests/states.rs`, 24 in `tests/show_and_delete.rs`, 23 in `tests/criteria.rs`, 22 in `tests/gates.rs`, 14 in `tests/item_files.rs`, 13 in `tests/bad_data.rs`, 11 in `tests/docs_links.rs`, 9 in `tests/polish.rs`, 8 in `tests/fixtures.rs`, 6 in `tests/output.rs`, 5 in `tests/schemas.rs`, 4 in `tests/store_writes.rs`, 2 in `tests/item_ids.rs`, 5 unit tests in the library (4 in `src/gates.rs`, 1 in `src/store.rs`) and 2 in `src/main.rs` |
 
 ## Contents
 
@@ -21,6 +21,7 @@ After slice 6 you can **write Done-when criteria, and get refused when they're m
 - [Testing](#testing)
 - [Decisions worth knowing](#decisions-worth-knowing)
 - [Fixes after review 1](#fixes-after-review-1)
+- [Fixes after review 2](#fixes-after-review-2)
 - [Limits, and what later slices change](#limits-and-what-later-slices-change)
 
 ## What's in this slice
@@ -231,6 +232,20 @@ Typing the ID into `criterion accept` is tested automatically under `script`, as
 | Test gap 5: nothing checked that `criterion accept` refuses a done item | `0b6aa89` | `criterion_accept_refuses_a_done_item`, at a terminal. Its message checks caught the refusal taken out: the exit code alone didn't, since the unanswered question also exits 1 | |
 
 The review's process notes weren't part of this round: the readme still has no "Still open" section carrying slices 2–5's open items forward, and doesn't say that colour for the new commands waits for slice 16.
+
+## Fixes after review 2
+
+[Review 2](reviews/slice-6-review-2.md) found one bug, two security problems, three places where the code and DESIGN.md disagreed or the design was unclear, and two test gaps. This round fixed the bug, both security problems, findings 4 and 5 and both test gaps. Security 2 took option (a), and security 3 option (b), as the review suggested. Finding 6, G6 and HTML comments, wasn't part of this round.
+
+| Finding | Commit | What changed | Tests |
+| --- | --- | --- | --- |
+| Bug 1: `criterion accept` asked for the ID before it refused a newer tracker's file | `34b60ce` | It calls `refuse_newer_file` right after the load, before the done check and the question, as `delete` does | `criterion_accept_refuses_a_newer_trackers_file_before_it_asks` in `tests/criteria.rs`, at a terminal. It failed on exit 1, after the question |
+| Security 2: from a terminal, `criterion remove` took a written text out of `written`, unasked and unrecorded | `95ee6e4` | `criterion remove` leaves `written` alone from a terminal too, so a text I wrote leaves it only through `criterion accept`, which names it, asks for the ID and leaves a history entry. DESIGN.md §2.1 and §3 and the table above say so | `from_a_terminal_add_changes_written_but_remove_doesnt`, which goes on to accept the removal. It failed on the empty `written` |
+| Security 3: `written` keeps only the text, so before start a check I gave can be replaced unrecorded | `28f49d1` | Option (b), docs only: DESIGN.md §2.1, §2.5's T5, §3, §6 and §7 say that `written` protects a criterion's text, not its check, and that only T13 can catch a replaced check | |
+| Finding 4: the `unchecked` note was in the present tense | `2a39e8e` | The note reads "Submitted before tracker ran checks. Gates G2 and G6 passed, but nothing tested the work.", and `submit` no longer prints "Gates G2 and G6 passed." on a line of its own as well. DESIGN.md §2.1's `verification` row, §4.3's example and §9 follow | `tests/states.rs` and `tests/show_and_delete.rs` check the new wording |
+| Finding 5: a failing `gates` didn't say the item couldn't be submitted anyway | `c86e653` | Every gate refusal has `status`, which `error.schema.json` requires with `result`. A failing dry run on an item that isn't in progress prints, under the reasons, the line a passing one prints. DESIGN.md §3 says so | `a_failing_gates_says_when_the_item_isnt_ready_to_submit_either`, and `refused_by_gate` checks `status` on every refusal. 15 tests failed before the fix |
+| Test gap 1: nothing checked that two starts at once let only one through | `5d2b36d` | `ten_starts_at_once_in_one_project_let_exactly_one_through` in `tests/gates.rs`, three rounds of ten | It covers code that already worked, so it was run with the lock taken out of `move_item`: it failed in the first round, with two items in progress |
+| Test gap 2: nothing checked that `criterion accept` refuses a newer tracker's file before it asks | `34b60ce` | With bug 1 | |
 
 ## Limits, and what later slices change
 
