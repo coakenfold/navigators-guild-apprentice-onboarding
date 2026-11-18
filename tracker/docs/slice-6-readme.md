@@ -31,7 +31,7 @@ After slice 6 you can **write Done-when criteria, and get refused when they're m
 - **`create --done-when "…"`**, repeatable, adds manual criteria at create.
 - **`criterion add <id> "text" [--check "cmd"]`** adds a script or manual criterion. **`criterion set <id> <n> --check "cmd"`** gives criterion _n_ a check, replacing what it had. **`criterion remove <id> <n>`** removes one, and the rest move up.
 - **`evidence <id> <n> "…"`** records where to look for a manual criterion. A script criterion refuses it with exit 1: its output is its proof.
-- **`written`**: the text of each criterion given at create. Only a `criterion` command from an interactive terminal changes it afterwards: `criterion add` adds the new text, and `criterion remove` takes the removed one out. Slice 11's T5 reads it.
+- **`written`**: the text of each criterion given at create. Afterwards, only `criterion add` from an interactive terminal adds to it, and only `criterion accept` takes a text out. `criterion remove` leaves it alone even from a terminal, since `script` gets past that check (§7). Slice 11's T5 reads it.
 - **`criterion accept <id>`**, from an interactive terminal only, records every criterion's text as it is now in `written`, after a human edits one by hand. It says what it records, names each written criterion it drops, asks for the ID through the same confirmation `delete` uses, and adds a history entry with `via: "criterion-accept"`.
 - **Gate G1**, on `start`: the item has at least one criterion, no other item in its project is in progress or in review, and no file in `items/` named for the project is one that can't be read.
 - **Gate G2**, on `submit`: the item still has a criterion, and every manual criterion has evidence.
@@ -125,7 +125,7 @@ Commands number criteria from 1, as `show` lists them. A criterion's text is tri
 | Command | From a terminal | Otherwise |
 | --- | --- | --- |
 | `criterion add` | adds the new text | leaves `written` alone |
-| `criterion remove` | takes the removed text out | leaves `written` alone |
+| `criterion remove` | leaves `written` alone, so a removed text I wrote goes only through `criterion accept` | the same |
 | `criterion set`, `evidence` | leave `written` alone: the text doesn't change | the same |
 | `criterion accept` | sets `written` to every criterion's text as it is now | refused |
 

@@ -1490,8 +1490,11 @@ fn criterion_set(store: &Store, id: &str, n: usize, check: &str) -> Result<Outpu
     Ok(Output::plain(text, json!({ "criterion": n, "item": item })))
 }
 
-/// `criterion remove <n>`: removes criterion `n` (§3). From an interactive
-/// terminal, its text also leaves `written`.
+/// `criterion remove <n>`: removes criterion `n` (§3). Its text stays in
+/// `written`, even from an interactive terminal, so removing a criterion I
+/// wrote ends with `criterion accept`, which names the text, asks for the
+/// ID and leaves the history entry the digest lists (§2.1). `script` gets
+/// past the terminal check (§7), and would otherwise drop it unrecorded.
 fn criterion_remove(store: &Store, id: &str, n: usize) -> Result<Output> {
     store.require_exists()?;
     let id = normalize_id(id);
@@ -1501,11 +1504,6 @@ fn criterion_remove(store: &Store, id: &str, n: usize) -> Result<Output> {
     check_criteria_changeable(&item)?;
     let i = criterion_index(&item, n)?;
     let removed = item.criteria.remove(i);
-    if tty::is_interactive()
-        && let Some(at) = item.written.iter().position(|text| *text == removed.text)
-    {
-        item.written.remove(at);
-    }
     item.updated = item::now();
     store.update_item(&item)?;
 

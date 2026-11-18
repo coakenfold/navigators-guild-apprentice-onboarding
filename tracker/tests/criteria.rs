@@ -305,7 +305,7 @@ fn an_agent_removing_a_written_criterion_leaves_written_alone() {
 }
 
 #[test]
-fn from_a_terminal_add_and_remove_change_written() {
+fn from_a_terminal_add_changes_written_but_remove_doesnt() {
     let env = env_with_item();
     let Some(output) = env.in_terminal(&["criterion", "add", "XX-1", "a"]) else {
         return;
@@ -315,13 +315,31 @@ fn from_a_terminal_add_and_remove_change_written() {
     env.json(&["criterion", "add", "XX-1", "b"]);
     assert_eq!(written(&env.item("XX-1")), ["a"]);
 
+    // `script` gets past the terminal check (§7), so a terminal `remove`
+    // leaves "a" in `written` too, with no history entry. Only `criterion
+    // accept`, which asks for the ID and is recorded, takes it out (review
+    // 2's finding 2).
     let output = env
         .in_terminal(&["criterion", "remove", "XX-1", "1"])
         .unwrap();
     assert!(output.status.success(), "{output:?}");
     let item = env.item("XX-1");
     assert_eq!(item["criteria"], json!([{ "text": "b" }]));
-    assert!(item.get("written").is_none(), "{item}");
+    assert_eq!(written(&item), ["a"]);
+    assert!(item.get("history").is_none(), "{item}");
+
+    let (output, ok) = env
+        .in_terminal_typing(&["criterion", "accept", "XX-1"], PROMPT, "XX-1", || {})
+        .unwrap();
+    assert!(ok, "{output}");
+    assert!(
+        output.contains("drops this criterion from written"),
+        "{output}"
+    );
+    assert!(output.contains("  - a\r\n"), "{output}");
+    let item = env.item("XX-1");
+    assert_eq!(written(&item), ["b"]);
+    assert_eq!(item["history"][0]["via"], "criterion-accept");
 }
 
 #[test]
