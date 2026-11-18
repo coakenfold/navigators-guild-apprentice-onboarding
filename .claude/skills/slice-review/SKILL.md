@@ -21,11 +21,11 @@ Check that PLAN.md has a `### Slice N: …` heading. If it doesn't, stop and say
 
 ## Step 2: Read
 
-Read each of these **in full**, from first line to last, using several Read calls with `offset` if a file is long. Don't skim, grep, or read only slice N's part. Later slices, integration risks and DESIGN.md's limits all bear on whether this slice is right.
+Read what bears on the slice, and read that part in full. The big files aren't read whole, since a review costs what it reads.
 
-- `tracker/docs/DESIGN.md`
-- `tracker/docs/PLAN.md`
-- Every earlier review of this slice, `tracker/docs/reviews/slice-N-review-1.md` up to review M-1, including each one's `## Outcome` section
+- `tracker/docs/PLAN.md`, in full. Later slices and the integration risks bear on whether this slice is right.
+- `tracker/docs/DESIGN.md` (about 130 KB), never whole. List its headings with `grep -n '^#'`, then read these sections in full, with Read's `offset` and `limit`: each one slice N's _Prompt_ and _Done when_ name, each one that `git diff $(git merge-base main HEAD)..HEAD -- tracker/docs/DESIGN.md`, run from the repo root, changes, and §7, its honest limits. Read another section when a finding needs it.
+- For review 2 and later: the latest earlier review of this slice, `tracker/docs/reviews/slice-N-review-<M-1>.md`, in full, and only the `## Outcome` section of each one before it.
 
 Then read:
 
@@ -40,8 +40,8 @@ The question: **for what has been developed, has it faithfully implemented Slice
 Work in `tracker/`. **Never run `tracker` without `TRACKER_HOME` set to a temporary folder.** Without it, the tool writes to the real store at `~/.tracker`. Don't change any code or test: this step only reads and runs.
 
 1. **Pin what you're reviewing.** The branch is `feat/tracker/slice-N`. Record the commit you review (`git rev-parse --short HEAD`), whether the working tree is clean (`git status --short -- .`), and the slice's commits: `git log --oneline --reverse $(git merge-base main HEAD)..HEAD`, or the merge commit's range if it's merged. For review 2 and later, say which commits are new since the last review's pinned commit.
-2. **Read the code.** Read the diff against `main`, then every changed source file, test file and schema in full, and enough of the unchanged ones to see how the new code fits in.
-3. **Run the test command** from CLAUDE.md, plus `cargo clippy --all-targets -- -D warnings`. Record what passes and the test count.
+2. **Read the code.** Read the slice's diff against `main`, over the same range as the commits above. Read a changed source file, test file or schema in full only if it's under about 1,000 lines. For a longer one, read the functions the diff touches, and search for their callers. Never read `src/main.rs` whole (`tracker/CLAUDE.md`). Search the unchanged files for enough to see how the new code fits in, rather than reading them.
+3. **Run the test command** from CLAUDE.md, plus `cargo clippy --all-targets -- -D warnings`. Run `cargo fmt --check` and both clippy commands as they are, and `cargo test 2>&1 | grep -E '^test result|FAILED|panicked'`, which prints a line per test binary rather than per test, and still shows a failing test's name and panic. Record what passes and the test count.
 4. **Check each _Done when_ bullet**, and each concrete requirement in the slice's _Prompt_, against the code and the tests. Say whether it passes, and which tests cover it. A bullet with no test is either checked by hand (say how) or uncovered.
 5. **Check against DESIGN.md.** For each DESIGN.md section the slice touches, compare what the code does with what the section says. Flag where they disagree, and where the design is unclear enough that the code had to guess.
 6. **Look for bugs and security issues**: bad input, hand-edited or corrupt files, files from a newer tracker, concurrent runs, the lock, atomic writes, escaping of free text, paths, and anything an agent could misuse. **Reproduce** each one you can against the debug binary in a temporary store, and say whether each finding was reproduced or found by reading the code.
@@ -50,7 +50,7 @@ Work in `tracker/`. **Never run `tracker` without `TRACKER_HOME` set to a tempor
 
 ## Step 4: Write the report
 
-Match the earlier reviews in `tracker/docs/reviews/`. Read the latest one or two for their tone and layout. Use this order, and leave out a section that would be empty:
+Match the earlier reviews in `tracker/docs/reviews/`. The order below is their layout. For their tone, read the latest review's Verdict and one of its findings, unless step 2 already read it in full. Use this order, and leave out a section that would be empty:
 
 1. `# Slice N review M`
 2. An opening paragraph: what this reviews (slice N, with PLAN.md's title), against what (PLAN.md's Slice N prompt and _Done when_ list, the DESIGN.md sections it touches by number, CLAUDE.md's conventions, the readme's claims), and for review 2 and later, the earlier reviews' outcomes.
