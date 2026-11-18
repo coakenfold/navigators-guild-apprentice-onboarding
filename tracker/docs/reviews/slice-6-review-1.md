@@ -168,10 +168,10 @@ I also checked:
 
 Added after the fixes. The findings above are left as written, so their line links point at `095b250`, not at the fixed code. Each fix is in its own commit, with its tests, and the readme's [Fixes after review 1](../slice-6-readme.md#fixes-after-review-1) lists them too.
 
-Every numbered finding is resolved: both bugs, findings 3 to 9 and all six test gaps. Where a finding offered a choice, option (a) was taken, and finding 8's limit is 1000 characters rather than the 500 suggested. The process notes weren't part of this round, and "Slice 7 must decide" is left for slice 7. The commits after this review (`04fab3f`), in order:
+Every numbered finding is resolved: both bugs, findings 3 to 9 and all six test gaps. Where a finding offered a choice, option (a) was taken, and finding 8's limit is 1000 characters rather than the 500 suggested. Of the six process notes, the readme's overclaim and missing limits no longer apply, two still hold, the single commit can't change now, and two weren't part of this round. Every item in "Slice 7 must decide" is left for slice 7, and finding 8 settles part of one. The commits after this review (`04fab3f`), in order:
 
 - **Fixes:** `9046539` (bug 1 and test gap 1), `a16fd2b` (bug 2 and test gap 2), `3ab8de7` (finding 3 and test gap 3), `05f4bba` (finding 4), `c1e91fd` (finding 5 and test gap 6), `c08cdba` (finding 6), `b51549b` (finding 7), `ab324b4` (finding 8), `22fc352` (finding 9), `e137f93` (test gap 4) and `0b6aa89` (test gap 5).
-- **Docs:** `3af1c73` (the readme) and the commit that adds this Outcome.
+- **Docs:** `3af1c73` (the readme), `5e2b859` (this Outcome) and the commit that completes it with the status of every item below.
 
 | Finding | Resolved by |
 | --- | --- |
@@ -196,7 +196,12 @@ Every numbered finding is resolved: both bugs, findings 3 to 9 and all six test 
 | Process: the readme overclaims about fences, and its Limits miss two things | No longer apply: bug 2's fix makes the fence claim true, and findings 1 and 6 are fixed, so neither is a limit now. `3af1c73` brings the readme up to date with every fix |
 | Process: the readme has no "Still open" section | Not done in this round. Slices 2–5's open items are still open, and still not carried forward |
 | Process: colour for the new commands wasn't added, and the readme doesn't say so | Not done in this round |
-| Slice 7 must decide | Left for slice 7. The last item, the check's length limit, is settled at 1000 characters by `ab324b4`, but the printed command still needs escaping when slice 7 prints it |
+| Slice 7 must decide: the shared test helper's check is `true`, which passes before the work | Left for slice 7. `Env::add_criterion` still adds `--check true` |
+| Slice 7 must decide: where G3 and G4 go in `gates::submit` | Left for slice 7. `gates::submit` still runs G2, then G6. `c08cdba` adds the no-criteria check inside G2 and doesn't change the order |
+| Slice 7 must decide: `secs` in the refusal and the dry run | Left for slice 7. `submit.schema.json` still allows `secs` on a gate, and `gates.schema.json` and `error.schema.json` still set `additionalProperties: false` without it |
+| Slice 7 must decide: the unchecked note names G2 and G6 | Left for slice 7. `states::UNCHECKED_NOTE` and `submit`'s "Gates G2 and G6 passed." are unchanged |
+| Slice 7 must decide: `criterion set --check` after `start` must run the new check once | Left for slice 7. Nothing runs a check yet, and `started` doesn't exist |
+| Slice 7 must decide: a check is printed before it runs | Partly settled. `ab324b4` sets the length limit this item asked for first, at 1000 characters. Escaping the printed command is left for slice 7, which prints it. `show` and `evidence`'s refusal already escape it |
 
 Seen failing:
 
