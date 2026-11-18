@@ -6,6 +6,7 @@ mod common;
 
 use std::fs;
 use std::path::PathBuf;
+use std::process::Stdio;
 
 use common::Env;
 use serde_json::{Value, json};
@@ -279,6 +280,58 @@ fn a_newer_trackers_file_is_refused_with_exit_3_before_any_gate_runs() {
     set_status(&env, "XX-1", "in-progress");
     for args in [&["submit", "XX-1"][..], &["status", "XX-1", "done"]] {
         refused_as_newer(args);
+    }
+}
+
+#[test]
+fn ten_starts_at_once_in_one_project_let_exactly_one_through() {
+    // Several agents starting work at once is what G1's one-item-at-a-time
+    // rule is for. `start` reads every item and writes its own under one
+    // lock, so only one of them can pass G1 (review 2's test gap 1). Three
+    // rounds, since a race wouldn't lose every time.
+    for round in 0..3 {
+        let (env, _) = env_with_project();
+        for i in 1..=10 {
+            env.create("XX", &format!("item {i}"));
+        }
+        let children: Vec<_> = (1..=10)
+            .map(|n| {
+                env.std_cmd()
+                    .args(["start", &format!("XX-{n}"), "--json"])
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .unwrap()
+            })
+            .collect();
+
+        let mut started = Vec::new();
+        for (n, child) in (1..=10).zip(children) {
+            let output = child.wait_with_output().unwrap();
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let json = common::parse(&output.stdout);
+            match output.status.code() {
+                Some(0) => started.push(format!("XX-{n}")),
+                Some(2) => {
+                    common::check_schema("error", &json);
+                    assert_eq!(
+                        json["failures"].as_array().unwrap().len(),
+                        1,
+                        "round {round}: {json}"
+                    );
+                    let message = json["failures"][0]["message"].as_str().unwrap();
+                    assert!(message.contains("is in progress in XX"), "{message}");
+                }
+                code => panic!("round {round}: XX-{n} exited {code:?}: {stderr} {json}"),
+            }
+        }
+        assert_eq!(started.len(), 1, "round {round}: {started:?}");
+        // The files agree: only the one that started is in progress.
+        let in_progress: Vec<String> = (1..=10)
+            .map(|n| format!("XX-{n}"))
+            .filter(|id| env.item(id)["status"] == "in-progress")
+            .collect();
+        assert_eq!(in_progress, started, "round {round}");
     }
 }
 
