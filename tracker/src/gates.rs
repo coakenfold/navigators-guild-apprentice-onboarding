@@ -129,14 +129,7 @@ pub fn start(item: &Item, items: &[Item], skipped: &[Skipped]) -> Report {
     let mut failures = Vec::new();
     let id = &item.id;
     if item.criteria.is_empty() {
-        failures.push(Failure {
-            gate: "G1",
-            criterion: None,
-            message: format!(
-                "{id} has no criteria, so nothing says when it's done. Add one with `tracker \
-                 criterion add {id} \"…\" --check \"…\"`."
-            ),
-        });
+        failures.push(no_criteria(item, "G1"));
     }
     let busy = items.iter().filter(|other| {
         other.project == item.project
@@ -206,10 +199,29 @@ pub fn submit(item: &Item, config: &Config) -> Report {
     }
 }
 
-/// G2: every manual criterion has evidence, a note saying where to look.
-/// A script criterion's own output is its proof, so it needs none (§2.3).
+/// The failure, from `gate`, for an item with no criteria: nothing says
+/// when it's done.
+fn no_criteria(item: &Item, gate: &'static str) -> Failure {
+    let id = &item.id;
+    Failure {
+        gate,
+        criterion: None,
+        message: format!(
+            "{id} has no criteria, so nothing says when it's done. Add one with `tracker \
+             criterion add {id} \"…\" --check \"…\"`."
+        ),
+    }
+}
+
+/// G2: the item has a criterion, and every manual criterion has evidence,
+/// a note saying where to look. A script criterion's own output is its
+/// proof, so it needs none (§2.3). G1 needs a criterion at start, but one
+/// can be removed afterwards, so G2 checks again.
 fn g2(item: &Item) -> Vec<Failure> {
     let id = &item.id;
+    if item.criteria.is_empty() {
+        return vec![no_criteria(item, "G2")];
+    }
     item.criteria
         .iter()
         .enumerate()

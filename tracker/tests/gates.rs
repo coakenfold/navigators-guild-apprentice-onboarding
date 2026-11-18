@@ -322,6 +322,40 @@ fn a_manual_criterion_with_no_evidence_fails_g2() {
 }
 
 #[test]
+fn an_item_with_no_criteria_fails_g2() {
+    // G1 needs a criterion at start, but it can be removed afterwards, and
+    // an item started before slice 6 has none (review 1's finding 6).
+    let (env, _) = env_with_project();
+    env.create("XX", "a");
+    env.json(&["start", "XX-1"]);
+    env.json(&["criterion", "remove", "XX-1", "1"]);
+
+    for args in [
+        &["gates", "XX-1"][..],
+        &["submit", "XX-1"],
+        &["status", "XX-1", "done"],
+    ] {
+        let error = refused_by_gate(&env, args);
+        assert_eq!(
+            error["gates"],
+            json!([{ "gate": "G2", "ok": false }, { "gate": "G6", "ok": true }]),
+            "{args:?}"
+        );
+        let failures = error["failures"].as_array().unwrap();
+        assert_eq!(failures.len(), 1, "{error}");
+        assert_eq!(failures[0]["gate"], "G2");
+        assert!(failures[0].get("criterion").is_none(), "{error}");
+        let message = failures[0]["message"].as_str().unwrap();
+        assert!(message.contains("XX-1 has no criteria"), "{message}");
+        assert!(message.contains("tracker criterion add XX-1"), "{message}");
+    }
+
+    // With a criterion again, it's submitted.
+    env.add_criterion("XX-1");
+    assert_eq!(env.json(&["submit", "XX-1"])["status"], "done");
+}
+
+#[test]
 fn a_script_criterion_needs_no_evidence() {
     let (env, _) = env_with_project();
     env.create("XX", "a");
