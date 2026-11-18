@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracker.invalid/schemas/criterion.schema.json",
+  "title": "tracker criterion add, set and remove, and evidence --json",
+  "description": "A change to one of an item's criteria (DESIGN.md §2.3, §3), or none, when it already was as asked.",
+  "type": "object",
+  "required": ["criterion", "item"],
+  "properties": {
+    "criterion": {
+      "description": "The criterion's number, from 1: the one added, changed or given evidence, or the number the removed one had.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "item": {
+      "description": "The item after the change, exactly as its file holds it.",
+      "$ref": "item.schema.json"
+    }
+  },
+  "additionalProperties": false
+}

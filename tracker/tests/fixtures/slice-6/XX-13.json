@@ -1,0 +1,32 @@
+{
+  "id": "XX-13",
+  "title": "Every slice 6 field",
+  "project": "XX",
+  "kind": "capability",
+  "status": "open",
+  "priority": "medium",
+  "labels": [
+    "feature"
+  ],
+  "design": "DESIGN.md#2.5",
+  "created": "2026-11-17T19:26:01Z",
+  "updated": "2026-11-17T19:26:01Z",
+  "written": [
+    "Clicking a tag shows only bookmarks with that tag",
+    "The tag chips read well"
+  ],
+  "criteria": [
+    {
+      "text": "Clicking a tag shows only bookmarks with that tag"
+    },
+    {
+      "text": "The tag chips read well",
+      "evidence": "the tag chips on the home page"
+    },
+    {
+      "text": "Search narrows within the tag",
+      "check": "cargo test search_within_tag"
+    }
+  ],
+  "description": "Written by slice 6."
+}

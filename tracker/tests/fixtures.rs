@@ -157,6 +157,48 @@ fn slice_5_wrote_four_fixtures_one_in_each_state() {
     assert_eq!(vias, ["start", "submit", "reopen", "shelve"]);
 }
 
+/// The item file after slice 6 adds `written`, `criteria` and the
+/// `criterion-accept` history entry. XX-13 is open, with every field: two
+/// criteria written at create, one with evidence, and a script criterion
+/// an agent added, so `written` has two texts for three criteria.
+/// XX-14's criteria were accepted from a terminal, then it was started and
+/// shelved. XX-15 is done, unchecked, after gates G2 and G6 passed.
+#[test]
+fn slice_6_wrote_three_fixtures_with_criteria() {
+    assert_eq!(
+        names_in("slice-6"),
+        ["XX-13.json", "XX-14.json", "XX-15.json"]
+    );
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/slice-6");
+    let read = |name: &str| -> Value {
+        serde_json::from_str(&fs::read_to_string(root.join(name)).unwrap()).unwrap()
+    };
+
+    let item = read("XX-13.json");
+    assert_eq!(item["status"], "open");
+    assert_eq!(item["written"].as_array().unwrap().len(), 2);
+    let criteria = item["criteria"].as_array().unwrap();
+    assert_eq!(criteria.len(), 3);
+    assert!(criteria[1]["evidence"].is_string());
+    assert!(criteria[2]["check"].is_string());
+    assert_eq!(item["written"][0], criteria[0]["text"]);
+    assert_eq!(item["written"][1], criteria[1]["text"]);
+
+    let item = read("XX-14.json");
+    assert_eq!(item["status"], "shelved");
+    assert_eq!(item["written"].as_array().unwrap().len(), 2);
+    let accept = &item["history"][0];
+    assert_eq!(accept["via"], "criterion-accept");
+    assert_eq!(accept["interactive"], true);
+    assert_eq!(accept["fields"], serde_json::json!(["written"]));
+
+    let item = read("XX-15.json");
+    assert_eq!(item["status"], "done");
+    assert_eq!(item["verification"]["by"], "unchecked");
+    let note = item["verification"]["note"].as_str().unwrap();
+    assert!(note.starts_with("No checks ran"), "{note}");
+}
+
 #[test]
 fn every_fixture_loads_and_comes_back_byte_for_byte() {
     for path in fixture_files() {

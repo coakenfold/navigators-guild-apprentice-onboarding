@@ -45,6 +45,22 @@
     },
     "created": { "$ref": "#/$defs/time" },
     "updated": { "$ref": "#/$defs/time" },
+    "written": {
+      "description": "The text of each criterion as it was written at create, each on one line (DESIGN.md §2.1). Only a criterion command from an interactive terminal changes it afterwards, so slice 11's T5 can tell, and say, when a criterion was reworded or dropped. In no particular order, and left out while there are none.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]+$"
+      }
+    },
+    "criteria": {
+      "description": "The Done when list (DESIGN.md §2.3), numbered from 1 in commands. Left out while there are none.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/criterion" }
+    },
     "verification": {
       "description": "How the item reached done (DESIGN.md §2.7). Present only while the item is done: reopening moves it to previous_verification. Files written by slice 2 can still hold one on a shelved item.",
       "$ref": "#/$defs/verification"
@@ -79,6 +95,33 @@
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
     },
     "state": { "enum": ["open", "in-progress", "review", "done", "shelved"] },
+    "criterion": {
+      "description": "One criterion (DESIGN.md §2.3): what must be true, and how it's verified. With check, a script criterion. With neither a check nor (from slice 12) a judge, a manual one, which alone takes evidence.",
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": {
+          "description": "What must be true, on one line.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]+$"
+        },
+        "check": {
+          "description": "A shell command, run in the project's root, whose exit code 0 shows the criterion holds. On one line.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]+$"
+        },
+        "evidence": {
+          "description": "For a manual criterion, a note saying where to look (gate G2). On one line.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]+$"
+        }
+      },
+      "additionalProperties": false,
+      "not": { "required": ["check", "evidence"] }
+    },
     "verification": {
       "description": "How an item reached done (DESIGN.md §2.7). Later slices add the commit, its ref, and the checks and judges that ran.",
       "type": "object",
@@ -98,7 +141,7 @@
       "additionalProperties": false
     },
     "move": {
-      "description": "One move between states (DESIGN.md §2.2, §4.3), or one edit, which has from equal to to and names the fields it changed (DESIGN.md §2.1).",
+      "description": "One move between states (DESIGN.md §2.2, §4.3), or one edit or criterion accept, which has from equal to to and names the fields it changed (DESIGN.md §2.1).",
       "type": "object",
       "required": ["at", "from", "to", "via", "interactive"],
       "properties": {
@@ -107,7 +150,7 @@
         "to": { "$ref": "#/$defs/state" },
         "via": {
           "description": "The command that made the move. `status <id> <state>` records the command it maps onto. unknown appears only in --json output, never in a file: it stands for a command this version doesn't know, read from a file a newer tracker wrote. Such a file is listed, but this version never writes it back.",
-          "enum": ["start", "submit", "shelve", "reopen", "edit", "unknown"]
+          "enum": ["start", "submit", "shelve", "reopen", "edit", "criterion-accept", "unknown"]
         },
         "interactive": {
           "description": "Whether stdin was a terminal: true for my own moves, false for an agent's (DESIGN.md §2.6).",
@@ -121,11 +164,11 @@
           "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]+$"
         },
         "fields": {
-          "description": "For an edit, the fields it changed, in the item file's order. Left out for a move.",
+          "description": "For an edit, the fields it changed, in the item file's order, and for a criterion accept, written. Left out for a move.",
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "enum": ["title", "kind", "priority", "labels", "design", "description"] }
+          "items": { "enum": ["title", "kind", "priority", "labels", "design", "description", "written"] }
         },
         "kind_before": {
           "description": "For an edit that changed kind, the kind it replaced, so the digest can list a move away from capability (DESIGN.md §2.6). Left out otherwise.",
@@ -140,13 +183,29 @@
         }
       },
       "additionalProperties": false,
-      "if": { "properties": { "via": { "const": "edit" } } },
+      "if": { "properties": { "via": { "enum": ["edit", "criterion-accept"] } } },
       "then": { "required": ["fields"], "not": { "required": ["reason"] } },
       "else": { "allOf": [
         { "not": { "required": ["fields"] } },
         { "not": { "required": ["kind_before"] } },
         { "not": { "required": ["labels_removed"] } }
-      ] }
+      ] },
+      "allOf": [
+        {
+          "if": { "properties": { "via": { "const": "edit" } } },
+          "then": { "properties": { "fields": { "items": { "not": { "const": "written" } } } } }
+        },
+        {
+          "if": { "properties": { "via": { "const": "criterion-accept" } } },
+          "then": {
+            "properties": { "fields": { "const": ["written"] } },
+            "allOf": [
+              { "not": { "required": ["kind_before"] } },
+              { "not": { "required": ["labels_removed"] } }
+            ]
+          }
+        }
+      ]
     }
   }
 }

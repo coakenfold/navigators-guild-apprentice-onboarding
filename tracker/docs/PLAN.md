@@ -43,7 +43,7 @@ The stack, where things live, the conventions and the test command are in `guild
 | 4   | Show and delete                 | see an item's full record, and delete one from a real terminal                                        | 3          | —             | merged |
 | 5   | Bad data and polish             | keep working past a corrupt file; get help text, colour and empty states                              | 4          | —             | merged |
 |     | _Checkpoint: course submission_ |                                                                                                       |            |               |        |
-| 6   | Criteria and simple gates       | write Done-when criteria; get refused when they're missing or incomplete                              | 5          | —             | todo   |
+| 6   | Criteria and simple gates       | write Done-when criteria; get refused when they're missing or incomplete                              | 5          | —             | merged |
 |     | _Checkpoint: self-tracking_     |                                                                                                       |            |               |        |
 | 7   | Running checks                  | see checks run at start and submit, and fail with their output                                        | 6          | —             | todo   |
 | 8   | Submit proves committed work    | get items auto-verified against a commit, with saved output and a pinned ref                          | 7          | —             | todo   |
@@ -133,7 +133,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - `criterion set <n> --check` and `criterion remove`
   - `evidence`, for manual criteria only
   - repeatable `create --done-when`, which adds manual criteria
-  - the `written` fingerprints (sha2), taken at create
+  - `written`, each criterion's text as given at create
   - interactive-only `criterion accept`, which adds a history entry with `via: "criterion-accept"` (§2.1)
 
   Add gates G1 (at start: the item has criteria, and no other item in the project is in progress or review), G2 and G6. G6 reads `design` relative to the project's root, and fails a file that, after following symlinks, is outside it (§7). They run in a new `gates <id>` dry run and in front of `submit`. Any failure lists every reason, changes nothing and exits 2.
@@ -144,7 +144,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - `start` with no criteria is refused by G1 with exit 2, and so is `start` while another item in the project is in progress.
   - A manual criterion with no evidence fails G2. A `design` naming a missing section fails G6, and a numbered section with content under it passes. A `design` whose file is a symlink to one outside the root fails G6.
   - `gates` lists every failure and leaves the item file byte-for-byte unchanged. A refused `submit` exits 2 and also changes nothing.
-  - `create --done-when a --done-when b` adds two criteria and two `written` fingerprints. `evidence` on a script criterion exits 1.
+  - `create --done-when a --done-when b` adds two criteria, and their two texts to `written`. `evidence` on a script criterion exits 1.
   - `criterion accept` is refused outside an interactive terminal.
 
 **Checkpoint: self-tracking starts.**
@@ -233,7 +233,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 ### Slice 11: Tampered proof is held
 
 - **Prompt:** "Add three triggers:
-  - **T5**: compares a fingerprint of the criteria, kind and design taken at `start`, and also fires whenever a written criterion's text no longer matches `written`. `criterion accept` clears my own hand edits.
+  - **T5**: compares a fingerprint (sha2) of the criteria, kind and design taken at `start`, and also fires whenever a text in `written` is no longer any criterion's text, naming it. `criterion accept` clears my own hand edits.
   - **T13**: fires when a criterion's script check already passed at start.
   - **T14**: fires for unscoped commits between `started.head` and `HEAD` that touch the project root.
 

@@ -8,7 +8,8 @@ use std::fs;
 use common::Env;
 use serde_json::{Value, json};
 
-/// A store with project XX and one open item, XX-1.
+/// A store with project XX and one open item, XX-1, with a script
+/// criterion, so that gates G1 and G2 let it move (slice 6).
 fn env_with_item() -> Env {
     let env = Env::new();
     env.add_project("XX", "xx");
@@ -56,13 +57,16 @@ fn check_last_move(item: &Value, from: &str, to: &str, via: &str, reason: Option
 }
 
 /// Checks that the item's verification record is the unchecked one that a
-/// submit without gates writes, made by its last move.
+/// submit writes before checks run (slice 7), made by its last move.
 fn check_unchecked(item: &Value) {
     let verification = &item["verification"];
     assert_eq!(verification["by"], "unchecked");
     assert_eq!(verification["at"], history(item).last().unwrap()["at"]);
     let note = verification["note"].as_str().unwrap();
-    assert!(note.contains("No gates ran"), "{note}");
+    assert!(
+        note.contains("Submitted before tracker ran checks"),
+        "{note}"
+    );
 }
 
 /// Checks that `record`, the verification record the item had when it was
@@ -207,8 +211,9 @@ fn reopening_a_slice_2_file_moves_its_record_aside_too() {
 
 #[test]
 fn submit_prints_the_shape_section_3_gives_it() {
-    // The gates and triggers (slices 6 and 9) only fill in these fields, so
-    // agents parsing `submit` now won't break when they arrive.
+    // The triggers (slice 9) only fill in these fields, so agents parsing
+    // `submit` now won't break when they arrive. The gates that passed are
+    // listed (slice 6).
     let env = env_with_item();
     for args in [&["submit", "XX-1"][..], &["status", "XX-1", "done"]] {
         env.json(&["start", "XX-1"]);
@@ -220,7 +225,7 @@ fn submit_prints_the_shape_section_3_gives_it() {
                 "id": "XX-1",
                 "result": "done",
                 "status": "done",
-                "gates": [],
+                "gates": [{ "gate": "G2", "ok": true }, { "gate": "G6", "ok": true }],
                 "triggers": [],
                 "holds": [],
                 "item": item,
@@ -587,7 +592,13 @@ fn the_text_output_names_the_move() {
     let output = env.cmd().args(["submit", "XX-1"]).assert().success();
     let stdout = String::from_utf8_lossy(&output.get_output().stdout).to_string();
     assert!(stdout.starts_with("XX-1: in-progress → done\n"), "{stdout}");
-    assert!(stdout.contains("No gates ran"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "Unchecked. Submitted before tracker ran checks. Gates G2 and G6 passed, but \
+             nothing tested the work.\n"
+        ),
+        "{stdout}"
+    );
 
     // A refusal goes to stderr, with exit 1.
     let output = env.cmd().args(["submit", "XX-1"]).assert().code(1);
@@ -603,10 +614,7 @@ fn a_move_refuses_a_file_it_would_lose_fields_from() {
     let env = env_with_item();
     let path = env.item_path("XX-1");
     let original = fs::read_to_string(&path).unwrap();
-    let edited = original.replace(
-        "  \"created\"",
-        "  \"written\": [\"71ac3e\"],\n  \"created\"",
-    );
+    let edited = original.replace("  \"created\"", "  \"owner\": \"me\",\n  \"created\"");
     assert_ne!(edited, original);
     fs::write(&path, &edited).unwrap();
 
@@ -616,7 +624,7 @@ fn a_move_refuses_a_file_it_would_lose_fields_from() {
         &["shelve", "XX-1", "--reason", "later"],
     ] {
         let message = env.error(args, 3);
-        assert!(message.contains("written"), "{args:?}: {message}");
+        assert!(message.contains("owner"), "{args:?}: {message}");
         assert_eq!(fs::read_to_string(&path).unwrap(), edited, "{args:?}");
     }
 }

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracker.invalid/schemas/criterion-accept.schema.json",
+  "title": "tracker criterion accept --json",
+  "description": "Records every criterion's text in written, from an interactive terminal only (DESIGN.md §2.1, §2.7). Without one, it exits 1 with the error shape.",
+  "type": "object",
+  "required": ["accepted", "item"],
+  "properties": {
+    "accepted": {
+      "description": "true when written changed, with a criterion-accept entry added to history. false when written already matched the criteria, so nothing changed and no question was asked.",
+      "type": "boolean"
+    },
+    "item": {
+      "description": "The item afterwards, exactly as its file holds it.",
+      "$ref": "item.schema.json"
+    }
+  },
+  "additionalProperties": false
+}

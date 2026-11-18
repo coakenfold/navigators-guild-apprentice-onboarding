@@ -94,15 +94,13 @@ fn show_names_the_fields_of_a_file_from_a_newer_tracker() {
     // rather than left out unsaid.
     let env = env_with_project();
     env.create("XX", "a");
-    edit_file(&env, "XX-1", |item| {
-        item["criteria"] = json!([{ "kind": "script", "run": "cargo test" }]);
-    });
+    edit_file(&env, "XX-1", |item| item["owner"] = json!("me"));
 
     let shown = env.json(&["show", "XX-1"]);
-    assert!(shown["item"].get("criteria").is_none(), "{shown}");
+    assert!(shown["item"].get("owner").is_none(), "{shown}");
     let warning = shown["warning"].as_str().unwrap();
     assert!(warning.contains("doesn't know"), "{warning}");
-    assert!(warning.contains(": criteria."), "{warning}");
+    assert!(warning.contains(": owner."), "{warning}");
     assert!(warning.contains("newer tracker"), "{warning}");
 
     let shown = text(&env, &["show", "XX-1"]);
@@ -145,11 +143,15 @@ fn show_and_delete_work_on_an_item_whose_project_isnt_in_config_json() {
 fn show_prints_every_field_the_verification_records_and_history_with_times() {
     let env = env_with_project();
     let root = env.work.path().join("xx");
+    // So G6 passes at submit (slice 6).
+    fs::write(root.join("DESIGN.md"), "## 2.5 Tags\n\nTag chips.\n").unwrap();
     env.json_in(
         &root,
         &[
             "create",
             "Search filters bookmarks by tag",
+            "--done-when",
+            "Clicking a tag shows only bookmarks with that tag",
             "--kind",
             "capability",
             "--priority",
@@ -172,6 +174,8 @@ fn show_prints_every_field_the_verification_records_and_history_with_times() {
         "--unlabel",
         "needs-review",
     ]);
+    env.json(&["evidence", "XX-1", "1", "the tag chips on the home page"]);
+    env.add_criterion("XX-1");
     env.json(&["start", "XX-1"]);
     env.json(&["submit", "XX-1"]);
     env.json(&["reopen", "XX-1", "--reason", "The tag list is missing."]);
@@ -192,11 +196,16 @@ fn show_prints_every_field_the_verification_records_and_history_with_times() {
         item["updated"].as_str().unwrap(),
         // The description, as plain text over its lines.
         "  Tag chips filter the list.\n\n  Search narrows within the tag.\n",
+        // The criteria, numbered, with how each is verified.
+        "Done when:",
+        "  1. Clicking a tag shows only bookmarks with that tag\n       manual, evidence: the \
+         tag chips on the home page\n",
+        "  2. it works\n       check: true\n",
         // Both verification records, with their notes.
         "Verification:",
         "Previous verification",
         "unchecked",
-        "No gates ran",
+        "Submitted before tracker ran checks",
         // The history, with what the edit changed and the reopen's reason.
         "History, oldest first (6 entries):",
         "changed: kind, labels",
@@ -302,9 +311,11 @@ fn delete_refused_without_a_terminal_suggests_shelve_only_where_it_works() {
     for title in ["open one", "started", "finished", "put away", "held"] {
         env.create("XX", title);
     }
-    env.json(&["start", "XX-2"]);
+    // XX-3 first, since gate G1 starts no item while another in the
+    // project is in progress.
     env.json(&["start", "XX-3"]);
     env.json(&["submit", "XX-3"]);
+    env.json(&["start", "XX-2"]);
     env.json(&["shelve", "XX-4", "--reason", "later"]);
     edit_file(&env, "XX-5", |item| item["status"] = json!("review"));
 
@@ -335,13 +346,11 @@ fn delete_refuses_a_file_from_a_newer_tracker_before_asking() {
     env.create("XX", "a");
     env.json(&["start", "XX-1"]);
     env.json(&["submit", "XX-1"]);
-    edit_file(&env, "XX-1", |item| {
-        item["criteria"] = json!([{ "kind": "script", "run": "cargo test" }]);
-    });
+    edit_file(&env, "XX-1", |item| item["owner"] = json!("me"));
     let before = fs::read(env.item_path("XX-1")).unwrap();
 
     let message = env.error(&["delete", "XX-1"], 3);
-    assert!(message.contains(": criteria."), "{message}");
+    assert!(message.contains(": owner."), "{message}");
     assert!(message.contains("newer tracker"), "{message}");
     assert!(message.contains("Nothing was deleted"), "{message}");
 
@@ -349,7 +358,7 @@ fn delete_refuses_a_file_from_a_newer_tracker_before_asking() {
     if let Some(output) = env.in_terminal(&["delete", "XX-1"]) {
         let text = String::from_utf8_lossy(&output.stdout);
         assert_eq!(output.status.code(), Some(3), "{text}");
-        assert!(text.contains(": criteria."), "{text}");
+        assert!(text.contains(": owner."), "{text}");
         assert!(!text.contains("Type XX-1"), "{text}");
     }
     assert_eq!(fs::read(env.item_path("XX-1")).unwrap(), before);
@@ -447,9 +456,11 @@ fn in_a_terminal_typing_the_id_deletes_an_item_in_each_state() {
     for title in ["open one", "started", "finished", "put away", "held"] {
         env.create("XX", title);
     }
-    env.json(&["start", "XX-2"]);
+    // XX-3 first, since gate G1 starts no item while another in the
+    // project is in progress.
     env.json(&["start", "XX-3"]);
     env.json(&["submit", "XX-3"]);
+    env.json(&["start", "XX-2"]);
     env.json(&["shelve", "XX-4", "--reason", "later"]);
     // Nothing reaches review until slice 9's triggers, but by hand.
     edit_file(&env, "XX-5", |item| item["status"] = json!("review"));
@@ -463,31 +474,32 @@ fn in_a_terminal_typing_the_id_deletes_an_item_in_each_state() {
             "XX-1",
             "open",
             "XX-1 \"open one\" is open.",
-            "removes its file.",
+            "removes its file and its criterion.",
         ),
         (
             "XX-2",
             "in-progress",
             "XX-2 \"started\" is in-progress, so someone may be working on it.",
-            "removes its file and its history (1 entry).",
+            "removes its file, its criterion and its history (1 entry).",
         ),
         (
             "XX-3",
             "done",
-            &format!("XX-3 \"finished\" is done at {done_at}, unchecked: no gates ran."),
-            "removes its file, its history (2 entries) and its verification record.",
+            &format!("XX-3 \"finished\" is done at {done_at}, unchecked: no checks ran."),
+            "removes its file, its criterion, its history (2 entries) and its verification \
+             record.",
         ),
         (
             "XX-4",
             "shelved",
             "XX-4 \"put away\" is shelved.",
-            "removes its file and its history (1 entry).",
+            "removes its file, its criterion and its history (1 entry).",
         ),
         (
             "XX-5",
             "review",
             "XX-5 \"held\" is in review, waiting for a human's decision.",
-            "removes its file.",
+            "removes its file and its criterion.",
         ),
     ];
     for (n, (id, state, says_state, says_lost)) in cases.iter().enumerate() {

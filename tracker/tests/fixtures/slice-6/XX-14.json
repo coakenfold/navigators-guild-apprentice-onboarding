@@ -1,0 +1,50 @@
+{
+  "id": "XX-14",
+  "title": "Criteria accepted, started, then shelved",
+  "project": "XX",
+  "kind": "change",
+  "status": "shelved",
+  "priority": "medium",
+  "created": "2026-11-17T19:26:01Z",
+  "updated": "2026-11-17T19:26:01Z",
+  "written": [
+    "a",
+    "b"
+  ],
+  "criteria": [
+    {
+      "text": "a"
+    },
+    {
+      "text": "b",
+      "check": "true"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-11-17T19:26:01Z",
+      "from": "open",
+      "to": "open",
+      "via": "criterion-accept",
+      "interactive": true,
+      "fields": [
+        "written"
+      ]
+    },
+    {
+      "at": "2026-11-17T19:26:01Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-17T19:26:01Z",
+      "from": "in-progress",
+      "to": "shelved",
+      "via": "shelve",
+      "interactive": false,
+      "reason": "XX-15 first"
+    }
+  ]
+}

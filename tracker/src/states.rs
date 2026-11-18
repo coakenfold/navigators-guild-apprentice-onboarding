@@ -32,10 +32,12 @@ pub const MOVES: [Move; 6] = [
     step(Via::Reopen, Status::Shelved, Status::Open),
 ];
 
-/// What the verification record says about a submit before the gates
-/// exist (slice 6).
+/// What the verification record says about a submit before checks run
+/// (slice 7). It's in the past tense, since it stays in the file after
+/// later versions run checks. Records written before slice 6 say "No gates
+/// ran", and slice 6's first ones "No checks ran", instead.
 pub const UNCHECKED_NOTE: &str =
-    "No gates ran: this version of tracker has none yet, so nothing checked the work.";
+    "Submitted before tracker ran checks. Gates G2 and G6 passed, but nothing tested the work.";
 
 /// The move `via` makes from `from`, if the diagram draws one.
 pub fn find(via: Via, from: Status) -> Option<Move> {
@@ -110,7 +112,9 @@ pub fn allowed(id: &str, from: Status) -> String {
 /// `message` and the moves allowed from `from`.
 fn refusal(id: &str, from: Status, message: String) -> Error {
     let mut error = Error::input(message);
-    error.allowed = Some(allowed_json(id, from));
+    error
+        .fields
+        .push(("allowed".to_string(), allowed_json(id, from)));
     error
 }
 

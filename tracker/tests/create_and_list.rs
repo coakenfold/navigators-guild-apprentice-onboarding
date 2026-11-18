@@ -364,15 +364,17 @@ fn every_command_refuses_a_config_json_that_cant_be_parsed() {
     for title in ["a", "b", "c"] {
         env.create("XX", title);
     }
-    env.json(&["start", "XX-2"]);
+    // XX-3 first, since gate G1 starts no item while another in the
+    // project is in progress.
     env.json(&["start", "XX-3"]);
     env.json(&["submit", "XX-3"]);
+    env.json(&["start", "XX-2"]);
     let config = env.home.path().join("config.json");
     fs::write(&config, "{").unwrap();
     let item_files = || ["XX-1", "XX-2", "XX-3"].map(|id| fs::read(env.item_path(id)).unwrap());
     let before = item_files();
 
-    let commands: [&[&str]; 14] = [
+    let commands: [&[&str]; 20] = [
         &["list"],
         &["project", "list"],
         &["project", "add", "YY", "--name", "y", "--root", &root],
@@ -387,6 +389,12 @@ fn every_command_refuses_a_config_json_that_cant_be_parsed() {
         &["status", "XX-1", "in-progress"],
         &["delete", "XX-1"],
         &["init"],
+        &["gates", "XX-1"],
+        &["criterion", "add", "XX-1", "works", "--check", "true"],
+        &["criterion", "set", "XX-1", "1", "--check", "true"],
+        &["evidence", "XX-1", "1", "here"],
+        &["criterion", "remove", "XX-1", "1"],
+        &["criterion", "accept", "XX-1"],
     ];
     for args in commands {
         let message = env.error(args, 3);

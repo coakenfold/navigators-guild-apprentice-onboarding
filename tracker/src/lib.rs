@@ -3,6 +3,7 @@
 
 pub mod config;
 pub mod error;
+pub mod gates;
 pub mod item;
 pub mod states;
 pub mod store;
