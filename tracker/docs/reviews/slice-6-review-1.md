@@ -24,6 +24,8 @@ I found no bug that loses data. The findings that matter most:
 - **Finding 5:** G1 ignores an item file it can't read, so a second item can start while the first is in progress.
 - **Bug 1:** a judge criterion from a newer tracker is read as a manual one, so `gates` and `submit` give a wrong reason with exit 2, where every other command says the file is from a newer tracker.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -161,3 +163,50 @@ I also checked:
 - **The unchecked note names G2 and G6.** Once checks run, a passing submit has run G3 and G4 too, and slice 8 makes it `auto`. Slice 7 has to decide what a submit's record says in between.
 - **`criterion set --check` after `start`** must run the new check once, as §2.4 says, and record it in `started.checks`.
 - **A check is printed before it runs.** Finding 8's limit should be settled first, and the printed command escaped like any other text from the file.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `095b250`, not at the fixed code. Each fix is in its own commit, with its tests, and the readme's [Fixes after review 1](../slice-6-readme.md#fixes-after-review-1) lists them too.
+
+Every numbered finding is resolved: both bugs, findings 3 to 9 and all six test gaps. Where a finding offered a choice, option (a) was taken, and finding 8's limit is 1000 characters rather than the 500 suggested. The process notes weren't part of this round, and "Slice 7 must decide" is left for slice 7. The commits after this review (`04fab3f`), in order:
+
+- **Fixes:** `9046539` (bug 1 and test gap 1), `a16fd2b` (bug 2 and test gap 2), `3ab8de7` (finding 3 and test gap 3), `05f4bba` (finding 4), `c1e91fd` (finding 5 and test gap 6), `c08cdba` (finding 6), `b51549b` (finding 7), `ab324b4` (finding 8), `22fc352` (finding 9), `e137f93` (test gap 4) and `0b6aa89` (test gap 5).
+- **Docs:** `3af1c73` (the readme) and the commit that adds this Outcome.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: a newer tracker's judge criterion is read as a manual one | `9046539`, as suggested: `refuse_newer_file` refuses a file with fields this version doesn't know, with exit 3, in `gates_dry_run` and at the top of `apply`, before any gate. `move_item` and `status` load the item with its text for it. Every move gets the check, so `shelve` and `reopen` now give this message rather than `update_item`'s. Test: `a_newer_trackers_file_is_refused_with_exit_3_before_any_gate_runs` |
+| Bug 2: G6 counts some lines as headings, and as content, that markdown doesn't | `a16fd2b`, as suggested: `outside_fences` is replaced by `lines`, which says what each line is. A fence closes only on the same character, at least as long, with nothing after it, and a backtick fence's info string can't hold a backtick. A heading or fence takes at most three spaces of indent, and a tab makes indented code. A fence line is never content. The readme's "Lines in fenced code blocks are never headings" is now true. Tests: two unit tests in `src/gates.rs`, with the review's three rows |
+| Finding 3 (security): a line break in a criterion's text or evidence, written by hand, prints as a line of its own | `3ab8de7`, as suggested, for `criterion remove` and `criterion set`. `criterion accept`'s warning had the same problem, since `tty::confirm` keeps line breaks, and is fixed in the same commit. Test: `text_output_escapes_a_hand_edited_criterion_and_its_evidence` |
+| Finding 4 (security): `criterion accept` can't say which written criteria it drops | `05f4bba`, option (a): `written` holds each criterion's text, and `criterion accept` lists each text it drops, saying it was removed or reworded by hand. DESIGN.md §2.1, §2.3, §2.5's T5, §2.7, §4.3's example and §6, PLAN.md's slice 6 prompt and _Done when_ and slice 11's T5, `item.schema.json`, `tests/schemas.rs` and the slice 6 fixtures follow. The fixtures' `written` values were edited to the texts their hashes stood for, checked with `shasum`, which is what this version writes. Nothing uses `sha2` now, so it's removed, and slice 11's prompt names it for T5's criteria hash. Test: `criterion_accept_names_each_written_criterion_it_drops`, the review's case |
+| Finding 5: G1 ignores an item file it can't read | `c1e91fd`, option (a): G1 fails on each skipped file whose name puts it in the item's project, saying it can't tell whether that item is in progress, with where and why the file can't be read and the fix. A file not named after an item ID, or in another project, doesn't count. DESIGN.md §2.4's G1 row and §4.4 say so, and the readme's limit is replaced by its cost: a corrupt file blocks every start in its project. Tests: `g1_fails_while_an_item_file_in_the_project_cant_be_read`, and two tests in `tests/bad_data.rs` that started an item beside a broken file now `edit` it instead and check `start`'s refusal |
+| Finding 6: nothing at submit requires a criterion | `c08cdba`, option (a): G2 fails an item with no criteria, with the message G1 gives. DESIGN.md §2.4's G2 row says so. Test: `an_item_with_no_criteria_fails_g2` |
+| Finding 7: §3 says the criterion commands "work at any time" | `b51549b`: §3 says they and `evidence` work in any state but done, and for an item in review only from an interactive terminal, as `edit` does |
+| Finding 8: a check command has no length limit | `ab324b4`, with a limit of 1000 characters rather than 500, since a command is often longer than the sentence it proves. The refusal says to put the steps in a script the check runs. DESIGN.md §2.3 and `--check`'s help say so. Test: added to `criterion_add_refuses_bad_input_and_a_repeated_criterion`, through `criterion add` and `criterion set` |
+| Finding 9: §2.4 doesn't say what "content under it" means | `22fc352`: G6's row says the heading is a `#` heading outside code whose first word is the section number, and its content any line before the next heading of the same level or higher that isn't blank, a heading or a code fence |
+| Test gap 1: no test of a newer tracker's criterion through `gates` or `submit` | `9046539`, with bug 1, through `start` and `status` too |
+| Test gap 2: no test of G6 with an info string on a closing fence, an indented heading, or an empty code block | `a16fd2b`, with bug 2, in the unit tests in `src/gates.rs` |
+| Test gap 3: no test that text output escapes a hand-edited criterion or evidence | `3ab8de7`, with finding 3 |
+| Test gap 4: no test that `criterion set` and `evidence` leave `written` alone | `e137f93`: `criterion_set_and_evidence_leave_written_alone_from_a_terminal_or_not` |
+| Test gap 5: no test that `criterion accept` refuses a done item | `0b6aa89`: `criterion_accept_refuses_a_done_item` |
+| Test gap 6: no test pins what G1 does with an unreadable item file | `c1e91fd`, with finding 5 |
+| Process: this review isn't independent | Still open. Run review 2 in a new session before merging |
+| Process: the code, schemas, tests and fixtures landed as one commit | Can't change now. This round's fixes are one commit each, with their tests |
+| Process: `6eb689d` settles part of slice 11 early | Still true, and finding 4 kept it: T5 asks whether each text in `written` is still some criterion's text. Slice 11's prompt now says T5 names it |
+| Process: the readme overclaims about fences, and its Limits miss two things | No longer apply: bug 2's fix makes the fence claim true, and findings 1 and 6 are fixed, so neither is a limit now. `3af1c73` brings the readme up to date with every fix |
+| Process: the readme has no "Still open" section | Not done in this round. Slices 2–5's open items are still open, and still not carried forward |
+| Process: colour for the new commands wasn't added, and the readme doesn't say so | Not done in this round |
+| Slice 7 must decide | Left for slice 7. The last item, the check's length limit, is settled at 1000 characters by `ab324b4`, but the printed command still needs escaping when slice 7 prints it |
+
+Seen failing:
+
+- **Bug 1 and test gap 1:** the new test failed against `04fab3f`'s code: `gates` exited 2, with G2's reason.
+- **Bug 2 and test gap 2:** the unit test of what must fail failed on the review's first row. The test of what must pass passed before the fix too, so it guards the fix rather than proving the bug.
+- **Finding 3 and test gap 3:** the test failed at `criterion set`'s output, then, with that fixed, at `criterion accept`'s warning, then at `criterion remove`'s output, each fixed in turn.
+- **Finding 4:** the new test failed with the old warning, "2 written criteria match none of them now, and are dropped."
+- **Finding 5 and test gap 6:** the new test failed on `start XX-2`'s exit 0.
+- **Finding 6:** the new test failed on `gates`'s exit 0.
+- **Finding 8:** the extended test failed on the 1001-character check being taken.
+- **Test gaps 4 and 5:** these cover code that already worked, so each test was run against a deliberate break, then the code was restored. Test gap 4's caught `criterion set` changed to add its criterion's text to `written` from a terminal. Test gap 5's caught `criterion accept` with its done check taken out, through its message checks: the exit code stayed 1, since the question it then asked went unanswered.
+
+After all of this, `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo clippy --all-targets -- -D warnings` and all 245 tests pass, 8 more than at `095b250`: 3 in `tests/gates.rs`, 3 in `tests/criteria.rs` (4 new, and the SHA-256 test gone with the hash), and 2 unit tests in `src/gates.rs`. The readme's Try it still prints what it shows.
