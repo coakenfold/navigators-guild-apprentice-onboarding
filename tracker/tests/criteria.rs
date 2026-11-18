@@ -325,6 +325,43 @@ fn from_a_terminal_add_and_remove_change_written() {
 }
 
 #[test]
+fn criterion_set_and_evidence_leave_written_alone_from_a_terminal_or_not() {
+    // Only a change to a criterion's text reaches `written` (§2.1), which
+    // slice 11's T5 depends on (review 1's test gap 4). "c" is an agent's,
+    // so it stays out of `written` even when I give it a check.
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.json(&[
+        "create",
+        "t",
+        "--project",
+        "XX",
+        "--done-when",
+        "a",
+        "--done-when",
+        "b",
+    ]);
+    env.json(&["criterion", "add", "XX-1", "c"]);
+    env.json(&["criterion", "set", "XX-1", "1", "--check", "true"]);
+    env.json(&["evidence", "XX-1", "2", "here"]);
+    assert_eq!(written(&env.item("XX-1")), ["a", "b"]);
+
+    for args in [
+        &["criterion", "set", "XX-1", "3", "--check", "false"][..],
+        &["evidence", "XX-1", "2", "there"],
+    ] {
+        let Some(output) = env.in_terminal(args) else {
+            return;
+        };
+        assert!(output.status.success(), "{args:?}: {output:?}");
+        assert_eq!(written(&env.item("XX-1")), ["a", "b"], "{args:?}");
+    }
+    let item = env.item("XX-1");
+    assert_eq!(item["criteria"][1]["evidence"], "there");
+    assert_eq!(item["criteria"][2]["check"], "false");
+}
+
+#[test]
 fn evidence_is_recorded_for_a_manual_criterion_only() {
     let env = env_with_item();
     env.json(&["criterion", "add", "XX-1", "a"]);
