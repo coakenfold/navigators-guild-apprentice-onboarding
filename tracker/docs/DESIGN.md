@@ -125,7 +125,7 @@ Agents never move an item to done. They **submit**, and the tool decides. Any mo
 
 ### 2.3 Done when (criteria)
 
-Each criterion is one statement that can be checked. It has **text** (what must be true, in my words, on one line of at most 500 characters, like a reason) and one way of being verified. An item's criteria have different texts, so each text in `written` names one of them.
+Each criterion is one statement that can be checked. It has **text** (what must be true, in my words, on one line of at most 500 characters, like a reason) and one way of being verified. An item's criteria have different texts, so each text in `written` names one of them. A script check is one line of at most 1000 characters, because it's printed before it runs and in every G3 failure. Longer commands go in a script that the check runs.
 
 **The check is the evidence.** A script check's proof is the check itself and what it printed. When an item reaches done, the verification record saves each check's command, exit code, duration and the last 20 lines of its output, against the verification commit. For most test runners that output names the tests that ran, as in `test filter_by_label ... ok` or `✓ [chromium] › bookmarks.spec.js:142:5 › filters by tag`, so `tracker show` shows what actually ran and passed, not what anyone claims ran. A judge's proof is its questions and answers, which are saved the same way. Only a **manual** criterion has a separate **evidence** note: free text saying where to look, since only I check it.
 

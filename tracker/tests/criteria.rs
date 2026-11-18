@@ -209,6 +209,23 @@ fn criterion_add_refuses_bad_input_and_a_repeated_criterion() {
         let message = refused(&env, args, 1);
         assert!(message.contains(says), "{args:?}: {message}");
     }
+
+    // A check is printed before it runs and in every gate failure, so it's
+    // at most 1000 characters, counted as characters, not bytes (review 1's
+    // finding 8).
+    let long = "é".repeat(1001);
+    for args in [
+        &["criterion", "add", "XX-1", "x", "--check", &long][..],
+        &["criterion", "set", "XX-1", "1", "--check", &long],
+    ] {
+        let message = refused(&env, args, 1);
+        assert!(message.contains("at most 1000 characters"), "{message}");
+        assert!(message.contains("has 1001"), "{message}");
+        assert!(message.contains("in a script the check runs"), "{message}");
+    }
+    let longest = "é".repeat(1000);
+    env.json(&["criterion", "add", "XX-1", "x", "--check", &longest]);
+    env.json(&["criterion", "set", "XX-1", "1", "--check", &longest]);
 }
 
 #[test]

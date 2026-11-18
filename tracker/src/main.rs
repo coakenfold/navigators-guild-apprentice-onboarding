@@ -222,8 +222,8 @@ enum CriterionCommand {
         id: String,
         /// What must be true, on one line of at most 500 characters
         text: String,
-        /// A shell command, run in the project's root, whose exit code 0 shows the criterion
-        /// holds, such as "cargo test filter_by_label"
+        /// A shell command on one line of at most 1000 characters, run in the project's root,
+        /// whose exit code 0 shows the criterion holds, such as "cargo test filter_by_label"
         #[arg(long)]
         check: Option<String>,
     },
@@ -236,8 +236,8 @@ enum CriterionCommand {
         id: String,
         /// The criterion's number, from 1, as `tracker show` lists them
         n: usize,
-        /// A shell command, run in the project's root, whose exit code 0 shows the criterion
-        /// holds
+        /// A shell command on one line of at most 1000 characters, run in the project's root,
+        /// whose exit code 0 shows the criterion holds
         #[arg(long)]
         check: String,
     },
@@ -1313,8 +1313,14 @@ fn check_criterion_text(text: &str) -> Result<String> {
     Ok(text.to_string())
 }
 
-/// A `--check` command, trimmed. Refuses one that's empty or doesn't fit on
-/// a line, since it's printed before it runs and in gate output.
+/// The longest `--check` command `criterion add` and `criterion set` take,
+/// in characters. A check is printed before it runs and in every G3
+/// failure (§2.3), so a longer one belongs in a script the check runs.
+const MAX_CHECK: usize = 1000;
+
+/// A `--check` command, trimmed. Refuses one that's empty, doesn't fit on
+/// a line, since it's printed before it runs and in gate output, or is
+/// longer than `MAX_CHECK`.
 fn check_command(command: &str) -> Result<String> {
     let command = command.trim();
     if command.is_empty() {
@@ -1329,6 +1335,14 @@ fn check_command(command: &str) -> Result<String> {
         "A --check command",
         "Join the steps with && on one line, or put them in a script the check runs.",
     )?;
+    let length = command.chars().count();
+    if length > MAX_CHECK {
+        return Err(Error::input(format!(
+            "A --check command can be at most {MAX_CHECK} characters, and this one has \
+             {length}. Put the steps in a script the check runs, such as --check \
+             \"./scripts/check-tags.sh\"."
+        )));
+    }
     Ok(command.to_string())
 }
 
