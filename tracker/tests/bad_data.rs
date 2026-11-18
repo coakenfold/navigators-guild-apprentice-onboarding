@@ -101,7 +101,15 @@ fn a_hand_corrupted_item_file_is_reported_and_the_others_still_list() {
         assert!(message.contains("fix it by hand"), "{args:?}: {message}");
     }
     // The other items still work, and the corrupt file is left as it was.
-    env.json(&["start", "XX-1"]);
+    env.json(&["edit", "XX-1", "--priority", "high"]);
+    // Except for starting one in XX: the file may be an item in progress,
+    // so G1 fails until it's fixed (slice 6 review 1's finding 5).
+    let error = env.error_json_in(&env.outside(), &["start", "XX-1"], 2);
+    let message = error["failures"][0]["message"].as_str().unwrap();
+    assert!(
+        message.contains("Can't tell whether XX-2 is in progress"),
+        "{message}"
+    );
     assert_eq!(fs::read_to_string(env.item_path("XX-2")).unwrap(), before);
 }
 
@@ -305,7 +313,22 @@ fn an_entry_that_isnt_a_regular_file_is_skipped_and_never_read() {
         }
     }
     // The other items still work.
-    json_within_10s(&env, &["start", "XX-1"], 0);
+    json_within_10s(&env, &["edit", "XX-1", "--priority", "low"], 0);
+    // G1 names each of them, since any could be an item in progress, and
+    // doesn't open one to find out (slice 6 review 1's finding 5).
+    let error = json_within_10s(&env, &["start", "XX-1"], 2);
+    let failures = error["failures"].as_array().unwrap();
+    assert_eq!(failures.len(), 5, "{error:#}");
+    for (failure, id) in failures
+        .iter()
+        .zip(["XX-5", "XX-6", "XX-7", "XX-8", "XX-9"])
+    {
+        let message = failure["message"].as_str().unwrap();
+        assert!(
+            message.contains(&format!("Can't tell whether {id} is in progress")),
+            "{message}"
+        );
+    }
 }
 
 /// Runs `tracker <args> --json` with `TRACKER_HOME` set to `home`, or

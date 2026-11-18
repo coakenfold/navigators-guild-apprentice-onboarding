@@ -154,6 +154,45 @@ fn start_while_another_item_is_in_review_is_refused_by_g1() {
 }
 
 #[test]
+fn g1_fails_while_an_item_file_in_the_project_cant_be_read() {
+    // The file may be an item in progress, so G1 fails rather than leave
+    // it out, as `list` would (review 1's finding 5).
+    let (env, _) = env_with_project();
+    env.add_project("YY", "yy");
+    env.create("XX", "a");
+    env.create("XX", "b");
+    env.create("YY", "c");
+    env.json(&["start", "XX-1"]);
+    let broken = env.item_path("XX-1");
+    let text = fs::read_to_string(&broken).unwrap().replacen(',', "", 1);
+    fs::write(&broken, text).unwrap();
+
+    for args in [&["start", "XX-2"][..], &["status", "XX-2", "in-progress"]] {
+        let error = refused_by_gate(&env, args);
+        let failures = failures(&error);
+        assert_eq!(failures.len(), 1, "{failures:?}");
+        assert_eq!(failures[0].0, "G1");
+        let message = &failures[0].1;
+        assert!(
+            message.contains("Can't tell whether XX-1 is in progress"),
+            "{message}"
+        );
+        assert!(message.contains("XX-1.json, line"), "{message}");
+        assert!(message.contains("move it out of items/"), "{message}");
+    }
+
+    // Another project's file, and one not named after an item, don't
+    // count, since neither can be an item in YY.
+    let items = broken.parent().unwrap();
+    fs::write(items.join("notes.json"), "{").unwrap();
+    env.json(&["start", "YY-1"]);
+
+    // Once the broken file is moved out, XX-2 can start.
+    fs::rename(&broken, env.outside().join("XX-1.json")).unwrap();
+    env.json(&["start", "XX-2"]);
+}
+
+#[test]
 fn g1_lists_every_reason_it_fails() {
     let (env, _) = env_with_project();
     env.create("XX", "a");

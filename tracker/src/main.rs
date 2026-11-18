@@ -2032,9 +2032,9 @@ fn apply(
     let report = match step.via {
         Via::Start => {
             // A file that can't be read as an item can't say whether it's
-            // in progress, so it's left out, as `list` leaves it out (§4.4).
-            let (items, _) = store.load_items()?;
-            Some((gates::start(&item, &items), Run::Start))
+            // in progress, so G1 fails on one in the item's project (§4.4).
+            let (items, skipped) = store.load_items()?;
+            Some((gates::start(&item, &items, &skipped), Run::Start))
         }
         Via::Submit => Some((gates::submit(&item, &config::load(store)?), Run::Submit)),
         _ => None,

@@ -13,8 +13,9 @@ use serde_json::{Value, json};
 
 use crate::config::Config;
 use crate::error::Error;
-use crate::item::{Item, Status};
+use crate::item::{Item, Status, is_valid_id};
 use crate::states;
+use crate::store::Skipped;
 
 /// One reason a gate failed.
 #[derive(Debug, Clone, PartialEq)]
@@ -121,8 +122,10 @@ impl Report {
 
 /// The gates `start` runs: G1 (§2.4). `items` is every item in the store,
 /// which G1 looks through for another item in the same project that's in
-/// progress or in review (§4.4).
-pub fn start(item: &Item, items: &[Item]) -> Report {
+/// progress or in review (§4.4), and `skipped` every file in `items/` that
+/// can't be read as an item. One whose name puts it in the project, such
+/// as `XX-1.json`, may be an item in progress, so it fails G1 too.
+pub fn start(item: &Item, items: &[Item], skipped: &[Skipped]) -> Report {
     let mut failures = Vec::new();
     let id = &item.id;
     if item.criteria.is_empty() {
@@ -159,6 +162,32 @@ pub fn start(item: &Item, items: &[Item]) -> Report {
             gate: "G1",
             criterion: None,
             message,
+        });
+    }
+    for problem in skipped {
+        // The file's name is checked against the ID it holds, so it says
+        // which project the file would be in. A file not named after an
+        // item ID isn't in any project.
+        let named = problem
+            .file
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or_default();
+        let in_project = named
+            .split_once('-')
+            .is_some_and(|(key, _)| key == item.project);
+        if !is_valid_id(named) || !in_project || named == item.id {
+            continue;
+        }
+        failures.push(Failure {
+            gate: "G1",
+            criterion: None,
+            message: format!(
+                "Can't tell whether {named} is in progress or in review, since its file can't \
+                 be read as an item: {} {}",
+                problem.describe(),
+                problem.fix
+            ),
         });
     }
     Report {
