@@ -1534,6 +1534,10 @@ fn criterion_accept(store: &Store, id: &str) -> Result<Output> {
     tty::require_interactive(&command, &id, otherwise)?;
 
     let (item, before) = store.load_item_with_text(&id)?;
+    // Refused before the question, as `delete` does: accepting would
+    // rewrite the file, which `update_item` refuses only after I'd
+    // decided, and the warning would misread what this version can't load.
+    refuse_newer_file(store, &id, &before)?;
     if item.status == Status::Done {
         return Err(Error::input(format!(
             "{id} is done, so its criteria are the ones it was verified against. Reopen it \

@@ -660,6 +660,47 @@ fn criterion_accept_refuses_a_done_item() {
 }
 
 #[test]
+fn criterion_accept_refuses_a_newer_trackers_file_before_it_asks() {
+    // I wrote "Errors say what to do", then reworded it by hand as a judge
+    // criterion (slice 12), with `ask`, which this version doesn't know.
+    // Accepting it would mean rewriting the file without `ask`, so it's
+    // refused, and before asking me anything (review 2's bug 1).
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.json(&[
+        "create",
+        "t",
+        "--project",
+        "XX",
+        "--done-when",
+        "Errors say what to do",
+    ]);
+    let mut item = env.item("XX-1");
+    item["criteria"] = json!([{
+        "text": "Errors say what to do, reworded",
+        "ask": ["Does each error message say how to fix the problem?"],
+    }]);
+    fs::write(
+        env.item_path("XX-1"),
+        serde_json::to_string_pretty(&item).unwrap() + "\n",
+    )
+    .unwrap();
+    let before = fs::read(env.item_path("XX-1")).unwrap();
+
+    let Some(output) = env.in_terminal(&["criterion", "accept", "XX-1"]) else {
+        return;
+    };
+    let text = String::from_utf8_lossy(&output.stdout).to_string();
+    assert_eq!(output.status.code(), Some(3), "{text}");
+    assert!(text.contains("newer tracker"), "{text}");
+    assert!(text.contains("criteria"), "{text}");
+    assert!(text.contains("Nothing was changed"), "{text}");
+    assert!(!text.contains("Type XX-1"), "{text}");
+    assert!(!text.contains("new to written"), "{text}");
+    assert_eq!(fs::read(env.item_path("XX-1")).unwrap(), before);
+}
+
+#[test]
 fn in_a_terminal_a_wrong_id_cancels_criterion_accept() {
     let env = env_with_item();
     env.json(&["criterion", "add", "XX-1", "a"]);
