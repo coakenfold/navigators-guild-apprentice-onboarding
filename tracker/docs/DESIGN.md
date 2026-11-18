@@ -436,7 +436,7 @@ Commands work from any folder, and pick their project like this:
 | `tracker submit BM-12 --dispute <ref> --reason "…"`                                                                             | Submits while disputing a judge's fail. Repeat `--dispute` for each question. If nothing else fails, the item is held under T12 (§2.3.2).                                                                                         |
 | `tracker shelve BM-12 --reason "…"`                                                                                             | Puts an open or in-progress item back in the backlog. An in-progress item needs a clean working tree and passing project checks first (§2.8). Listed in the next digest.                                                          |
 
-The `criterion` commands work at any time, but after `start` any change to the criteria fires T5. `evidence` doesn't, so a manual criterion's note can be written once the work exists. Before `start`, an agent can add criteria and give each one a check or judge, but changing or removing the text of a criterion I wrote fires T5 as well.
+The `criterion` commands and `evidence` work in any state but done, since a done item's verification record is about the criteria it was verified against, so it's reopened first. For an item in review they work only from an interactive terminal, as `edit` does, since a held item is mine to decide. After `start`, any change to the criteria fires T5. `evidence` doesn't, so a manual criterion's note can be written once the work exists. Before `start`, an agent can add criteria and give each one a check or judge, but changing or removing the text of a criterion I wrote fires T5 as well.
 
 **Human workflow**
 
