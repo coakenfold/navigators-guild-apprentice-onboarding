@@ -1469,8 +1469,11 @@ fn criterion_set(store: &Store, id: &str, n: usize, check: &str) -> Result<Outpu
 
     let mut text = format!("Criterion {n} of {id} now has a check.\n");
     if let Some(evidence) = evidence {
+        // Escaped on its own, since a hand edit can give it a line break,
+        // which the output, several lines long, would keep.
         text.push_str(&format!(
-            "Its evidence, \"{evidence}\", was removed: a check's own output is its proof.\n"
+            "Its evidence, \"{}\", was removed: a check's own output is its proof.\n",
+            text::for_terminal(&evidence, false)
         ));
     }
     Ok(Output::plain(text, json!({ "criterion": n, "item": item })))
@@ -1496,7 +1499,11 @@ fn criterion_remove(store: &Store, id: &str, n: usize) -> Result<Output> {
     item.updated = item::now();
     store.update_item(&item)?;
 
-    let mut text = format!("Removed criterion {n} from {id}: {}\n", removed.text);
+    // Escaped on its own, as `criterion set` escapes evidence.
+    let mut text = format!(
+        "Removed criterion {n} from {id}: {}\n",
+        text::for_terminal(&removed.text, false)
+    );
     if i < item.criteria.len() {
         text.push_str("The ones after it moved up one.\n");
     }
@@ -1597,7 +1604,13 @@ fn acceptance_warning(item: &Item, written: &[String]) -> String {
         } else {
             "new to written"
         };
-        warning.push_str(&format!("  {}. {}  ({state})\n", i + 1, criterion.text));
+        // Escaped on its own, as `delete`'s warning escapes the title,
+        // since `tty::confirm` keeps the warning's line breaks.
+        warning.push_str(&format!(
+            "  {}. {}  ({state})\n",
+            i + 1,
+            text::for_terminal(&criterion.text, false)
+        ));
     }
     let dropped = item
         .written

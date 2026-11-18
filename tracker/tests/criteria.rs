@@ -596,6 +596,51 @@ fn show_lists_the_criteria_with_how_each_is_verified() {
     );
 }
 
+#[test]
+fn text_output_escapes_a_hand_edited_criterion_and_its_evidence() {
+    // A hand edit can put a line break in a criterion's text or evidence,
+    // which would otherwise print as a line of its own (§4.4).
+    let env = env_with_item();
+    env.json(&["criterion", "add", "XX-1", "a"]);
+    env.json(&["criterion", "add", "XX-1", "b"]);
+    let mut item = env.item("XX-1");
+    item["criteria"][0]["text"] = json!("ok\nXX-5: in-progress → done");
+    item["criteria"][1]["evidence"] = json!("x\nfake line");
+    fs::write(
+        env.item_path("XX-1"),
+        serde_json::to_string_pretty(&item).unwrap() + "\n",
+    )
+    .unwrap();
+    let stdout = |args: &[&str]| -> String {
+        let output = env.cmd().args(args).assert().success();
+        String::from_utf8(output.get_output().stdout.clone()).unwrap()
+    };
+
+    assert_eq!(
+        stdout(&["criterion", "set", "XX-1", "2", "--check", "true"]),
+        "Criterion 2 of XX-1 now has a check.\nIts evidence, \"x\\u{a}fake line\", was removed: \
+         a check's own output is its proof.\n"
+    );
+
+    // `criterion accept` lists each criterion before asking. Typing
+    // something other than the ID cancels it.
+    if let Some((output, ok)) =
+        env.in_terminal_typing(&["criterion", "accept", "XX-1"], PROMPT, "no", || {})
+    {
+        assert!(!ok, "{output}");
+        assert!(
+            output.contains("1. ok\\u{a}XX-5: in-progress → done  (new to written)"),
+            "{output}"
+        );
+    }
+
+    assert_eq!(
+        stdout(&["criterion", "remove", "XX-1", "1"]),
+        "Removed criterion 1 from XX-1: ok\\u{a}XX-5: in-progress → done\nThe ones after it \
+         moved up one.\n"
+    );
+}
+
 /// The SHA-256 of `text`, in lower-case hex, worked out here rather than by
 /// the code under test.
 fn sha256(text: &str) -> String {
