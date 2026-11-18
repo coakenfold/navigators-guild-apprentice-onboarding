@@ -205,7 +205,7 @@ fn show_prints_every_field_the_verification_records_and_history_with_times() {
         "Verification:",
         "Previous verification",
         "unchecked",
-        "No checks ran",
+        "Submitted before tracker ran checks",
         // The history, with what the edit changed and the reopen's reason.
         "History, oldest first (6 entries):",
         "changed: kind, labels",

@@ -33,9 +33,11 @@ pub const MOVES: [Move; 6] = [
 ];
 
 /// What the verification record says about a submit before checks run
-/// (slice 7). Records written before slice 6 say "No gates ran" instead.
-pub const UNCHECKED_NOTE: &str = "No checks ran: this version of tracker runs only gates G2 and \
-                                  G6, which don't test the work, so nothing checked it.";
+/// (slice 7). It's in the past tense, since it stays in the file after
+/// later versions run checks. Records written before slice 6 say "No gates
+/// ran", and slice 6's first ones "No checks ran", instead.
+pub const UNCHECKED_NOTE: &str =
+    "Submitted before tracker ran checks. Gates G2 and G6 passed, but nothing tested the work.";
 
 /// The move `via` makes from `from`, if the diagram draws one.
 pub fn find(via: Via, from: Status) -> Option<Move> {

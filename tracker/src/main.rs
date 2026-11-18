@@ -2082,7 +2082,7 @@ fn apply(
             at: now,
             note: Some(states::UNCHECKED_NOTE.to_string()),
         });
-        text.push("Gates G2 and G6 passed.\n");
+        // The note says which gates passed.
         text.push(&format!("Unchecked. {}\n", states::UNCHECKED_NOTE));
     }
     item.history.push(HistoryEntry {

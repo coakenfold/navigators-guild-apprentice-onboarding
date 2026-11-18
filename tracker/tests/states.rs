@@ -63,7 +63,10 @@ fn check_unchecked(item: &Value) {
     assert_eq!(verification["by"], "unchecked");
     assert_eq!(verification["at"], history(item).last().unwrap()["at"]);
     let note = verification["note"].as_str().unwrap();
-    assert!(note.contains("No checks ran"), "{note}");
+    assert!(
+        note.contains("Submitted before tracker ran checks"),
+        "{note}"
+    );
 }
 
 /// Checks that `record`, the verification record the item had when it was
@@ -589,8 +592,13 @@ fn the_text_output_names_the_move() {
     let output = env.cmd().args(["submit", "XX-1"]).assert().success();
     let stdout = String::from_utf8_lossy(&output.get_output().stdout).to_string();
     assert!(stdout.starts_with("XX-1: in-progress → done\n"), "{stdout}");
-    assert!(stdout.contains("Gates G2 and G6 passed."), "{stdout}");
-    assert!(stdout.contains("No checks ran"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "Unchecked. Submitted before tracker ran checks. Gates G2 and G6 passed, but \
+             nothing tested the work.\n"
+        ),
+        "{stdout}"
+    );
 
     // A refusal goes to stderr, with exit 1.
     let output = env.cmd().args(["submit", "XX-1"]).assert().code(1);
