@@ -498,7 +498,7 @@ The `criterion` commands and `evidence` work in any state but done, since a done
 }
 ```
 
-A refusal is that base shape with `id`, `result: "refused"`, `gates` and `failures` added, from `start` (G1), `submit`, or the `gates` dry run, where it means a submit would be refused now. Each failure in `failures` has its `gate` and a `message` saying what to do, `criterion` (numbered from 1) when it's about one criterion, and `ref`, `answer` and the model's `reason` for a judge question, so an agent can dispute it by ref without parsing text.
+A refusal is that base shape with `id`, `status`, `result: "refused"`, `gates` and `failures` added, from `start` (G1), `submit`, or the `gates` dry run, where it means a submit would be refused now. `status` is the item's state: only an in-progress item can be submitted, so a dry run on an item in any other state also says, under the reasons, that fixing them isn't enough, as a passing one does. Each failure in `failures` has its `gate` and a `message` saying what to do, `criterion` (numbered from 1) when it's about one criterion, and `ref`, `answer` and the model's `reason` for a judge question, so an agent can dispute it by ref without parsing text.
 
 ## 4. Storage
 

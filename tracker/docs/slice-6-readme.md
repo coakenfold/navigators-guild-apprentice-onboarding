@@ -153,7 +153,7 @@ error: BM-1 can't be submitted: G2 and G6 failed. Nothing was changed.
   G6  DESIGN.md has a heading numbered 2.6, but nothing under it, …
 ```
 
-The first line names the gates that failed, and each line under it is one reason.
+The first line names the gates that failed, and each line under it is one reason. A `gates` dry run on an item that isn't in progress adds one more line, "It's open, and only an in-progress item can be submitted.", as a passing one does, and `status` says the same in `--json`, since fixing every reason still wouldn't let it be submitted.
 
 ## JSON output
 
@@ -162,10 +162,10 @@ The first line names the gates that failed, and each line under it is one reason
 | `criterion add`, `set`, `remove`, `evidence` | [criterion.schema.json](../schemas/criterion.schema.json) | `{ "criterion": n, "item": … }` |
 | `criterion accept` | [criterion-accept.schema.json](../schemas/criterion-accept.schema.json) | `{ "accepted": true \| false, "item": … }` |
 | `gates`, when every gate passes | [gates.schema.json](../schemas/gates.schema.json) | `{ "id", "status", "result": "passed", "gates": [{ "gate", "ok" }] }` |
-| `start`, `submit` or `gates`, refused | [error.schema.json](../schemas/error.schema.json) | the error shape, exit 2, plus `id`, `result: "refused"`, `gates` and `failures: [{ "gate", "criterion"?, "message" }]` |
+| `start`, `submit` or `gates`, refused | [error.schema.json](../schemas/error.schema.json) | the error shape, exit 2, plus `id`, `status`, `result: "refused"`, `gates` and `failures: [{ "gate", "criterion"?, "message" }]` |
 | `submit` | [submit.schema.json](../schemas/submit.schema.json) | as before, with `gates` now listing G2 and G6 |
 
-[item.schema.json](../schemas/item.schema.json) gains `written` (one-line strings), `criteria` (a criterion with both `check` and `evidence` is refused), and the `criterion-accept` history entry, whose `fields` is exactly `["written"]`. An `edit` can't name `written`. The error schema requires `id`, `gates` and `failures` together with `result`, and exit code 2 with them.
+[item.schema.json](../schemas/item.schema.json) gains `written` (one-line strings), `criteria` (a criterion with both `check` and `evidence` is refused), and the `criterion-accept` history entry, whose `fields` is exactly `["written"]`. An `edit` can't name `written`. The error schema requires `id`, `status`, `gates` and `failures` together with `result`, and exit code 2 with them.
 
 ## Code tour
 

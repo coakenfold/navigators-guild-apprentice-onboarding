@@ -90,10 +90,12 @@ impl Report {
         Value::Array(failures)
     }
 
-    /// The refusal, exit 2, for item `id`: one line saying which gates
-    /// failed, then every reason, as text below it and as `failures` in
-    /// `--json`, with `id`, `result` and `gates` (§3).
-    pub fn refusal(&self, id: &str, run: Run) -> Error {
+    /// The refusal, exit 2, for item `id`, which is in state `status`: one
+    /// line saying which gates failed, then every reason, as text below it
+    /// and as `failures` in `--json`, with `id`, `status`, `result` and
+    /// `gates` (§3). A dry run on an item that can't be submitted says so
+    /// under the reasons, since fixing them wouldn't be enough.
+    pub fn refusal(&self, id: &str, status: Status, run: Run) -> Error {
         let failed = states::join(&self.failed(), "and");
         let message = match run {
             Run::Start => format!("{id} can't be started: {failed} failed. Nothing was changed."),
@@ -107,17 +109,35 @@ impl Report {
         };
         let fields = vec![
             ("id".to_string(), json!(id)),
+            ("status".to_string(), json!(status.as_str())),
             ("result".to_string(), json!("refused")),
             ("gates".to_string(), self.gates_json()),
             ("failures".to_string(), self.failures_json()),
         ];
-        let details = self
+        let mut details: Vec<String> = self
             .failures
             .iter()
             .map(|failure| format!("{}  {}", failure.gate, failure.message))
             .collect();
+        if run == Run::DryRun
+            && let Some(line) = not_submittable(status)
+        {
+            details.push(line);
+        }
         Error::gate(message, fields, details)
     }
+}
+
+/// For the `gates` dry run: why an item in `status` can't be submitted
+/// whatever the gates say, or `None` for an item in progress.
+pub fn not_submittable(status: Status) -> Option<String> {
+    if status == Status::InProgress {
+        return None;
+    }
+    Some(format!(
+        "It's {}, and only an in-progress item can be submitted.",
+        status.phrase()
+    ))
 }
 
 /// The gates `start` runs: G1 (§2.4). `items` is every item in the store,

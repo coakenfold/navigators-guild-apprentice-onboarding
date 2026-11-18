@@ -487,6 +487,7 @@ fn a_wrong_criterion_or_gate_output_is_caught() {
         "error": "XX-1 can't be submitted: G2 failed. Nothing was changed.",
         "exit_code": 2,
         "id": "XX-1",
+        "status": "in-progress",
         "result": "refused",
         "gates": [{ "gate": "G2", "ok": false }, { "gate": "G6", "ok": true }],
         "failures": [
@@ -498,7 +499,7 @@ fn a_wrong_criterion_or_gate_output_is_caught() {
     let mut bad = refusal.clone();
     bad["exit_code"] = json!(1);
     fails("error", bad);
-    for field in ["id", "gates", "failures"] {
+    for field in ["id", "status", "gates", "failures"] {
         let mut bad = refusal.clone();
         bad.as_object_mut().unwrap().remove(field);
         fails("error", bad);
@@ -508,6 +509,7 @@ fn a_wrong_criterion_or_gate_output_is_caught() {
         ("/failures/0/message", json!("")),
         ("/failures/0/extra", json!(1)),
         ("/result", json!("held")),
+        ("/status", json!("closed")),
     ] {
         let mut bad = refusal.clone();
         let (parent, field) = pointer.rsplit_once('/').unwrap();
@@ -517,5 +519,9 @@ fn a_wrong_criterion_or_gate_output_is_caught() {
     fails(
         "error",
         json!({ "error": "x", "exit_code": 1, "gates": [{ "gate": "G1", "ok": false }] }),
+    );
+    fails(
+        "error",
+        json!({ "error": "x", "exit_code": 1, "status": "open" }),
     );
 }

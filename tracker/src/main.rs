@@ -1683,18 +1683,15 @@ fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
     let config = config::load(store)?;
     let report = gates::submit(&item, &config);
     if !report.passed() {
-        return Err(report.refusal(&id, Run::DryRun));
+        return Err(report.refusal(&id, item.status, Run::DryRun));
     }
     let ran: Vec<String> = report.ran.iter().map(|gate| gate.to_string()).collect();
     let mut text = format!(
         "{id} passes the gates submit runs: {}.\n",
         states::join(&ran, "and")
     );
-    if item.status != Status::InProgress {
-        text.push_str(&format!(
-            "It's {}, and only an in-progress item can be submitted.\n",
-            item.status.phrase()
-        ));
+    if let Some(line) = gates::not_submittable(item.status) {
+        text.push_str(&format!("{line}\n"));
     }
     Ok(Output::plain(
         text,
@@ -2058,7 +2055,7 @@ fn apply(
     if let Some((report, run)) = &report
         && !report.passed()
     {
-        return Err(report.refusal(&item.id, *run));
+        return Err(report.refusal(&item.id, item.status, *run));
     }
 
     let now = item::now();

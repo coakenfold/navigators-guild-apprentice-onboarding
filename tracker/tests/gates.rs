@@ -18,8 +18,8 @@ fn env_with_project() -> (Env, PathBuf) {
 }
 
 /// Runs a command that a gate must refuse: exit 2, the error shape with
-/// `id`, `result`, `gates` and `failures`, and XX-1's file byte-for-byte
-/// unchanged. Returns the error object.
+/// `id`, `status`, `result`, `gates` and `failures`, and XX-1's file
+/// byte-for-byte unchanged. Returns the error object.
 fn refused_by_gate(env: &Env, args: &[&str]) -> Value {
     let id = args[1..]
         .iter()
@@ -34,6 +34,7 @@ fn refused_by_gate(env: &Env, args: &[&str]) -> Value {
         "{args:?} changed the file"
     );
     assert_eq!(error["id"], id.as_str(), "{error}");
+    assert_eq!(error["status"], env.item(&id)["status"], "{error}");
     assert_eq!(error["result"], "refused", "{error}");
     let message = error["error"].as_str().unwrap().to_lowercase();
     assert!(message.contains("nothing was changed"), "{error}");
@@ -550,6 +551,7 @@ fn gates_lists_every_failure_and_leaves_the_item_file_unchanged() {
                       nothing was changed.",
             "exit_code": 2,
             "id": "XX-1",
+            "status": "in-progress",
             "result": "refused",
             "gates": [{ "gate": "G2", "ok": false }, { "gate": "G6", "ok": false }],
             "failures": [
@@ -603,6 +605,33 @@ fn gates_says_when_the_item_isnt_ready_to_submit() {
     let output = env.cmd().args(["gates", "XX-1"]).assert().success();
     let text = String::from_utf8_lossy(&output.get_output().stdout).to_string();
     assert_eq!(text, "XX-1 passes the gates submit runs: G2 and G6.\n");
+}
+
+#[test]
+fn a_failing_gates_says_when_the_item_isnt_ready_to_submit_either() {
+    // Fixing every reason listed still wouldn't let an open item be
+    // submitted, so the refusal says that too (review 2's finding 5).
+    let (env, _) = env_with_project();
+    env.json(&["create", "a", "--project", "XX", "--done-when", "first"]);
+    let error = refused_by_gate(&env, &["gates", "XX-1"]);
+    assert_eq!(error["status"], "open", "{error}");
+    let output = env.cmd().args(["gates", "XX-1"]).assert().code(2);
+    let stderr = String::from_utf8_lossy(&output.get_output().stderr).to_string();
+    let lines: Vec<&str> = stderr.lines().collect();
+    assert_eq!(lines.len(), 3, "{stderr}");
+    assert!(lines[1].starts_with("  G2  "), "{stderr}");
+    assert_eq!(
+        lines[2],
+        "  It's open, and only an in-progress item can be submitted."
+    );
+
+    // In progress, there's no such line.
+    env.json(&["start", "XX-1"]);
+    let error = refused_by_gate(&env, &["gates", "XX-1"]);
+    assert_eq!(error["status"], "in-progress", "{error}");
+    let output = env.cmd().args(["gates", "XX-1"]).assert().code(2);
+    let stderr = String::from_utf8_lossy(&output.get_output().stderr).to_string();
+    assert_eq!(stderr.lines().count(), 2, "{stderr}");
 }
 
 #[test]
