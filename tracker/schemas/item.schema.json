@@ -46,10 +46,14 @@
     "created": { "$ref": "#/$defs/time" },
     "updated": { "$ref": "#/$defs/time" },
     "written": {
-      "description": "One fingerprint per criterion's text as it was written at create: its SHA-256, in lower-case hex (DESIGN.md §2.1). Only a criterion command from an interactive terminal changes it afterwards, so slice 11's T5 can tell when a criterion was reworded or dropped. In no particular order, and left out while there are none.",
+      "description": "The text of each criterion as it was written at create, each on one line (DESIGN.md §2.1). Only a criterion command from an interactive terminal changes it afterwards, so slice 11's T5 can tell, and say, when a criterion was reworded or dropped. In no particular order, and left out while there are none.",
       "type": "array",
       "minItems": 1,
-      "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]+$"
+      }
     },
     "criteria": {
       "description": "The Done when list (DESIGN.md §2.3), numbered from 1 in commands. Left out while there are none.",

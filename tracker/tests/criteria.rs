@@ -1,6 +1,6 @@
 //! Slice 6: Done-when criteria (DESIGN.md §2.3, §3): `create --done-when`,
-//! `criterion add`, `set`, `remove` and `accept`, `evidence`, and the
-//! `written` fingerprints (§2.1).
+//! `criterion add`, `set`, `remove` and `accept`, `evidence`, and
+//! `written`, each criterion's text as I wrote it (§2.1).
 
 mod common;
 
@@ -8,11 +8,6 @@ use std::fs;
 
 use common::Env;
 use serde_json::{Value, json};
-
-/// The SHA-256 of "a" and of "b", in lower-case hex: what `written` holds
-/// for a criterion with that text.
-const SHA_A: &str = "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb";
-const SHA_B: &str = "3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d";
 
 /// The end of a human-only command's question, which the tests wait for.
 const PROMPT: &str = "or anything else to cancel: ";
@@ -77,7 +72,7 @@ fn set_status(env: &Env, status: &str) {
 }
 
 #[test]
-fn create_done_when_adds_manual_criteria_and_their_written_fingerprints() {
+fn create_done_when_adds_manual_criteria_and_their_written_text() {
     let env = Env::new();
     env.add_project("XX", "xx");
     let item = env.json(&[
@@ -92,8 +87,8 @@ fn create_done_when_adds_manual_criteria_and_their_written_fingerprints() {
     ])["item"]
         .clone();
     assert_eq!(item["criteria"], json!([{ "text": "a" }, { "text": "b" }]));
-    // One SHA-256 per criterion's text, taken at create (§2.1).
-    assert_eq!(written(&item), [SHA_A, SHA_B]);
+    // Each criterion's text, as given at create (§2.1).
+    assert_eq!(written(&item), ["a", "b"]);
     assert_eq!(env.item("XX-1"), item);
     // Creating isn't a move or an edit, so there's no history yet.
     assert!(item.get("history").is_none(), "{item}");
@@ -111,7 +106,7 @@ fn written_is_taken_at_create_whoever_creates_the_item() {
     let env = Env::new();
     env.add_project("XX", "xx");
     let item = env.json(&["create", "t", "--project", "XX", "--done-when", "a"])["item"].clone();
-    assert_eq!(written(&item), [SHA_A]);
+    assert_eq!(written(&item), ["a"]);
 }
 
 #[test]
@@ -289,7 +284,7 @@ fn an_agent_removing_a_written_criterion_leaves_written_alone() {
     ]);
     let item = changed(&env, &["criterion", "remove", "XX-1", "1"])["item"].clone();
     assert_eq!(item["criteria"], json!([{ "text": "b" }]));
-    assert_eq!(written(&item), [SHA_A, SHA_B]);
+    assert_eq!(written(&item), ["a", "b"]);
 }
 
 #[test]
@@ -299,9 +294,9 @@ fn from_a_terminal_add_and_remove_change_written() {
         return;
     };
     assert!(output.status.success(), "{output:?}");
-    assert_eq!(written(&env.item("XX-1")), [SHA_A]);
+    assert_eq!(written(&env.item("XX-1")), ["a"]);
     env.json(&["criterion", "add", "XX-1", "b"]);
-    assert_eq!(written(&env.item("XX-1")), [SHA_A]);
+    assert_eq!(written(&env.item("XX-1")), ["a"]);
 
     let output = env
         .in_terminal(&["criterion", "remove", "XX-1", "1"])
@@ -465,15 +460,16 @@ fn in_a_terminal_criterion_accept_records_the_criteria_as_written() {
     assert!(output.contains("1. a  (already written)"), "{output}");
     assert!(output.contains("2. B  (new to written)"), "{output}");
     assert!(output.contains("3. c  (new to written)"), "{output}");
+    // "b" is gone from the criteria, so accepting drops it, and says so.
     assert!(
-        output.contains("1 written criterion matches none"),
+        output.contains("drops this criterion from written"),
         "{output}"
     );
+    assert!(output.contains("  - b\r\n"), "{output}");
     assert!(output.contains("Accepted XX-1's criteria"), "{output}");
 
     let item = env.item("XX-1");
-    let expected: Vec<String> = ["a", "B", "c"].iter().map(|text| sha256(text)).collect();
-    assert_eq!(written(&item), expected);
+    assert_eq!(written(&item), ["a", "B", "c"]);
     // One history entry, which doesn't move the item, naming `written`.
     let history = item["history"].as_array().unwrap();
     assert_eq!(history.len(), 1);
@@ -501,6 +497,55 @@ fn in_a_terminal_criterion_accept_records_the_criteria_as_written() {
 }
 
 #[test]
+fn criterion_accept_names_each_written_criterion_it_drops() {
+    // I wrote two criteria. An agent removed one, which leaves `written`
+    // alone, and I reworded the other by hand. Accepting my edit drops both
+    // from `written`, so it names both, and the agent's removal isn't
+    // accepted unseen (review 1's finding 4).
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.json(&[
+        "create",
+        "t",
+        "--project",
+        "XX",
+        "--done-when",
+        "Search filters by tag",
+        "--done-when",
+        "Empty results say so",
+    ]);
+    env.json(&["criterion", "remove", "XX-1", "2"]);
+    let mut item = env.item("XX-1");
+    item["criteria"][0]["text"] = json!("Search filters by tag, case-insensitively");
+    fs::write(
+        env.item_path("XX-1"),
+        serde_json::to_string_pretty(&item).unwrap() + "\n",
+    )
+    .unwrap();
+
+    let Some((output, ok)) =
+        env.in_terminal_typing(&["criterion", "accept", "XX-1"], PROMPT, "XX-1", || {})
+    else {
+        return;
+    };
+    assert!(ok, "{output}");
+    assert!(
+        output.contains("1. Search filters by tag, case-insensitively  (new to written)"),
+        "{output}"
+    );
+    assert!(
+        output.contains("drops these 2 criteria from written"),
+        "{output}"
+    );
+    assert!(output.contains("  - Search filters by tag\r\n"), "{output}");
+    assert!(output.contains("  - Empty results say so\r\n"), "{output}");
+    assert_eq!(
+        written(&env.item("XX-1")),
+        ["Search filters by tag, case-insensitively"]
+    );
+}
+
+#[test]
 fn criterion_accept_has_nothing_to_record_when_written_matches_in_another_order() {
     let env = Env::new();
     env.add_project("XX", "xx");
@@ -515,7 +560,7 @@ fn criterion_accept_has_nothing_to_record_when_written_matches_in_another_order(
         "b",
     ]);
     let mut item = env.item("XX-1");
-    item["written"] = json!([SHA_B, SHA_A]);
+    item["written"] = json!(["b", "a"]);
     fs::write(
         env.item_path("XX-1"),
         serde_json::to_string_pretty(&item).unwrap() + "\n",
@@ -639,21 +684,4 @@ fn text_output_escapes_a_hand_edited_criterion_and_its_evidence() {
         "Removed criterion 1 from XX-1: ok\\u{a}XX-5: in-progress → done\nThe ones after it \
          moved up one.\n"
     );
-}
-
-/// The SHA-256 of `text`, in lower-case hex, worked out here rather than by
-/// the code under test.
-fn sha256(text: &str) -> String {
-    use sha2::{Digest, Sha256};
-    Sha256::digest(text.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
-#[test]
-fn the_fingerprint_is_the_sha256_of_the_text() {
-    assert_eq!(sha256("a"), SHA_A);
-    assert_eq!(tracker::item::fingerprint("a"), SHA_A);
-    assert_eq!(tracker::item::fingerprint("é"), sha256("é"));
 }

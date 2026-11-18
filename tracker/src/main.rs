@@ -255,8 +255,9 @@ enum CriterionCommand {
     ///
     /// After a human edits a criterion by hand, this records every
     /// criterion's text as it is now in `written`, so the edit doesn't
-    /// count as an agent's. Says what it records, then asks for the ID to be
-    /// typed back, and adds a history entry
+    /// count as an agent's. Says what it records, and names each written
+    /// criterion it drops, then asks for the ID to be typed back, and adds a
+    /// history entry
     Accept {
         /// The item's ID, such as BM-12
         id: String,
@@ -829,10 +830,7 @@ fn create(store: &Store, args: CreateArgs) -> Result<Output> {
     }
     // Taken at create, by whoever creates the item, so T5 can tell when a
     // criterion it was given is reworded or dropped (§2.1).
-    let written = criteria
-        .iter()
-        .map(|c| item::fingerprint(&c.text))
-        .collect();
+    let written = criteria.iter().map(|c| c.text.clone()).collect();
 
     let _lock = store.lock()?;
     let config = config::load(store)?;
@@ -1418,9 +1416,8 @@ fn criterion_add(store: &Store, id: &str, text: &str, check: Option<String>) -> 
             i + 1
         )));
     }
-    let fingerprint = item::fingerprint(&text);
-    if tty::is_interactive() && !item.written.contains(&fingerprint) {
-        item.written.push(fingerprint);
+    if tty::is_interactive() && !item.written.contains(&text) {
+        item.written.push(text.clone());
     }
     item.criteria.push(Criterion {
         text,
@@ -1490,11 +1487,10 @@ fn criterion_remove(store: &Store, id: &str, n: usize) -> Result<Output> {
     check_criteria_changeable(&item)?;
     let i = criterion_index(&item, n)?;
     let removed = item.criteria.remove(i);
-    if tty::is_interactive() {
-        let fingerprint = item::fingerprint(&removed.text);
-        if let Some(at) = item.written.iter().position(|f| *f == fingerprint) {
-            item.written.remove(at);
-        }
+    if tty::is_interactive()
+        && let Some(at) = item.written.iter().position(|text| *text == removed.text)
+    {
+        item.written.remove(at);
     }
     item.updated = item::now();
     store.update_item(&item)?;
@@ -1531,13 +1527,9 @@ fn criterion_accept(store: &Store, id: &str) -> Result<Output> {
             states::command(&id, Via::Reopen)
         )));
     }
-    let written: Vec<String> = item
-        .criteria
-        .iter()
-        .map(|c| item::fingerprint(&c.text))
-        .collect();
-    // `written` has no order, so the same fingerprints in another order
-    // already match.
+    let written: Vec<String> = item.criteria.iter().map(|c| c.text.clone()).collect();
+    // `written` has no order, so the same texts in another order already
+    // match.
     let sorted = |list: &[String]| {
         let mut list = list.to_vec();
         list.sort();
@@ -1549,12 +1541,7 @@ fn criterion_accept(store: &Store, id: &str) -> Result<Output> {
             json!({ "accepted": false, "item": item }),
         ));
     }
-    tty::confirm(
-        &command,
-        &id,
-        &acceptance_warning(&item, &written),
-        otherwise,
-    )?;
+    tty::confirm(&command, &id, &acceptance_warning(&item), otherwise)?;
 
     // The lock wasn't held while I decided, so nothing happens if the item
     // changed meanwhile (§4.4).
@@ -1590,39 +1577,48 @@ fn criterion_accept(store: &Store, id: &str) -> Result<Output> {
 }
 
 /// What `criterion accept` says before asking for the ID: each criterion,
-/// and whether its text is already in `written`, and how many written
-/// fingerprints no criterion matches now, which accepting drops.
-fn acceptance_warning(item: &Item, written: &[String]) -> String {
+/// and whether its text is already in `written`, then each text in
+/// `written` that no criterion has now, which accepting drops. Each of
+/// those was removed or reworded, and naming it means an agent's removal
+/// isn't accepted along with my edit unseen.
+fn acceptance_warning(item: &Item) -> String {
     let id = &item.id;
     let mut warning = format!(
         "Accepting records the text of each of {id}'s criteria as it is now in written, so a \
          human's edit isn't taken for an agent's:\n"
     );
-    for (i, (criterion, fingerprint)) in item.criteria.iter().zip(written).enumerate() {
-        let state = if item.written.contains(fingerprint) {
+    // Each text is escaped on its own, as `delete`'s warning escapes the
+    // title, since `tty::confirm` keeps the warning's line breaks.
+    for (i, criterion) in item.criteria.iter().enumerate() {
+        let state = if item.written.contains(&criterion.text) {
             "already written"
         } else {
             "new to written"
         };
-        // Escaped on its own, as `delete`'s warning escapes the title,
-        // since `tty::confirm` keeps the warning's line breaks.
         warning.push_str(&format!(
             "  {}. {}  ({state})\n",
             i + 1,
             text::for_terminal(&criterion.text, false)
         ));
     }
-    let dropped = item
+    let dropped: Vec<&String> = item
         .written
         .iter()
-        .filter(|fingerprint| !written.contains(fingerprint))
-        .count();
-    if dropped == 1 {
-        warning.push_str("1 written criterion matches none of them now, and is dropped.\n");
-    } else if dropped > 1 {
-        warning.push_str(&format!(
-            "{dropped} written criteria match none of them now, and are dropped.\n"
-        ));
+        .filter(|text| !item.criteria.iter().any(|c| c.text == **text))
+        .collect();
+    match dropped.len() {
+        0 => {}
+        1 => warning.push_str(
+            "Accepting also drops this criterion from written. It was removed, or reworded by \
+             hand:\n",
+        ),
+        count => warning.push_str(&format!(
+            "Accepting also drops these {count} criteria from written. Each was removed, or \
+             reworded by hand:\n"
+        )),
+    }
+    for text in dropped {
+        warning.push_str(&format!("  - {}\n", text::for_terminal(text, false)));
     }
     warning
 }

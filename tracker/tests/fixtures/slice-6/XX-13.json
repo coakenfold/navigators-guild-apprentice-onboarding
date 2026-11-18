@@ -12,8 +12,8 @@
   "created": "2026-11-17T19:26:01Z",
   "updated": "2026-11-17T19:26:01Z",
   "written": [
-    "99cd69b5094e856c89730d1dc8a047ec7399b342f6477d20df907546ddee5bd9",
-    "4de3f9aa950f59f99f3cea0e7a2f5bf5e7ae65c92cd8ff0967146601bac227f0"
+    "Clicking a tag shows only bookmarks with that tag",
+    "The tag chips read well"
   ],
   "criteria": [
     {

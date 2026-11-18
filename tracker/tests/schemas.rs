@@ -384,10 +384,10 @@ fn a_wrong_show_or_delete_output_is_caught() {
 
 #[test]
 fn a_wrong_criterion_or_gate_output_is_caught() {
-    // Criteria and their written fingerprints (slice 6, DESIGN.md §2.3).
-    let sha = "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb";
+    // Criteria, and the text of those written at create (slice 6, DESIGN.md
+    // §2.1, §2.3).
     let mut criteria = item();
-    criteria["written"] = json!([sha]);
+    criteria["written"] = json!(["a"]);
     criteria["criteria"] = json!([
         { "text": "a" },
         { "text": "b", "check": "cargo test b" },
@@ -405,8 +405,8 @@ fn a_wrong_criterion_or_gate_output_is_caught() {
     fails("criterion", json!({ "item": criteria.clone() }));
     for (pointer, value) in [
         ("/written", json!([])),
-        ("/written", json!(["71ac3e"])),
-        ("/written", json!([sha.to_uppercase()])),
+        ("/written", json!([""])),
+        ("/written", json!(["two\nlines"])),
         ("/criteria", json!([])),
         ("/criteria/0/text", json!("")),
         ("/criteria/0/text", json!("two\nlines")),

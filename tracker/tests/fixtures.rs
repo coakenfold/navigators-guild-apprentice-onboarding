@@ -160,7 +160,7 @@ fn slice_5_wrote_four_fixtures_one_in_each_state() {
 /// The item file after slice 6 adds `written`, `criteria` and the
 /// `criterion-accept` history entry. XX-13 is open, with every field: two
 /// criteria written at create, one with evidence, and a script criterion
-/// an agent added, so `written` has two fingerprints for three criteria.
+/// an agent added, so `written` has two texts for three criteria.
 /// XX-14's criteria were accepted from a terminal, then it was started and
 /// shelved. XX-15 is done, unchecked, after gates G2 and G6 passed.
 #[test]
@@ -181,10 +181,8 @@ fn slice_6_wrote_three_fixtures_with_criteria() {
     assert_eq!(criteria.len(), 3);
     assert!(criteria[1]["evidence"].is_string());
     assert!(criteria[2]["check"].is_string());
-    assert_eq!(
-        item["written"][0],
-        tracker::item::fingerprint(criteria[0]["text"].as_str().unwrap()).as_str()
-    );
+    assert_eq!(item["written"][0], criteria[0]["text"]);
+    assert_eq!(item["written"][1], criteria[1]["text"]);
 
     let item = read("XX-14.json");
     assert_eq!(item["status"], "shelved");

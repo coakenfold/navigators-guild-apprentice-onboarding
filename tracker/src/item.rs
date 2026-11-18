@@ -23,10 +23,12 @@ pub struct Item {
     pub design: Option<String>,
     pub created: Timestamp,
     pub updated: Timestamp,
-    /// One fingerprint per criterion's text as it was written at `create`
-    /// (§2.1), in no particular order. Only a `criterion` command run from
-    /// an interactive terminal changes it afterwards, so slice 11's T5 can
-    /// tell when an agent reworded or dropped a criterion it was given.
+    /// The text of each criterion as it was written at `create` (§2.1), in
+    /// no particular order. Only a `criterion` command run from an
+    /// interactive terminal changes it afterwards, so slice 11's T5 can
+    /// tell when an agent reworded or dropped a criterion it was given. It
+    /// keeps the text, not a hash, so `criterion accept` and T5 can say
+    /// which.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub written: Vec<String>,
     /// The **Done when** list (§2.3), numbered from 1 in commands.
@@ -68,16 +70,6 @@ impl Criterion {
     pub fn is_manual(&self) -> bool {
         self.check.is_none()
     }
-}
-
-/// The fingerprint `written` keeps for a criterion's text: its SHA-256, in
-/// lower-case hex.
-pub fn fingerprint(text: &str) -> String {
-    use sha2::{Digest, Sha256};
-    Sha256::digest(text.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 /// How an item reached done (§2.1, §2.7). Later slices add the commit, its
