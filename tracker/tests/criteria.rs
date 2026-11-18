@@ -631,6 +631,35 @@ fn criterion_accept_has_nothing_to_record_when_written_matches_in_another_order(
 }
 
 #[test]
+fn criterion_accept_refuses_a_done_item() {
+    // A done item's criteria are the ones it was verified against, even
+    // after a hand edit, so it's reopened first (review 1's test gap 5).
+    let env = env_with_item();
+    env.add_criterion("XX-1");
+    env.json(&["start", "XX-1"]);
+    env.json(&["submit", "XX-1"]);
+    let mut item = env.item("XX-1");
+    item["criteria"][0]["text"] = json!("reworded by hand");
+    fs::write(
+        env.item_path("XX-1"),
+        serde_json::to_string_pretty(&item).unwrap() + "\n",
+    )
+    .unwrap();
+    let before = fs::read(env.item_path("XX-1")).unwrap();
+
+    let Some(output) = env.in_terminal(&["criterion", "accept", "XX-1"]) else {
+        return;
+    };
+    let text = String::from_utf8_lossy(&output.stdout).to_string();
+    assert_eq!(output.status.code(), Some(1), "{text}");
+    assert!(text.contains("XX-1 is done"), "{text}");
+    assert!(text.contains("tracker reopen XX-1"), "{text}");
+    // It refused before asking for the ID.
+    assert!(!text.contains("Type XX-1"), "{text}");
+    assert_eq!(fs::read(env.item_path("XX-1")).unwrap(), before);
+}
+
+#[test]
 fn in_a_terminal_a_wrong_id_cancels_criterion_accept() {
     let env = env_with_item();
     env.json(&["criterion", "add", "XX-1", "a"]);
