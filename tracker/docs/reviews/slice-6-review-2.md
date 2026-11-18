@@ -24,6 +24,8 @@ I found no bug that loses data. The findings that matter most:
 - **Finding 3:** `written` protects only a criterion's text, so before start an agent can replace a check I gave a criterion, and nothing records it.
 - **Bug 1:** `criterion accept` asks for the ID before it refuses a newer tracker's file.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -158,3 +160,44 @@ I also checked:
   - A check must be escaped when it's printed before it runs.
 - **G1 has to run again under the lock after `start`'s checks.** Today `start` holds the lock from reading the item to writing it, so G1 can't race (test gap 1). §4.4 says the lock isn't held while checks run, so slice 7's `start` will let it go to run them. Two starts in one project could then both pass G1 before either writes. Slice 7 should take the lock again after the checks, re-read the item as `Store::lock_unchanged` does, run G1 again before writing, and test two starts at once.
 - **What `gates` runs for an item that isn't in progress.** Today it runs G2 and G6 in any state. From slice 7, it would also run every criterion's check and the project's checks, which are shell commands, on an open or done item. §2.4 says an agent can ask "what's left?" at any time. Slice 7 should decide whether that includes running checks for an item that can't be submitted. Finding 5's `status` helps either way.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `f7e8833`, not at the fixed code. Each fix is in its own commit, with its tests, and the readme's [Fixes after review 2](../slice-6-readme.md#fixes-after-review-2) lists them too.
+
+This round fixed bug 1, security findings 2 and 3, findings 4 and 5 and both test gaps. Security 2 took option (a), and security 3 option (b), as the review suggested. Finding 6 wasn't part of this round. Of the five process notes, two needed no action, one is advice that still holds, and two weren't part of this round. Of the three items still open, finding 4 settles one, and two still aren't done. Every item in "Slice 7 must decide" is left for slice 7, and this round helps with three. The commits after this review (`4250e67`), in order:
+
+- **Fixes:** `34b60ce` (bug 1 and test gap 2), `95ee6e4` (finding 2), `28f49d1` (finding 3), `2a39e8e` (finding 4), `c86e653` (finding 5) and `5d2b36d` (test gap 1).
+- **Docs:** `1e7c34b` (the readme) and the commit that adds this Outcome.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: `criterion accept` asks for the ID before it refuses a newer tracker's file | `34b60ce`, as suggested: `criterion_accept` calls `refuse_newer_file(store, &id, &before)` right after the load, before the done check, so the warning and the question never appear for such a file. Test: `criterion_accept_refuses_a_newer_trackers_file_before_it_asks`, the review's case, at a terminal |
+| Finding 2 (security): from a terminal, `criterion remove` takes a written criterion out of `written`, unasked and unrecorded | `95ee6e4`, option (a): `criterion remove` leaves `written` alone, from a terminal or not, so a text I wrote leaves `written` only through `criterion accept`. `criterion add` still adds its text from a terminal. DESIGN.md §2.1's `written` row and §3's `criterion remove` row, and the readme's table, say so. Test: `from_a_terminal_add_and_remove_change_written` is now `from_a_terminal_add_changes_written_but_remove_doesnt`, which checks there's no history entry, then accepts the removal, which names the text and adds the `criterion-accept` entry |
+| Finding 3 (security): `written` keeps only the text, so before start an agent can replace a check I gave | `28f49d1`, option (b), docs only: §2.1 and §3 say that `written` protects a criterion's text, not its check, and that only T13 can catch a replaced check. §6 has a row for it, and §7 a bullet saying why (a) wasn't taken. §2.5's T5 row also says that replacing a check I gave before start doesn't count, since its "first check" was the unclear wording |
+| Finding 4: the `unchecked` note is in the present tense again | `2a39e8e`, as suggested: `UNCHECKED_NOTE` reads "Submitted before tracker ran checks. Gates G2 and G6 passed, but nothing tested the work." With the gates in the note, `submit` no longer prints "Gates G2 and G6 passed." on a line of its own as well. §2.1's `verification` row says `unchecked` covers items done before the gates proved the work against a commit, §4.3 quotes the new note, and §9 says "reaches done without me". The fixture XX-15 keeps "No checks ran…", since a binary from before this fix wrote it, just as slice 2's fixtures keep "No gates ran". Tests: `tests/states.rs` and `tests/show_and_delete.rs` check the new wording |
+| Finding 5: a failing `gates` doesn't say the item can't be submitted anyway, and its JSON has no `status` | `c86e653`, as suggested: every gate refusal, from `start`, `submit` or `gates`, has `status`, which `error.schema.json` requires together with `result`. A failing dry run on an item that isn't in progress prints the passing output's line under the reasons, from the same function, `gates::not_submittable`. §3's description of the refusal says so. Tests: `a_failing_gates_says_when_the_item_isnt_ready_to_submit_either`, `refused_by_gate` checks `status` on every refusal, and `tests/schemas.rs` checks the schema refuses a refusal without it |
+| Finding 6: G6 counts an HTML comment as content | Not done in this round. `gates::lines` still counts `<!-- TODO -->` as content, and the readme's limits don't list it yet |
+| Test gap 1: no test that two starts at once let only one through | `5d2b36d`: `ten_starts_at_once_in_one_project_let_exactly_one_through`, three rounds of ten `start --json` at once, each with one exit 0, nine G1 refusals, and only that item in progress in the files |
+| Test gap 2: no test that `criterion accept` refuses a newer tracker's file before it asks | `34b60ce`, with bug 1 |
+| Process: this review is independent | No action needed |
+| Process: the fixes follow review 1 closely | No action needed. This round's fixes are one commit each too |
+| Process: `05f4bba` changed what `written` holds, from hashes to texts | Still holds as advice: if this branch was ever installed with `cargo install`, start self-tracking from a fresh store |
+| Process: the readme says the slice 6 fixtures are files this slice's binary wrote, but two were edited by hand | Not done in this round. The readme's Testing section still says "three item files this slice's binary wrote", and XX-15's note is now also older than this binary's |
+| Process: the uncommitted line in `tracker/CLAUDE.md` | Not part of this round. It's still uncommitted, and no fix commit includes it, nor the uncommitted change to `.claude/skills/slice-review/SKILL.md` |
+| Still open: the readme has no "Still open" section, and invisible characters in a criterion's text | Not done in this round. `check_printable` still accepts a zero-width space |
+| Still open: colour for the new commands | Not done in this round |
+| Still open: slice 2 review 2's item 9, the `unchecked` note's tense | Settled by finding 4's fix, `2a39e8e` |
+| Slice 7 must decide: everything in review 1's list | Left for slice 7. `Env::add_criterion` still adds `--check true`, `gates::submit` still runs G2 then G6, and `secs` is still missing from `gates.schema.json` and `error.schema.json`. Finding 4's fix settles the note's wording, and `submit`'s text now prints only the note |
+| Slice 7 must decide: G1 has to run again under the lock after `start`'s checks | Left for slice 7. Test gap 1's test is now there to catch a `start` that lets the lock go before G1 and the write |
+| Slice 7 must decide: what `gates` runs for an item that isn't in progress | Left for slice 7. Finding 5's `status`, and the line under the reasons, give it a place to say why an open item is refused either way |
+
+Seen failing:
+
+- **Bug 1 and test gap 2:** the new test failed against `4250e67`'s code on exit 1 rather than 3, after the warning and the question, which the input's end cancelled.
+- **Finding 2:** the changed test failed on `written`, empty after a terminal `criterion remove` rather than still holding "a".
+- **Finding 5:** before the fix, 15 tests in `tests/gates.rs` failed, at `refused_by_gate`'s `status` check and at the new test.
+- **Test gap 1:** this covers code that already worked, so it was run with the lock taken out of `move_item`, then the code was restored. It failed in the first round, with a refusal naming two items in progress.
+- **Finding 3 and finding 4** change docs and wording, not behaviour, so there was nothing to see fail. The tests for finding 4 check the new wording.
+
+After all of this, `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo clippy --all-targets -- -D warnings` and all 248 tests pass, 3 more than at `f7e8833`: 1 in `tests/criteria.rs` and 2 in `tests/gates.rs`. The readme's Try it output is unchanged: its `gates` runs on an item in progress, and it shows no `submit` output.
