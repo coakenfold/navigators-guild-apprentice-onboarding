@@ -836,3 +836,62 @@ fn a_delete_whose_file_cant_be_removed_takes_its_record_back_out() {
         }
     }
 }
+
+// TR-22: an `unchecked` record with checks, as the slice 7 binary wrote,
+// says how many ran and that no commit records them. One without checks
+// still says no checks ran.
+
+#[test]
+fn delete_says_how_many_checks_an_unchecked_record_ran() {
+    let env = env_with_project();
+    env.create("XX", "checked by slice 7");
+    env.create("XX", "from before slice 7");
+    for id in ["XX-1", "XX-2"] {
+        env.json(&["start", id]);
+        env.json(&["submit", id]);
+    }
+    // As the slice 7 binary wrote it: its checks, but no commit or ref.
+    edit_file(&env, "XX-1", |item| {
+        let record = &mut item["verification"];
+        record["by"] = json!("unchecked");
+        let checks = record["checks"].as_array().unwrap().clone();
+        record.as_object_mut().unwrap().remove("commit");
+        record.as_object_mut().unwrap().remove("ref");
+        record["checks"] = json!([checks[0].clone(), checks[0].clone(), checks[0].clone()]);
+    });
+    // As an earlier binary wrote it: no checks at all.
+    edit_file(&env, "XX-2", |item| {
+        item["verification"] = json!({
+            "by": "unchecked",
+            "at": "2026-11-15T22:02:00Z",
+            "note": "No gates ran."
+        });
+    });
+
+    let at = env.item("XX-1")["verification"]["at"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let Some((output, ok)) = env.in_terminal_typing(&["delete", "XX-1"], PROMPT, "XX-1", || {})
+    else {
+        return;
+    };
+    assert!(ok, "{output}");
+    assert!(
+        output.contains(&format!(
+            "is done at {at}, unchecked: 3 checks ran and passed, but no commit records them."
+        )),
+        "{output}"
+    );
+    assert!(!output.contains("no checks ran"), "{output}");
+
+    let Some((output, ok)) = env.in_terminal_typing(&["delete", "XX-2"], PROMPT, "XX-2", || {})
+    else {
+        return;
+    };
+    assert!(ok, "{output}");
+    assert!(
+        output.contains("is done at 2026-11-15T22:02:00Z, unchecked: no checks ran."),
+        "{output}"
+    );
+}
