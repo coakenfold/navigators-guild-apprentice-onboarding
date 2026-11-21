@@ -191,7 +191,10 @@ fn g5_fails_for_a_file_marked_skip_worktree() {
 
     let messages = g5_failures(&env);
     assert_eq!(messages.len(), 1, "{messages:?}");
-    assert!(messages[0].contains("skip-worktree xx/a.txt"), "{messages:?}");
+    assert!(
+        messages[0].contains("skip-worktree xx/a.txt"),
+        "{messages:?}"
+    );
 
     // A skipped file that isn't on disk, as in a sparse checkout, passes.
     fs::remove_file(root.join("a.txt")).unwrap();
