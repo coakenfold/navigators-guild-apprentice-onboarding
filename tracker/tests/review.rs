@@ -775,3 +775,75 @@ mod tr_28 {
         assert!(shown.contains("+rm -rf the_tests # hidden"), "{shown}");
     }
 }
+
+mod tr_29 {
+    //! Slice 9 review 1, design 2: once every gate passes, the `gates` dry
+    //! run runs the triggers and lists them and their holds, as §3 says, so
+    //! an agent can tell before it submits that the submit will be held.
+    use super::*;
+
+    #[test]
+    fn gates_lists_the_holds_a_submit_would_get() {
+        let env = env_with_project();
+        start_manual(&env, "XX");
+        let before = fs::read(env.item_path("XX-1")).unwrap();
+
+        let output = env.json(&["gates", "XX-1"]);
+        assert_eq!(output["result"], "passed", "{output}");
+        assert_eq!(
+            output["triggers"],
+            json!([
+                { "trigger": "T6", "fired": true },
+                { "trigger": "T9", "fired": false }
+            ]),
+            "{output}"
+        );
+        let holds = output["holds"].as_array().unwrap();
+        assert_eq!(holds.len(), 1, "{output}");
+        assert_eq!(holds[0]["trigger"], "T6", "{output}");
+        let message = holds[0]["message"].as_str().unwrap();
+        assert!(message.contains("criterion 1"), "{message}");
+        // In the order §3 gives them.
+        let fields: Vec<&String> = output.as_object().unwrap().keys().collect();
+        assert_eq!(
+            fields,
+            ["id", "status", "result", "gates", "triggers", "holds"],
+            "{output}"
+        );
+
+        let shown = text(&env, &["gates", "XX-1"]);
+        assert!(shown.contains("held for review"), "{shown}");
+        assert!(shown.contains("T6"), "{shown}");
+        assert!(shown.contains(message), "{shown}");
+
+        // A dry run changes nothing, and the submit gets the same holds.
+        assert_eq!(fs::read(env.item_path("XX-1")).unwrap(), before);
+        let submitted = env.json(&["submit", "XX-1"]);
+        assert_eq!(submitted["holds"], output["holds"], "{submitted}");
+        assert_eq!(submitted["triggers"], output["triggers"], "{submitted}");
+    }
+
+    #[test]
+    fn gates_says_no_holds_when_no_trigger_fires() {
+        let env = env_with_project();
+        env.create("XX", "plain");
+        env.json(&["start", "XX-1"]);
+        let before = fs::read(env.item_path("XX-1")).unwrap();
+
+        let output = env.json(&["gates", "XX-1"]);
+        assert_eq!(output["result"], "passed", "{output}");
+        assert_eq!(
+            output["triggers"],
+            json!([
+                { "trigger": "T6", "fired": false },
+                { "trigger": "T9", "fired": false }
+            ]),
+            "{output}"
+        );
+        assert_eq!(output["holds"], json!([]), "{output}");
+
+        let shown = text(&env, &["gates", "XX-1"]);
+        assert!(!shown.contains("held for review"), "{shown}");
+        assert_eq!(fs::read(env.item_path("XX-1")).unwrap(), before);
+    }
+}
