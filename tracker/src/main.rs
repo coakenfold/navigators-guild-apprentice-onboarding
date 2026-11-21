@@ -2283,6 +2283,7 @@ fn already_passing(item: &Item, started: &[(usize, checks::Run)]) -> Vec<String>
 fn check_record(ran: &gates::Ran) -> CheckRecord {
     let run = &ran.run;
     CheckRecord {
+        criterion: ran.criterion,
         cmd: run.cmd.clone(),
         ok: run.ok,
         secs: run.secs,

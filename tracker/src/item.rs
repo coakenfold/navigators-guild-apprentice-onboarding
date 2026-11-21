@@ -109,11 +109,15 @@ pub struct Verification {
     pub note: Option<String>,
 }
 
-/// One check in a verification record: its command, whether it passed,
-/// how long it took, and its last lines of output, left out if it printed
-/// nothing.
+/// One check in a verification record: the criterion it came from, its
+/// command, whether it passed, how long it took, and its last lines of
+/// output, left out if it printed nothing.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CheckRecord {
+    /// The criterion whose check it is, numbered from 1. Left out for a
+    /// project check, and in records written before TR-16.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub criterion: Option<usize>,
     pub cmd: String,
     pub ok: bool,
     pub secs: u64,

@@ -144,6 +144,11 @@
             "type": "object",
             "required": ["cmd", "ok", "secs"],
             "properties": {
+              "criterion": {
+                "description": "The criterion whose check it is, numbered from 1. Left out for a project check.",
+                "type": "integer",
+                "minimum": 1
+              },
               "cmd": { "type": "string", "minLength": 1 },
               "ok": { "type": "boolean" },
               "secs": { "type": "integer", "minimum": 0 },

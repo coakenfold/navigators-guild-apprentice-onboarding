@@ -47,6 +47,8 @@ pub struct Report {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ran {
     pub gate: &'static str,
+    /// The criterion it's the check of, numbered from 1, for G3.
+    pub criterion: Option<usize>,
     pub run: checks::Run,
 }
 
@@ -280,7 +282,11 @@ pub fn scripts(item: &Item, config: &Config) -> Report {
                 .failures
                 .push(check_failure(item, config, "G3", Some(n), &run));
         }
-        report.checks.push(Ran { gate: "G3", run });
+        report.checks.push(Ran {
+            gate: "G3",
+            criterion: Some(n),
+            run,
+        });
     }
 
     let key = &item.project;
@@ -305,7 +311,11 @@ pub fn scripts(item: &Item, config: &Config) -> Report {
                 .failures
                 .push(check_failure(item, config, "G4", None, &run));
         }
-        report.checks.push(Ran { gate: "G4", run });
+        report.checks.push(Ran {
+            gate: "G4",
+            criterion: None,
+            run,
+        });
     }
     report
 }
