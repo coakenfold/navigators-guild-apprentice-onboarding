@@ -7,7 +7,7 @@ After slice 7 you can **see checks run at start and submit, and fail with their 
 | | |
 | --- | --- |
 | Status | Every _Done when_ check has a test, and so does each of TR-2's two criteria. Every test passes, as does the test command. TR-1 is `done`, verified `unchecked` with 8 checks recorded. TR-2 is `done`, verified `unchecked` by the installed slice 6 binary, so G3 never ran its checks and it has no `started` record ([Tracking TR-2](#tracking-tr-2)). PLAN.md has slice 7 as `in review`. There are no reviews yet. The branch isn't merged into `main`. |
-| Branch | `feat/tracker/slice-7`, from `main` at `37abcc3`: `6ecf0e6` (TR-1's tests, seen failing before `tracker start TR-1`), `fa65c9a` (the code and schemas), `0ac6b10` (slice 6 tests whose expected gate lists and note changed), `b59d88d` (fixtures), `57118fb` (this readme's first version and PLAN.md's status), `6e6ceda` (this readme's second version), `072bc5d` (two walkthroughs in `docs/`), `6f4d859` (CLAUDE.md: track items with the installed `tracker`), `b2b9c09` (TR-2's tests, committed before `tracker start TR-2`), `e595783` (TR-2's code and schema) |
+| Branch | `feat/tracker/slice-7`, from `main` at `37abcc3`: `6ecf0e6` (TR-1's tests, seen failing before `tracker start TR-1`), `fa65c9a` (the code and schemas), `0ac6b10` (slice 6 tests whose expected gate lists and note changed), `b59d88d` (fixtures), `57118fb` (this readme's first version and PLAN.md's status), `6e6ceda` (this readme's second version), `072bc5d` (two walkthroughs in `docs/`), `a270b4d` (CLAUDE.md: track items with the installed `tracker`), `64ec7f7` (TR-2's tests, committed before `tracker start TR-2`), `513da4d` (TR-2's code and schema), `769909d` (this readme, for TR-2), `d7f8b60` (TR-3's test), `ffb8255` (TR-3's fix) and `9ed6f65` (TR-3's notes in this readme) |
 | Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/`. All three pass. |
 | Tests | 258: 39 in `tests/create_and_list.rs`, 34 in `tests/organise.rs`, 27 in `tests/states.rs`, 24 in `tests/show_and_delete.rs`, 23 in `tests/criteria.rs`, 22 in `tests/gates.rs`, 14 in `tests/item_files.rs`, 13 in `tests/bad_data.rs`, 11 in `tests/docs_links.rs`, 9 in `tests/fixtures.rs`, 9 in `tests/polish.rs`, 8 in `tests/checks.rs`, 6 in `tests/output.rs`, 5 in `tests/schemas.rs`, 4 in `tests/store_writes.rs`, 2 in `tests/item_ids.rs`, 6 unit tests in the library (4 in `src/gates.rs`, 1 in `src/store.rs`, 1 in `src/checks.rs`) and 2 in `src/main.rs` |
 
@@ -372,7 +372,7 @@ TR-2 comes from §2.4's "A criterion that gets a new check after `start` is run 
 | 1. A check added or set on an in-progress item with `criterion add` or `criterion set` runs once, and its result is recorded in `started.checks`. | `cargo test --test checks check_given_after_start_by` | `check_given_after_start_by_add_runs_once_and_is_recorded`: a check added before start isn't run until `start`, one added after start runs once and joins `started.checks` as criterion 3 with `warnings` empty, and a manual criterion runs nothing. `check_given_after_start_by_set_runs_once_and_is_recorded`: a manual criterion given a check runs it and joins the record, a new check for criterion 1 replaces its entry rather than adding a second, and the same check again runs nothing. Both count runs with `COUNTED`, in the item file and the JSON. |
 | 2. A check added that way which already passes gets the same warning `start` gives. | `cargo test --test checks check_given_after_start_that_already_passes` | `check_given_after_start_that_already_passes_is_warned_about`: `criterion add --check true` after start gives exactly the warning `start` gave for the same check on another item, and `criterion set` as text prints one `warning:` line naming criterion 3. |
 
-The filters match two tests and one, as `cargo test` shows. All three were committed in `b2b9c09`, before `tracker start TR-2`. Nothing records that they were run then, so for this readme they were run against `b2b9c09`'s files: all three fail, with exit 101, on their run counts and the warning. They pass from `e595783`.
+The filters match two tests and one, as `cargo test` shows. All three were committed in `64ec7f7`, before `tracker start TR-2`. Nothing records that they were run then, so for this readme they were run against `64ec7f7`'s files: all three fail, with exit 101, on their run counts and the warning. They pass from `513da4d`.
 
 ### Other tests
 
@@ -414,13 +414,13 @@ TR-1 was started with the installed slice 6 binary, which doesn't run checks, so
 
 ### Tracking TR-2
 
-TR-2 was created while TR-1 was being built, as out-of-scope work. It was tracked with the installed slice 6 binary throughout, as the line `6f4d859` adds to [CLAUDE.md](../CLAUDE.md) asks: started at 2026-11-21T06:28:22Z, 11 seconds after `b2b9c09` committed its tests, and submitted at 2026-11-21T06:43:30Z. So:
+TR-2 was created while TR-1 was being built, as out-of-scope work. It was tracked with the installed slice 6 binary throughout, as the line `a270b4d` adds to [CLAUDE.md](../CLAUDE.md) asks: started at 2026-11-21T06:28:22Z, 11 seconds after `64ec7f7` committed its tests, and submitted at 2026-11-21T06:43:30Z. So:
 
 - Its file has no `started`, since slice 6 doesn't write one.
 - It reached done `unchecked` with slice 6's note, "Submitted before tracker ran checks. Gates G2 and G6 passed, but nothing tested the work.", and no `verification.checks`. G3 never ran its two checks, and G4 never ran TR's project checks. Both checks, and the test command, pass when run by hand on this branch ([above](#coverage-of-tr-2s-criteria)), but nothing in its record says so.
 - The slice 6 binary can't show TR-1 in full: `tracker show TR-1` ends by saying TR-1's file has fields it doesn't know, in `verification`, since TR-1 was submitted by this branch's binary.
 
-`6f4d859`'s header is `git commit -m 'docs: track items with the installed tracker'`, the command typed into the message by mistake, so it isn't a Conventional Commit. It and the other two docs commits, `6e6ceda` and `072bc5d`, are unscoped, but were made between TR-1's done and TR-2's start, while no item was in progress, so slice 11's T14 wouldn't count them against either.
+`a270b4d` (`docs: track items with the installed tracker`) was first committed with the whole command, `git commit -m '…'`, as its header. It was reworded, and the commits after it rebased with their trees unchanged, so the hashes here are the rebased ones. It and the other two docs commits, `6e6ceda` and `072bc5d`, are unscoped, but were made between TR-1's done and TR-2's start, while no item was in progress, so slice 11's T14 wouldn't count them against either.
 
 ## Decisions worth knowing
 
