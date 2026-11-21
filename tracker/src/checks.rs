@@ -20,6 +20,11 @@ use crate::text;
 /// and for the verification record (§4.3).
 pub const KEPT_LINES: usize = 20;
 
+/// The most characters a kept line of output has. A longer one, such as
+/// minified test output or a progress bar, is cut, so one check can't make
+/// the item file hundreds of kilobytes long.
+pub const KEPT_LINE_CHARS: usize = 500;
+
 /// How much of the end of a check's output is held while it runs, in
 /// bytes. Only the last `KEPT_LINES` lines are kept, so a check that
 /// prints a lot never fills memory.
@@ -194,11 +199,25 @@ fn stop_group(child: &Child) {
 
 /// The last `KEPT_LINES` lines of `output`, read as UTF-8 with anything
 /// that isn't replaced, without a final line break or trailing blank lines.
+/// A line longer than `KEPT_LINE_CHARS` is cut to that length, ending in
+/// `…`.
 pub fn last_lines(output: &[u8]) -> String {
     let text = String::from_utf8_lossy(output);
     let lines: Vec<&str> = text.trim_end().lines().collect();
     let start = lines.len().saturating_sub(KEPT_LINES);
-    lines[start..].join("\n")
+    let kept: Vec<String> = lines[start..].iter().map(|line| cut(line)).collect();
+    kept.join("\n")
+}
+
+/// `line`, cut to `KEPT_LINE_CHARS` characters, the last of them `…`, if
+/// it's longer than that.
+fn cut(line: &str) -> String {
+    if line.chars().count() <= KEPT_LINE_CHARS {
+        return line.to_string();
+    }
+    let mut cut: String = line.chars().take(KEPT_LINE_CHARS - 1).collect();
+    cut.push('…');
+    cut
 }
 
 #[cfg(test)]
