@@ -310,6 +310,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
   - From a terminal, `digest ack` asks for `ack`. Typing the project key, or anything else, cancels with exit 1. An item auto-verified in that project while the question waits makes it exit 1, record nothing, and leave that item in the next digest.
   - A shelve from piped stdin and one run under `script` (skipped where `script` isn't installed) are both listed, marked not from a terminal and from a terminal. So are a delete and an approve made since the last ack, an edit that removes `needs-review`, and one that changes kind from `capability` to `change`. An edit that only adds a label isn't listed.
   - `audit` reports a hand-edited status, a done item with no verification record, and an ID used twice.
+  - `audit` reports a done `auto` or `human` item whose `refs/tracker/<ID>` is missing, or doesn't point at its record's `commit` (slice 8 review 1, design 1).
   - `audit` reports a `deleted.json` line whose ID is at or above its project's counter in `counters.json`. Such a line can only have been written by hand, and `create`'s tripwire refuses that project until the counter is raised (slice 4 review 1, finding 7).
   - `judges` shows the approve and reject counts for each question.
 
