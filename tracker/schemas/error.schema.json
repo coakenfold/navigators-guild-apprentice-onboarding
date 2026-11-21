@@ -95,7 +95,7 @@
             "type": "boolean"
           },
           "output": {
-            "description": "For a check that failed: its last 20 lines of output, stdout and stderr together, without a final line break. Empty if it printed nothing.",
+            "description": "For a check that failed: its last 20 lines of output, stdout and stderr together, without a final line break. Each kept line is cut at 500 characters, the last of them `…`, if it's longer. Empty if it printed nothing.",
             "type": "string"
           }
         },

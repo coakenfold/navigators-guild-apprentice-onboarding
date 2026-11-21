@@ -153,7 +153,7 @@
               "ok": { "type": "boolean" },
               "secs": { "type": "integer", "minimum": 0 },
               "output": {
-                "description": "Its last 20 lines of output, stdout and stderr together, without a final line break. Left out if it printed nothing.",
+                "description": "Its last 20 lines of output, stdout and stderr together, without a final line break. Each kept line is cut at 500 characters, the last of them `…`, if it's longer. Left out if it printed nothing.",
                 "type": "string",
                 "minLength": 1
               }
