@@ -32,6 +32,7 @@ This folder is part of the guild-portfolio git repo, not a repo of its own. Slic
   - Commits are scoped to the item, such as `test(TR-n): …` or `feat(TR-n): …`.
   - The tests are committed and seen failing before `tracker start`.
   - Track items with the installed `tracker` (from `~/.cargo/bin`, built from the previous slice), never with `target/debug/tracker` or `cargo run`. The code being changed mustn't judge its own work, and an item file written by a newer build can't be changed by the installed one (PLAN.md's integration risks, "The bootstrap").
+- An item whose work adds behaviour or a field, and so needs a `feat` commit, is created with `--kind capability` (§2.1).
 
 ## Test command
 
