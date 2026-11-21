@@ -693,3 +693,55 @@ fn a_held_item_pauses_its_project_until_its_decided() {
     let message = error["failures"][0]["message"].as_str().unwrap();
     assert!(message.contains("XX-1 is in review"), "{message}");
 }
+
+mod tr_27 {
+    //! Slice 9 review 1, bugs 1 and 2: the inbox's heading reads for any
+    //! number of items, and `show --diff` outside a git work tree says it
+    //! can't show the item's commits.
+    use super::*;
+
+    #[test]
+    fn the_inbox_heading_doesnt_call_two_items_it() {
+        let env = env_with_project();
+        env.add_project("YY", "yy");
+        held_xx_1(&env);
+        start_manual(&env, "YY");
+        env.json(&["submit", "YY-1"]);
+
+        let shown = text(&env, &["review"]);
+        let heading = shown.lines().next().unwrap();
+        assert!(heading.starts_with("2 items are held"), "{shown}");
+        assert!(!heading.contains(" it:"), "{heading}");
+        assert!(!heading.ends_with(" it"), "{heading}");
+        assert!(heading.contains("approve or reject each one"), "{heading}");
+    }
+
+    #[test]
+    fn show_diff_outside_a_git_work_tree_says_it_cant_show_the_commits() {
+        // The work folder is a repository (`Env`), so this root is elsewhere.
+        let env = Env::new();
+        let elsewhere = tempfile::TempDir::new().unwrap();
+        let root = elsewhere.path().join("xx");
+        fs::create_dir_all(&root).unwrap();
+        env.json(&[
+            "project",
+            "add",
+            "XX",
+            "--name",
+            "XX project",
+            "--root",
+            root.to_str().unwrap(),
+        ]);
+        env.create_bare("XX", "a");
+        let before = fs::read(env.item_path("XX-1")).unwrap();
+
+        let message = env.error(&["show", "XX-1", "--diff"], 3);
+        assert!(message.contains("Can't show XX-1's commits"), "{message}");
+        assert!(
+            message.contains("isn't inside a git work tree"),
+            "{message}"
+        );
+        assert!(!message.contains("record or prove"), "{message}");
+        assert_eq!(fs::read(env.item_path("XX-1")).unwrap(), before);
+    }
+}
