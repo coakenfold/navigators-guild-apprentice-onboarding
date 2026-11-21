@@ -322,9 +322,15 @@ pub fn g5(item: &Item, config: &Config, needs_commit: bool) -> crate::error::Res
         } else {
             "them"
         };
+        // Only a submit's G5 needs a commit. A shelve's clean tree is for
+        // the next item, which builds on what's committed (§2.8).
+        let why = if needs_commit {
+            "the proof has to match a real commit"
+        } else {
+            "the next item builds on what's committed"
+        };
         report.failures.push(g5_failure(format!(
-            "{}'s root has {}. Commit {them}, scoped to {id}, or remove {them}: the proof has \
-             to match a real commit.",
+            "{}'s root has {}. Commit {them}, scoped to {id}, or remove {them}: {why}.",
             item.project,
             uncommitted_list(&report.uncommitted)
         )));
