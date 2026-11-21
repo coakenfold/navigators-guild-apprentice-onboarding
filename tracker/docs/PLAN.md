@@ -235,6 +235,7 @@ Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and 
 - **Prompt:** "Add three triggers:
   - **T5**: compares a fingerprint (sha2) of the criteria, kind and design taken at `start`, and also fires whenever a text in `written` is no longer any criterion's text, naming it. `criterion accept` clears my own hand edits.
   - **T13**: fires when a criterion's script check already passed at start.
+    A check given while the item was in review isn't run then (§2.4), so its criterion's entry in `started.checks` is the old check's, or missing if the criterion was manual. `started.checks` doesn't record the command, so T13 reads a missing entry as a check that didn't pass, and an old one as it reads any other. The change that gave the new check fired T5, which holds the item for me anyway.
   - **T14**: fires for unscoped commits between `started.head` and `HEAD` that touch the project root.
 
   Compute the criteria fingerprint over each serialized criterion with its evidence removed. That way slice 12's judge fields are covered without changing the fingerprint."
