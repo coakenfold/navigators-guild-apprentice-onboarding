@@ -465,3 +465,29 @@ fn a_timed_out_check_with_an_escaped_process_fails_soon_after_its_timeout() {
     let message = failure["message"].as_str().unwrap();
     assert!(message.contains("check_timeout_secs"), "{message}");
 }
+
+#[test]
+fn criterion_add_and_set_refuse_a_newer_trackers_file_before_running_a_check() {
+    // TR-14: `started.head`, as slice 8 will write it, is a field this
+    // version doesn't know, so it can't rewrite the file, and mustn't run
+    // a check for a change it will then refuse.
+    let (env, root) = env_with_project();
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "first", "false");
+    env.json(&["criterion", "add", "XX-1", "second"]);
+    env.json(&["start", "XX-1"]);
+    let mut item = env.item("XX-1");
+    item["started"]["head"] = json!("abc1234");
+    let newer = serde_json::to_string_pretty(&item).unwrap() + "\n";
+    fs::write(env.item_path("XX-1"), &newer).unwrap();
+
+    for args in [
+        &["criterion", "add", "XX-1", "third", "--check", "touch ran"][..],
+        &["criterion", "set", "XX-1", "2", "--check", "touch ran"],
+    ] {
+        let message = env.error(args, 3);
+        assert!(message.contains("newer tracker"), "{args:?}: {message}");
+        assert!(!root.join("ran").exists(), "{args:?} ran the check");
+        assert_eq!(fs::read_to_string(env.item_path("XX-1")).unwrap(), newer);
+    }
+}
