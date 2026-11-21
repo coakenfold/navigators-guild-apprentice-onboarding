@@ -745,3 +745,33 @@ mod tr_27 {
         assert_eq!(fs::read(env.item_path("XX-1")).unwrap(), before);
     }
 }
+
+mod tr_28 {
+    //! Slice 9 review 1, security 1: `show --diff` prints a file's real
+    //! changed lines, even with a textconv filter set for it in
+    //! `.git/config`.
+    use super::*;
+
+    #[test]
+    fn show_diff_ignores_a_textconv_filter() {
+        let env = env_with_project();
+        env.create_bare("XX", "a");
+        let work = env.work.path();
+        fs::write(work.join("xx/.gitattributes"), "*.sh diff=quiet\n").unwrap();
+        fs::write(
+            work.join("xx/work.sh"),
+            "ok line\nrm -rf the_tests # hidden\n",
+        )
+        .unwrap();
+        git_commit_all(work, "feat(XX-1): add work.sh");
+        git(work, &["config", "diff.quiet.textconv", "grep -v hidden"]);
+
+        let output = env.json(&["show", "XX-1", "--diff"]);
+        let diff = output["diff"].as_str().unwrap();
+        assert!(diff.contains("+ok line"), "{diff}");
+        assert!(diff.contains("+rm -rf the_tests # hidden"), "{diff}");
+
+        let shown = text(&env, &["show", "XX-1", "--diff"]);
+        assert!(shown.contains("+rm -rf the_tests # hidden"), "{shown}");
+    }
+}
