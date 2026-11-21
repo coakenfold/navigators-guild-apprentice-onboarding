@@ -294,8 +294,9 @@ pub fn statics(item: &Item, config: &Config) -> crate::error::Result<Report> {
 
 /// G5 (§2.4): nothing under the project's root is uncommitted or
 /// untracked, and, if `needs_commit`, the item has at least one commit
-/// (§2.1). Files that `.gitignore` excludes, and files outside the root,
-/// don't count. Shelving an in-progress item needs only the clean tree
+/// (§2.1). A file marked skip-worktree or assume-unchanged fails it, since
+/// git can't see a change to it. Files that git's ignore rules exclude, and
+/// files outside the root, don't count. Shelving an in-progress item needs only the clean tree
 /// (§2.8). Records `HEAD` in the report. Fails with exit 3 if the root
 /// isn't inside a git work tree, or git can't be run (§4.4).
 pub fn g5(item: &Item, config: &Config, needs_commit: bool) -> crate::error::Result<Report> {
@@ -316,23 +317,39 @@ pub fn g5(item: &Item, config: &Config, needs_commit: bool) -> crate::error::Res
     git::require_work_tree(&root, &item.project, id)?;
     report.head = git::head(&root)?;
     report.uncommitted = git::uncommitted(&root)?;
+    // Only a submit's G5 needs a commit. A shelve's clean tree is for the
+    // next item, which builds on what's committed (§2.8).
+    let why = if needs_commit {
+        "the proof has to match a real commit"
+    } else {
+        "the next item builds on what's committed"
+    };
     if !report.uncommitted.is_empty() {
         let them = if report.uncommitted.len() == 1 {
             "it"
         } else {
             "them"
         };
-        // Only a submit's G5 needs a commit. A shelve's clean tree is for
-        // the next item, which builds on what's committed (§2.8).
-        let why = if needs_commit {
-            "the proof has to match a real commit"
-        } else {
-            "the next item builds on what's committed"
-        };
         report.failures.push(g5_failure(format!(
             "{}'s root has {}. Commit {them}, scoped to {id}, or remove {them}: {why}.",
             item.project,
             uncommitted_list(&report.uncommitted)
+        )));
+    }
+    // `git status` can't see a change to these, so they could hold work
+    // that no commit has.
+    let hidden = git::hidden(&root)?;
+    if !hidden.is_empty() {
+        let mut named: Vec<String> = hidden.iter().take(git::LISTED_FILES).cloned().collect();
+        if hidden.len() > named.len() {
+            named.push(format!("{} more", hidden.len() - named.len()));
+        }
+        report.failures.push(g5_failure(format!(
+            "{}'s root has files git is told not to look at, so G5 can't see a change to them: \
+             {}. Clear the flag with `git update-index --no-skip-worktree <file>` or \
+             `--no-assume-unchanged <file>`, then commit any change, scoped to {id}: {why}.",
+            item.project,
+            states::join(&named, "and")
         )));
     }
     if needs_commit && git::item_commits(&root, id)?.is_empty() {

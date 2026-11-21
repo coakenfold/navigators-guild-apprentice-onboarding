@@ -99,8 +99,9 @@ pub fn head(root: &Path) -> Result<Option<String>> {
 
 /// Every file under `root` with uncommitted changes, staged or not, or
 /// untracked, by its path from the top of the repository, each with what's
-/// wrong with it, such as `modified xx/a.txt`. Files that `.gitignore`
-/// excludes, and files outside the root, aren't listed (G5, §2.1).
+/// wrong with it, such as `modified xx/a.txt`. Files that git ignores,
+/// whether by `.gitignore`, `.git/info/exclude` or `core.excludesFile`, and
+/// files outside the root, aren't listed (G5, §2.1).
 pub fn uncommitted(root: &Path) -> Result<Vec<String>> {
     // `-z` keeps names exactly as they are, and `--untracked-files=all`
     // names each untracked file, whatever the user's settings say.
@@ -137,6 +138,34 @@ pub fn uncommitted(root: &Path) -> Result<Vec<String>> {
             entries.next();
         }
         files.push(format!("{what} {path}"));
+    }
+    Ok(files)
+}
+
+/// Every tracked file under `root` that git is told not to look at, so that
+/// `git status` can't see a change to it, by its path from the top of the
+/// repository, each with its flag, such as `skip-worktree xx/a.txt` (G5,
+/// §2.4). A skipped file that isn't on disk, as in a sparse checkout, isn't
+/// listed, since it can't hold a change.
+pub fn hidden(root: &Path) -> Result<Vec<String>> {
+    // `ls-files -v` tags a skip-worktree file `S` and an assume-unchanged
+    // one in lower case. Its paths are from `root`, and the prefix makes
+    // them from the top, as `uncommitted` names them.
+    let prefix = git(root, &["rev-parse", "--show-prefix"])?;
+    let text = git(root, &["ls-files", "-v", "-z", "--", "."])?;
+    let mut files = Vec::new();
+    for entry in text.split('\0') {
+        let Some((tag, path)) = entry.split_at_checked(2) else {
+            continue;
+        };
+        let what = match tag.trim() {
+            "S" | "s" => "skip-worktree",
+            tag if tag.chars().any(|c| c.is_ascii_lowercase()) => "assume-unchanged",
+            _ => continue,
+        };
+        if root.join(path).symlink_metadata().is_ok() {
+            files.push(format!("{what} {}{path}", prefix.trim_end()));
+        }
     }
     Ok(files)
 }
