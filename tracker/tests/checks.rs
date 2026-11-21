@@ -553,3 +553,116 @@ fn verification_checks_name_the_criterion_each_came_from() {
     );
     assert_eq!(env.item("XX-1")["verification"]["checks"], checks);
 }
+
+/// A check that changes item `id` while it runs, as another agent could,
+/// then fails. The check inherits `TRACKER_HOME`, so it edits this test's
+/// store.
+fn check_that_edits(id: &str) -> String {
+    format!(
+        "'{}' edit {id} --priority high; false",
+        env!("CARGO_BIN_EXE_tracker")
+    )
+}
+
+#[test]
+fn start_refuses_when_the_item_changed_while_its_checks_ran() {
+    // TR-18: `start` writes nothing over a change made while its checks
+    // ran, so the edit isn't lost.
+    let (env, _) = env_with_project();
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "it works", &check_that_edits("XX-1"));
+
+    let message = env.error(&["start", "XX-1"], 1);
+    assert!(
+        message.contains("changed while its checks ran"),
+        "{message}"
+    );
+    let item = env.item("XX-1");
+    assert_eq!(item["status"], "open", "{item}");
+    assert_eq!(item["priority"], "high", "{item}");
+    assert_eq!(item.get("started"), None, "{item}");
+}
+
+#[test]
+fn criterion_add_after_start_refuses_when_the_item_changed_while_its_check_ran() {
+    // TR-18: the same for a check given after start (TR-2).
+    let (env, _) = env_with_project();
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "first", "false");
+    env.json(&["start", "XX-1"]);
+
+    let check = check_that_edits("XX-1");
+    let message = env.error(
+        &["criterion", "add", "XX-1", "second", "--check", &check],
+        1,
+    );
+    assert!(
+        message.contains("changed while its checks ran"),
+        "{message}"
+    );
+    let item = env.item("XX-1");
+    assert_eq!(item["priority"], "high", "{item}");
+    assert_eq!(item["criteria"].as_array().unwrap().len(), 1, "{item}");
+    assert_eq!(
+        item["started"]["checks"],
+        json!([{ "criterion": 1, "passed": false }]),
+        "{item}"
+    );
+}
+
+#[test]
+fn control_characters_in_a_checks_output_are_escaped_in_the_text_output() {
+    // TR-18: an escape that clears the line, and a mark that reverses the
+    // text after it, are written out rather than sent to the terminal.
+    let (env, _) = env_with_project();
+    env.create_bare("XX", "a");
+    add_check(
+        &env,
+        "XX-1",
+        "it works",
+        "printf 'a\\033[2Kb\\342\\200\\256c'; exit 1",
+    );
+
+    let output = env
+        .cmd()
+        .args(["gates", "XX-1"])
+        .assert()
+        .code(2)
+        .get_output()
+        .clone();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains('\u{1b}'), "{stderr:?}");
+    assert!(!stderr.contains('\u{202e}'), "{stderr:?}");
+    assert!(stderr.contains("a\\u{1b}[2Kb\\u{202e}c"), "{stderr}");
+}
+
+#[test]
+fn a_background_process_a_timed_out_check_started_is_stopped() {
+    // TR-18: the subshell is in the check's process group, so the timeout
+    // stops it before it can touch `late`. A project check that ends at
+    // once leaves one behind too, which is stopped once its shell ends.
+    let (env, root) = env_with_project();
+    set_project(&env, "XX", "check_timeout_secs", json!(1));
+    set_project(
+        &env,
+        "XX",
+        "checks",
+        json!(["(sleep 3; touch later) & true"]),
+    );
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "it works", "(sleep 3; touch late) & sleep 30");
+
+    let (error, _) = refused(&env, &["gates", "XX-1"]);
+    let g3 = failures_from(&error, "G3");
+    assert_eq!(g3.len(), 1, "{error}");
+    assert_eq!(g3[0]["timed_out"], true, "{error}");
+    std::thread::sleep(Duration::from_secs(4));
+    assert!(
+        !root.join("late").exists(),
+        "the timed-out check's subshell ran on"
+    );
+    assert!(
+        !root.join("later").exists(),
+        "the project check's subshell ran on"
+    );
+}
