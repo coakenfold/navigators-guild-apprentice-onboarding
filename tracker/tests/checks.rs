@@ -491,3 +491,25 @@ fn criterion_add_and_set_refuse_a_newer_trackers_file_before_running_a_check() {
         assert_eq!(fs::read_to_string(env.item_path("XX-1")).unwrap(), newer);
     }
 }
+
+#[test]
+fn a_kept_line_longer_than_the_limit_is_cut_and_marked() {
+    // TR-15: one long line, such as minified test output, mustn't make the
+    // item file hundreds of kilobytes long.
+    let (env, _) = env_with_project();
+    env.create_bare("XX", "a");
+    let check = "printf '%2000s\\n' '' | tr ' ' x; echo short";
+    add_check(&env, "XX-1", "it works", check);
+    env.json(&["start", "XX-1"]);
+    env.json(&["submit", "XX-1"]);
+
+    let output = env.item("XX-1")["verification"]["checks"][0]["output"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let lines: Vec<&str> = output.lines().collect();
+    assert_eq!(lines.len(), 2, "{output}");
+    assert_eq!(lines[0].chars().count(), 500, "{output}");
+    assert_eq!(lines[0], "x".repeat(499) + "…");
+    assert_eq!(lines[1], "short");
+}
