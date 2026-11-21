@@ -308,7 +308,7 @@ $ tracker submit BM-12
 Nothing was changed.
 ```
 
-`tracker gates BM-12` runs the same gates without changing the item's status, so an agent can ask "what's left?" at any time. It runs the criterion and project checks for an item in any state, not only one in progress, so an agent can see its checks fail before `start`. For an item that can't be submitted, it says so under the reasons. It does record failed judge requests for T11, in the judge folder rather than the item file, so a dry run can't be used to try out rewordings for free.
+`tracker gates BM-12` runs the same gates without changing the item's status, so an agent can ask "what's left?" at any time. It runs the criterion and project checks for an item in any state, not only one in progress, so an agent can see its checks fail before `start`. For an item that can't be submitted, it says so under the reasons. Once every gate passes, it runs the triggers too and lists any hold a submit would get, so an agent learns before submitting that the item would wait in review. It does record failed judge requests for T11, in the judge folder rather than the item file, so a dry run can't be used to try out rewordings for free.
 
 ### 2.5 Review triggers: does it need a human?
 
@@ -633,8 +633,7 @@ Each item is one JSON file, and serde maps it to Rust structs and back. The tool
         "secs": 38
       }
     ],
-    "judges": [],
-    "triggers": []
+    "judges": []
   },
   "history": [
     {
