@@ -2,14 +2,14 @@
 
 `tracker` is a command-line work tracker, written in Rust, that keeps one central list of work items across many projects and decides when an item is really done. This document covers **slice 8** of the 16 in [PLAN.md](PLAN.md): what it built, how it works, and how to test it. The earlier readmes cover the rest: [slice 1](slice-1-readme.md) the store, `create` and `list`, [slice 2](slice-2-readme.md) the states and `history`, [slice 3](slice-3-readme.md) priority, kind, labels, `edit` and `list`'s filters, [slice 4](slice-4-readme.md) `show` and `delete`, [slice 5](slice-5-readme.md) bad data and polish, [slice 6](slice-6-readme.md) criteria and gates G1, G2 and G6, and [slice 7](slice-7-readme.md) running checks, with gates G3 and G4 and `started.checks`.
 
-After slice 8 you can **get items auto-verified against a commit, with saved output and a pinned ref**. The spec is [DESIGN.md](DESIGN.md). This slice implements an item's commits and the folder rule from [§2.1](DESIGN.md#21-items), gate G5 from [§2.4](DESIGN.md#24-gates-is-it-finished) and its new paragraph "Checks leave the tree as they found it", the `auto` verification record and `refs/tracker/<ID>` from [§2.7](DESIGN.md#27-human-actions), shelving an in-progress item and deleting the ref from [§2.8](DESIGN.md#28-shelve-vs-delete), `started.head`, `verification.commit` and `verification.ref` from [§4.3](DESIGN.md#43-item-file), and [§4.4](DESIGN.md#44-handling-bad-data)'s rule for a root that isn't in a git work tree. It's tracked in `tracker` itself as item TR-4, with the binary installed from slice 7. [Review 1](reviews/slice-8-review-1.md)'s fixes are items TR-21 to TR-24 ([below](#fixes-after-review-1)).
+After slice 8 you can **get items auto-verified against a commit, with saved output and a pinned ref**. The spec is [DESIGN.md](DESIGN.md). This slice implements an item's commits and the folder rule from [§2.1](DESIGN.md#21-items), gate G5 from [§2.4](DESIGN.md#24-gates-is-it-finished) and its new paragraph "Checks leave the tree as they found it", the `auto` verification record and `refs/tracker/<ID>` from [§2.7](DESIGN.md#27-human-actions), shelving an in-progress item and deleting the ref from [§2.8](DESIGN.md#28-shelve-vs-delete), `started.head`, `verification.commit` and `verification.ref` from [§4.3](DESIGN.md#43-item-file), and [§4.4](DESIGN.md#44-handling-bad-data)'s rule for a root that isn't in a git work tree. It's tracked in `tracker` itself as item TR-4, with the binary installed from slice 7. [Review 1](reviews/slice-8-review-1.md)'s fixes are items TR-21 to TR-24 ([below](#fixes-after-review-1)), and [review 2](reviews/slice-8-review-2.md)'s are TR-25 and TR-26 ([below](#fixes-after-review-2)).
 
 | | |
 | --- | --- |
-| Status | Every _Done when_ check has a test, and so does each criterion of TR-21, TR-22 and TR-24 that has a check. TR-21's second criterion and TR-23's one are manual, with evidence quoting the passages. Every test passes, as does the test command. TR-4 is `done`, but verified `unchecked`: the installed slice 7 binary ran G3's 8 criterion checks and G4's 3 project checks at submit, but it has no G5, so TR-4's record has no `commit` or `ref`, and its `started` has no `head` ([Tracking TR-4](#tracking-tr-4)). Seven of TR-4's eight checks failed at `start`, as they should. Criterion 8's already passed, since slice 7's re-read under the lock already makes `submit` write nothing when a check edits the item file, so the start warned, and slice 11's T13 would hold such an item. From [review 1](reviews/slice-8-review-1.md), security 1, bug 2, design 1 and both test gaps are fixed, as TR-21 to TR-24. Each is `done`, verified `unchecked` by the installed slice 7 binary, which ran their checks through G3 and G4 but has no G5 ([Tracking review 1's fixes](#tracking-review-1s-fixes)). Bug 1 won't be fixed, and process 1 is settled: this slice's binary is installed once the slice is finished, not for its review fixes ([below](#fixes-after-review-1)). Still open: typing the ID into `delete` in a real terminal hasn't been checked by hand (review 1's process 2), installing this slice's binary once the slice is finished, and `Env::add_criterion`'s `--check true`, left for slice 11 ([Still open](#still-open)). PLAN.md has slice 8 as `in review`. The branch isn't merged into `main`, and neither is slice 7's, which it's stacked on. |
-| Branch | `feat/tracker/slice-8`, stacked on `feat/tracker/slice-7` at `4da3efb`. Slice 7 isn't merged into `main`, so this slice's commits are `git log --oneline --reverse feat/tracker/slice-7..feat/tracker/slice-8`, not the range from `main`'s merge base, `37abcc3`, which would include slice 7's as well. In order: `89f5797` (TR-4's tests, committed before `tracker start TR-4`), `42b0a99` (PLAN.md: slice 8 in progress), `ce56ee2` (`src/git.rs`), `1bc57a9` (G5, the `auto` record and ref, and shelving's gates), `8ba0e95` (older tests given a repository and an item commit), `e3aa24f` (tests beyond the criteria), `5195dd6` (fixture XX-19), `d6d3664` (help text and schemas), `fc890cd` (DESIGN.md), `4795629` (shelve's G5 message), `e5f37b1` (PLAN.md: slice 8 in review), `53c6b7c` (this readme's first version), `bd38b9f` (review 1), then review 1's fixes, `38a7b24` to `f13d76a` ([below](#fixes-after-review-1)), and this readme's record of them |
+| Status | Every _Done when_ check has a test, and so does each criterion of TR-21, TR-22, TR-24 and TR-25 that has a check. TR-21's second criterion, TR-23's one and TR-26's two are manual, with evidence quoting the passages. Every test passes, as does the test command. TR-4 is `done`, but verified `unchecked`: the installed slice 7 binary ran G3's 8 criterion checks and G4's 3 project checks at submit, but it has no G5, so TR-4's record has no `commit` or `ref`, and its `started` has no `head` ([Tracking TR-4](#tracking-tr-4)). Seven of TR-4's eight checks failed at `start`, as they should. Criterion 8's already passed, since slice 7's re-read under the lock already makes `submit` write nothing when a check edits the item file, so the start warned, and slice 11's T13 would hold such an item. From [review 1](reviews/slice-8-review-1.md), security 1, bug 2, design 1 and both test gaps are fixed, as TR-21 to TR-24. Each is `done`, verified `unchecked` by the installed slice 7 binary, which ran their checks through G3 and G4 but has no G5 ([Tracking review 1's fixes](#tracking-review-1s-fixes)). Bug 1 won't be fixed, and process 1 is settled: this slice's binary is installed once the slice is finished, not for its review fixes ([below](#fixes-after-review-1)). From [review 2](reviews/slice-8-review-2.md), security 1 and two of test gap 1's three cases are fixed, as TR-25, and design 1, design 2 and bug 1 are stated as limits in DESIGN.md §7, as TR-26: design 1 won't be fixed in code. Process 1 is settled, since tests are now formatted before they're committed. Both items are `done`, verified `unchecked` by the installed slice 7 binary, which ran TR-25's checks but has no G5 ([Tracking review 2's fixes](#tracking-review-2s-fixes)). Still open: typing the ID into `delete` in a real terminal hasn't been checked by hand (review 1's process 2), installing this slice's binary before TR-5 (slice 9) starts, a test of `delete`'s wording for a record with one check (review 2's test gap 1), and `Env::add_criterion`'s `--check true`, left for slice 11 ([Still open](#still-open)). PLAN.md has slice 8 as `in review`. The branch isn't merged into `main`, and neither is slice 7's, which it's stacked on. |
+| Branch | `feat/tracker/slice-8`, stacked on `feat/tracker/slice-7` at `4da3efb`. Slice 7 isn't merged into `main`, so this slice's commits are `git log --oneline --reverse feat/tracker/slice-7..feat/tracker/slice-8`, not the range from `main`'s merge base, `37abcc3`, which would include slice 7's as well. In order: `89f5797` (TR-4's tests, committed before `tracker start TR-4`), `42b0a99` (PLAN.md: slice 8 in progress), `ce56ee2` (`src/git.rs`), `1bc57a9` (G5, the `auto` record and ref, and shelving's gates), `8ba0e95` (older tests given a repository and an item commit), `e3aa24f` (tests beyond the criteria), `5195dd6` (fixture XX-19), `d6d3664` (help text and schemas), `fc890cd` (DESIGN.md), `4795629` (shelve's G5 message), `e5f37b1` (PLAN.md: slice 8 in review), `53c6b7c` (this readme's first version), `bd38b9f` (review 1), then review 1's fixes, `38a7b24` to `f13d76a` ([below](#fixes-after-review-1)), `a451606` (this readme's record of them), `9cc67c8` (review 1's Outcome), `5921f5c` (review 2), then review 2's fixes, `b508afc`, `bf9d9a7` and `157425a` (TR-25) and `0df6a97` (TR-26) ([below](#fixes-after-review-2)), and this readme's record of them |
 | Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/`. All three pass. |
-| Tests | 304: 39 in `tests/create_and_list.rs`, 34 in `tests/organise.rs`, 32 in `tests/commits.rs`, 27 in `tests/states.rs`, 25 in `tests/show_and_delete.rs`, 23 in `tests/criteria.rs`, 22 in `tests/gates.rs`, 18 in `tests/checks.rs`, 14 in `tests/item_files.rs`, 13 in `tests/bad_data.rs`, 11 in `tests/docs_links.rs`, 11 in `tests/fixtures.rs`, 9 in `tests/polish.rs`, 6 in `tests/output.rs`, 5 in `tests/schemas.rs`, 4 in `tests/store_writes.rs`, 2 in `tests/item_ids.rs`, 7 unit tests in the library (4 in `src/gates.rs`, 1 each in `src/store.rs`, `src/checks.rs` and `src/git.rs`) and 2 in `src/main.rs` |
+| Tests | 308: 39 in `tests/create_and_list.rs`, 36 in `tests/commits.rs`, 34 in `tests/organise.rs`, 27 in `tests/states.rs`, 25 in `tests/show_and_delete.rs`, 23 in `tests/criteria.rs`, 22 in `tests/gates.rs`, 18 in `tests/checks.rs`, 14 in `tests/item_files.rs`, 13 in `tests/bad_data.rs`, 11 in `tests/docs_links.rs`, 11 in `tests/fixtures.rs`, 9 in `tests/polish.rs`, 6 in `tests/output.rs`, 5 in `tests/schemas.rs`, 4 in `tests/store_writes.rs`, 2 in `tests/item_ids.rs`, 7 unit tests in the library (4 in `src/gates.rs`, 1 each in `src/store.rs`, `src/checks.rs` and `src/git.rs`) and 2 in `src/main.rs` |
 
 ## Contents
 
@@ -22,6 +22,7 @@ After slice 8 you can **get items auto-verified against a commit, with saved out
 - [Testing](#testing)
 - [Decisions worth knowing](#decisions-worth-knowing)
 - [Fixes after review 1](#fixes-after-review-1)
+- [Fixes after review 2](#fixes-after-review-2)
 - [Still open](#still-open)
 - [Limits, and what later slices change](#limits-and-what-later-slices-change)
 
@@ -30,7 +31,7 @@ After slice 8 you can **get items auto-verified against a commit, with saved out
 **Built:**
 
 - **An item's commits** are the commits reachable from `HEAD` whose header is `<type>(<ID>): …` or `<type>(<ID>)!: …`, with a lowercase type. A commit scoped to `XX-12`, one headed `XX-1: …`, one that names the ID only in its body, and one on a branch `HEAD` can't reach aren't XX-1's.
-- **G5**, on `submit`, `status <id> done` and the `gates` dry run, between G2 and G6: nothing under the project's root is uncommitted or untracked, no file under it is marked skip-worktree or assume-unchanged (TR-21), and the item has at least one commit. Files that git's ignore rules exclude, and files outside the root, don't count, so a subfolder project such as TR isn't refused for a dirty file elsewhere in the repository.
+- **G5**, on `submit`, `status <id> done` and the `gates` dry run, between G2 and G6: nothing under the project's root is uncommitted or untracked, no file under it is marked skip-worktree or assume-unchanged (TR-21), even once it's deleted, unless it's a skip-worktree file a sparse checkout left out (TR-25), and the item has at least one commit. Files that git's ignore rules exclude, and files outside the root, don't count, so a subfolder project such as TR isn't refused for a dirty file elsewhere in the repository.
 - **G5 again after the checks.** Once G3 and G4 have run, G5 looks at the tree again, and fails if a check changed or added a file under the root, or moved `HEAD`, naming only what changed. DESIGN.md §2.4 now says checks leave the tree as they found it (`fc890cd`).
 - **`start`**, and `status <id> in-progress`, record `HEAD` as `started.head`, a full SHA, left out in a repository with no commits yet.
 - **A passing submit auto-verifies.** The record is `by: "auto"`, with `commit`, the `HEAD` G5 saw, and `ref`, `refs/tracker/<ID>`, which the submit creates in the project's repository, or moves, pointing at that commit. It keeps slice 7's `checks`, with each check's result, time and last 20 lines of output, and has no `note`. A refused submit creates no ref.
@@ -106,7 +107,7 @@ git rev-parse --short refs/tracker/BM-1
 tracker show BM-1
 ```
 
-A second item whose check leaves a file in the root, and a shelve that's refused until the tree is clean and the project check passes:
+A second item whose check leaves a file in the root, and a shelve that's refused until the tree is clean and the project check passes, and again while a committed file is marked skip-worktree and deleted, which `git status` doesn't report:
 
 ```sh
 tracker create "Sort bookmarks by date"
@@ -118,6 +119,9 @@ touch broken
 tracker shelve BM-2 --reason "Needs the date field from BM-3."   # exit 2: G5 and G4
 rm broken sorted.cache
 git rm --quiet sorted.txt && git commit --quiet -m "revert(BM-2): take out the unfinished sort"
+git update-index --skip-worktree tags.txt && rm tags.txt && git status --porcelain -- .
+tracker shelve BM-2 --reason "Needs the date field from BM-3."   # exit 2: G5, tags.txt is skip-worktree
+git update-index --no-skip-worktree tags.txt && git checkout --quiet tags.txt
 tracker shelve BM-2 --reason "Needs the date field from BM-3."
 ```
 
@@ -167,31 +171,31 @@ $ tracker submit BM-1
 Running criterion 1's check: `cat tags.txt`
 Running project check: `test ! -f broken && echo all 4 tests passed`
 BM-1: in-progress → done
-Verified automatically: every gate passed at 42bc260, and refs/tracker/BM-1 keeps that commit.
+Verified automatically: every gate passed at 6c5c165, and refs/tracker/BM-1 keeps that commit.
 $ git rev-parse --short refs/tracker/BM-1
-42bc260
+6c5c165
 $ tracker show BM-1
 BM-1  Search filters bookmarks by tag
   project   BM (bookmarks)
   kind      capability
   status    done
   priority  medium
-  created   2026-11-21T14:42:45Z
-  updated   2026-11-21T14:42:45Z
+  created   2026-11-21T21:48:19Z
+  updated   2026-11-21T21:48:20Z
 
 Done when:
   1. Filtering by tag shows only tagged bookmarks
        check: cat tags.txt
 
 Started:
-  at      2026-11-21T14:42:45Z
-  head    3411502fa4d1943e4d69fc5303a7699c2c39569a
+  at      2026-11-21T21:48:19Z
+  head    bbf66d3876749a86ad6b4905146d21b7b6bf0b61
   checks  criterion 1 failed
 
 Verification:
   by      auto
-  at      2026-11-21T14:42:45Z
-  commit  42bc260a7cb587cad539066900356f5a8c223621
+  at      2026-11-21T21:48:20Z
+  commit  6c5c1654f549bc0397d9a3b00da806827adcd8cf
   ref     refs/tracker/BM-1
   checks:
     criterion 1, passed in 0s: `cat tags.txt`
@@ -200,8 +204,8 @@ Verification:
       all 4 tests passed
 
 History, oldest first (2 entries):
-  2026-11-21T14:42:45Z  start   open → in-progress  not from a terminal
-  2026-11-21T14:42:45Z  submit  in-progress → done  not from a terminal
+  2026-11-21T21:48:19Z  start   open → in-progress  not from a terminal
+  2026-11-21T21:48:20Z  submit  in-progress → done  not from a terminal
 $ tracker create "Sort bookmarks by date"
 Created BM-2: Sort bookmarks by date
 $ tracker criterion add BM-2 "Newest first by default" --check 'test -f sorted.txt && touch sorted.cache'
@@ -223,6 +227,12 @@ error: BM-2 can't be shelved while it's in progress: G5 and G4 failed. The next 
   G4  A project check failed: `test ! -f broken && echo all 4 tests passed` (exit 1). It printed nothing.
 $ rm broken sorted.cache
 $ git rm --quiet sorted.txt && git commit --quiet -m "revert(BM-2): take out the unfinished sort"
+$ git update-index --skip-worktree tags.txt && rm tags.txt && git status --porcelain -- .
+$ tracker shelve BM-2 --reason "Needs the date field from BM-3."   # exit 2: G5, tags.txt is skip-worktree
+Running project check: `test ! -f broken && echo all 4 tests passed`
+error: BM-2 can't be shelved while it's in progress: G5 failed. The next item builds on this tree, so it must be clean and pass the project checks. Nothing was changed.
+  G5  BM's root has files git is told not to look at, so G5 can't see a change to them: skip-worktree bm/tags.txt. Clear the flag with `git update-index --no-skip-worktree <file>` or `--no-assume-unchanged <file>`, then commit any change, scoped to BM-2: the next item builds on what's committed.
+$ git update-index --no-skip-worktree tags.txt && git checkout --quiet tags.txt
 $ tracker shelve BM-2 --reason "Needs the date field from BM-3."
 Running project check: `test ! -f broken && echo all 4 tests passed`
 BM-2: in-progress → shelved
@@ -252,8 +262,8 @@ $ cat $TRACKER_HOME/items/BM-1.json
   "kind": "capability",
   "status": "done",
   "priority": "medium",
-  "created": "2026-11-21T14:42:45Z",
-  "updated": "2026-11-21T14:42:45Z",
+  "created": "2026-11-21T21:48:19Z",
+  "updated": "2026-11-21T21:48:20Z",
   "criteria": [
     {
       "text": "Filtering by tag shows only tagged bookmarks",
@@ -261,8 +271,8 @@ $ cat $TRACKER_HOME/items/BM-1.json
     }
   ],
   "started": {
-    "at": "2026-11-21T14:42:45Z",
-    "head": "3411502fa4d1943e4d69fc5303a7699c2c39569a",
+    "at": "2026-11-21T21:48:19Z",
+    "head": "bbf66d3876749a86ad6b4905146d21b7b6bf0b61",
     "checks": [
       {
         "criterion": 1,
@@ -272,8 +282,8 @@ $ cat $TRACKER_HOME/items/BM-1.json
   },
   "verification": {
     "by": "auto",
-    "at": "2026-11-21T14:42:45Z",
-    "commit": "42bc260a7cb587cad539066900356f5a8c223621",
+    "at": "2026-11-21T21:48:20Z",
+    "commit": "6c5c1654f549bc0397d9a3b00da806827adcd8cf",
     "ref": "refs/tracker/BM-1",
     "checks": [
       {
@@ -293,14 +303,14 @@ $ cat $TRACKER_HOME/items/BM-1.json
   },
   "history": [
     {
-      "at": "2026-11-21T14:42:45Z",
+      "at": "2026-11-21T21:48:19Z",
       "from": "open",
       "to": "in-progress",
       "via": "start",
       "interactive": false
     },
     {
-      "at": "2026-11-21T14:42:45Z",
+      "at": "2026-11-21T21:48:20Z",
       "from": "in-progress",
       "to": "done",
       "via": "submit",
@@ -318,6 +328,7 @@ Notes on the output:
 - After the `BM-1: filter by tag` commit the tree is clean, so only the missing item commit is left. Amending its message makes it BM-1's.
 - `start BM-2` ran the check once, and it failed before `sorted.txt` existed, so it left nothing. At the submit it passed and left `sorted.cache`, which G5's second look names, and G3 passes.
 - The refused shelve names `sorted.cache` again: it's still there, and the next item would build on it. The revert commit is scoped to BM-2, as DESIGN.md §2.8 asks.
+- After `tags.txt` is marked skip-worktree and deleted, `git status --porcelain -- .` prints nothing, so G5's uncommitted-files check sees nothing either. G5 asks `git ls-files -v` too, and refuses the shelve for the flag, though the file is gone (TR-25). G4 passes, since `broken` is gone. Once the flag is cleared and the file checked out again, the shelve goes ahead.
 - `start PL-1` refuses before any check runs, and PL-1 stays open with no `started`.
 - History says `"interactive": false` because the demo ran from a script. Typed at a terminal, it's `true`.
 
@@ -352,7 +363,7 @@ Exit codes in this slice, as [§3](DESIGN.md#3-interface) defines them:
 - `require_work_tree`: `git rev-parse --is-inside-work-tree`. Anything but `true` is exit 3, with the message the demo shows.
 - `head`: `git rev-parse --verify --quiet HEAD^{commit}`, the full SHA, or `None` in a repository with no commits.
 - `uncommitted`: `git status --porcelain=v1 -z --untracked-files=all -- .`, run in the root, so only files under it are listed, by their path from the repository's top, each as `untracked`, `modified`, `deleted`, `added`, `renamed`, `copied` or `unmerged`. `-z` keeps names exactly, and `--untracked-files=all` names each file in an untracked folder. Git's own ignore rules apply, so a file excluded by `.git/info/exclude` or `core.excludesFile` isn't listed either ([§7](DESIGN.md#7-honest-limits)).
-- `hidden` (TR-21): `git rev-parse --show-prefix` and `git ls-files -v -z -- .`, run in the root. It lists each file tagged `S` or `s` as `skip-worktree`, and any other tag with a lower-case letter as `assume-unchanged`, by its path from the repository's top, as `uncommitted` names them. A file that isn't on disk, such as one a sparse checkout skipped, isn't listed, since it can't hold a change.
+- `hidden` (TR-21): `git rev-parse --show-prefix` and `git ls-files -v -z -- .`, run in the root. It lists each file tagged `S` or `s` as `skip-worktree`, and any other tag with a lower-case letter as `assume-unchanged`, by its path from the repository's top, as `uncommitted` names them. A flagged file is listed whether or not it's on disk, since `git status` doesn't report its deletion either (TR-25). The one exception is a skip-worktree file that isn't on disk while `git config --bool --default false core.sparseCheckout` prints `true`, since that's how a sparse checkout leaves files out. An assume-unchanged file that isn't on disk is listed even then.
 - `is_item_header`: whether a commit's first line is `^[a-z]+\(<ID>\)!?: `, matched by hand, a byte at a time, rather than with the `regex` crate.
 - `item_commits`: `git log -z --format=%H%n%B HEAD`, keeping the SHAs whose header `is_item_header` accepts, newest first. It reads every commit reachable from `HEAD`, not only those that touch the root, as §2.1 defines an item's commits.
 - `ref_name`, `set_ref` (`git update-ref`), `ref_exists` (`git show-ref --verify --quiet`) and `delete_ref` (`git update-ref -d`), for `refs/tracker/<ID>`.
@@ -379,7 +390,7 @@ Exit codes in this slice, as [§3](DESIGN.md#3-interface) defines them:
 - It runs `git::uncommitted` again, and fails G5 for each file not in `Report::uncommitted`, so a file that was already there isn't named twice: "The checks left … under XX's root. A check must leave the tree as it found it…".
 - It reads `HEAD` again, and fails G5 if it isn't `Report::head`: "HEAD moved from … to … while the checks ran…". So the recorded commit is the one the checks ran against.
 - If the root can't be found, it does nothing, since G5 has already failed.
-- It doesn't ask `git::hidden` again, so a check that marks a file skip-worktree and changes it isn't caught by the second look.
+- It doesn't ask `git::hidden` again, so a check that marks a file skip-worktree and changes it isn't caught by the second look. §7's "G5's second look doesn't ask about the flags" states this (TR-26, review 2's design 1).
 
 The `gates` list still names G5 once, at its place after G2. A failure from the second look goes into `failures` with `gate: "G5"`, so G5 is listed with `ok: false`.
 
@@ -438,21 +449,21 @@ G3 doesn't run: the item's own tests were committed before `start` and still fai
 
 | File | What's new or changed |
 | --- | --- |
-| [src/git.rs](../src/git.rs) | New (`ce56ee2`). `git`, `require_work_tree`, `head`, `uncommitted`, `is_item_header`, `item_commits`, `ref_name`, `set_ref`, `ref_exists`, `delete_ref`, `LISTED_FILES`, and the unit test `a_header_is_scoped_to_an_item_only_by_its_conventional_commit_scope`. For TR-21, `hidden`, and `uncommitted`'s comment on git's ignore rules |
+| [src/git.rs](../src/git.rs) | New (`ce56ee2`). `git`, `require_work_tree`, `head`, `uncommitted`, `is_item_header`, `item_commits`, `ref_name`, `set_ref`, `ref_exists`, `delete_ref`, `LISTED_FILES`, and the unit test `a_header_is_scoped_to_an_item_only_by_its_conventional_commit_scope`. For TR-21, `hidden`, and `uncommitted`'s comment on git's ignore rules. For TR-25 (`bf9d9a7`), `hidden` lists a flagged file that isn't on disk, unless it's skip-worktree and `core.sparseCheckout` is true |
 | [src/gates.rs](../src/gates.rs) | `Report::head` and `uncommitted`, `Run::Shelve` and its refusal message, `statics` (now G2, G5, G6, returning a `Result`), `g5`, `tree_after_checks`, `short`, `uncommitted_list`, `g5_failure`, `scripts` split into `g3` and `g4`, `head_at_start`, and `root` made public. For TR-21, `g5`'s failure for `git::hidden`'s files |
 | [src/main.rs](../src/main.rs) | `apply`: `head` at start, G5 and `tree_after_checks` at submit, `git::set_ref`, the `auto` record, and the in-progress shelve arm. `gates_dry_run` runs `tree_after_checks`. `show` calls the new `started_text` and `verification_text`, which replaces `verification_rows`. `delete` calls the new `ref_to_delete` and `git::delete_ref`, and `deletion_warning` takes `has_ref`. Help text for `start`, `submit` and `shelve`. For TR-22, `deletion_warning`'s `unchecked` arm counts the record's checks |
 | [src/item.rs](../src/item.rs) | `Started::head`, `Verification::commit` and `Verification::git_ref` (serialised as `ref`), each with a serde default and `skip_serializing_if` |
 | [src/states.rs](../src/states.rs) | `UNCHECKED_NOTE` removed |
 | [src/lib.rs](../src/lib.rs) | `pub mod git` |
 | [schemas/](../schemas/) | `item`, `error` and `submit`, as [above](#json-output) |
-| [tests/commits.rs](../tests/commits.rs) | New: 17 tests for TR-4's eight criteria (`89f5797`) and 7 more (`e3aa24f`), with `env_with_repo`, `env_with_item`, `env_ready_to_submit`, `set_project`, `g5_failures`, `g5_passes` and `check_that_edits`. Then 2 for TR-21 (`38a7b24`, formatted in `24e2906`) and 6 for TR-24 (`f13d76a`), with `ref_target`, `env_submitted_and_reopened`, `env_with_a_check_that_leaves_a_file` and `the_checks_left_a_file` |
+| [tests/commits.rs](../tests/commits.rs) | New: 17 tests for TR-4's eight criteria (`89f5797`) and 7 more (`e3aa24f`), with `env_with_repo`, `env_with_item`, `env_ready_to_submit`, `set_project`, `g5_failures`, `g5_passes` and `check_that_edits`. Then 2 for TR-21 (`38a7b24`, formatted in `24e2906`) and 6 for TR-24 (`f13d76a`), with `ref_target`, `env_submitted_and_reopened`, `env_with_a_check_that_leaves_a_file` and `the_checks_left_a_file`. Then 4 for TR-25 (`b508afc`), with `g5_failures_for_a_deleted_file_marked`, and the end of TR-21's `g5_fails_for_a_file_marked_skip_worktree` made a sparse checkout |
 | [tests/show_and_delete.rs](../tests/show_and_delete.rs) | For TR-22, `delete_says_how_many_checks_an_unchecked_record_ran` (`eb999aa`) |
 | [tests/common/mod.rs](../tests/common/mod.rs) | `git`, `git_ok`, `git_init` and `git_commit_all`. `Env::without_store` makes the work folder a repository, `create_bare` commits after creating, and `commit_for` commits again ([Testing](#testing)) |
 | [tests/fixtures.rs](../tests/fixtures.rs), `tests/fixtures/slice-8/` | XX-19 and `slice_8s_xx_19_has_a_commit_and_a_ref_and_comes_back_byte_for_byte` (`5195dd6`) |
-| [docs/DESIGN.md](DESIGN.md) | `fc890cd`: §2.4's "Checks leave the tree as they found it", §2.7's ref left when the root can't be found, §2.8's shelve refusal and re-read, §3's refusal list, §4.3's `head`, `commit` and `ref` bullet and `note`, §4.4's exit-3 list, and §7's limit on interrupting `tracker`, which now names shelving. For TR-21, `782ac86`: §2.4's G5 row and "Checks leave the tree as they found it" say "git ignores" for "`.gitignore` excludes", name the two flags, and send git's exclude files to a new §7 limit, "G5 trusts git's ignore rules, and two of them leave no trace". For TR-23, `5eac0b0`: a §7 limit, "Nothing protects `refs/tracker/<ID>`" |
+| [docs/DESIGN.md](DESIGN.md) | `fc890cd`: §2.4's "Checks leave the tree as they found it", §2.7's ref left when the root can't be found, §2.8's shelve refusal and re-read, §3's refusal list, §4.3's `head`, `commit` and `ref` bullet and `note`, §4.4's exit-3 list, and §7's limit on interrupting `tracker`, which now names shelving. For TR-21, `782ac86`: §2.4's G5 row and "Checks leave the tree as they found it" say "git ignores" for "`.gitignore` excludes", name the two flags, and send git's exclude files to a new §7 limit, "G5 trusts git's ignore rules, and two of them leave no trace". For TR-23, `5eac0b0`: a §7 limit, "Nothing protects `refs/tracker/<ID>`". For TR-25, `157425a`: §2.4's G5 row says a flagged file fails G5 even once it's deleted, except a skip-worktree file that isn't on disk in a sparse checkout. For TR-26, `0df6a97`: two §7 limits, "G5's second look doesn't ask about the flags" and "Some repositories defeat G5's reading of git" |
 | [docs/PLAN.md](PLAN.md) | Slice 8's status, `todo` to `in progress` (`42b0a99`) to `in review` (`e5f37b1`). For TR-23, `5eac0b0`: a _Done when_ line in slice 16 for `audit` to report a done `auto` or `human` item whose ref is missing or doesn't point at its `commit` |
 
-To run git from another command, such as slice 9's `approve` or slice 10's changed files: add a function to `src/git.rs` that goes through its `git` helper, so a failure exits 3 the same way, and call it with the root from `gates::root`. To re-run G5 after checks, as `approve` must, call `gates::g5` before letting the lock go and `gates::tree_after_checks` after the checks, as `apply`'s submit arm does. `gates::g5` brings TR-21's check of the skip-worktree and assume-unchanged flags with it.
+To run git from another command, such as slice 9's `approve` or slice 10's changed files: add a function to `src/git.rs` that goes through its `git` helper, so a failure exits 3 the same way, and call it with the root from `gates::root`. To re-run G5 after checks, as `approve` must, call `gates::g5` before letting the lock go and `gates::tree_after_checks` after the checks, as `apply`'s submit arm does. `gates::g5` brings TR-21's check of the skip-worktree and assume-unchanged flags with it, and TR-25's for a flagged file that's been deleted.
 
 ## Testing
 
@@ -470,13 +481,13 @@ The harness changed for every other test file too. G5 now runs on every `submit`
 
 | _Done when_ | Tests in `tests/commits.rs` |
 | --- | --- |
-| In a throwaway repo, an uncommitted change fails G5, and so does an untracked file. | `g5_fails_for_an_uncommitted_change`: an unstaged change to `xx/a.txt`, then the same change staged, each one G5 failure naming it, then committed, passing. `g5_fails_for_an_untracked_file`: `src/helper.rs` in a new folder, named by its own path, not its folder's |
-| An ignored file doesn't fail it, and neither does a dirty file outside a subfolder project's root. | `g5_ignores_an_ignored_file`: `debug.log` under `*.log`. `g5_ignores_a_dirty_file_outside_a_subfolder_projects_root`: a changed `other/notes.txt`, a new `other/new.txt` and a new `top.txt` pass, then `xx/new.txt` fails, and the message names none of the others |
+| In a throwaway repo, an uncommitted change fails G5, and so does an untracked file. | `g5_fails_for_an_uncommitted_change`: an unstaged change to `xx/a.txt`, then the same change staged, each one G5 failure naming it, then committed, passing. `g5_fails_for_an_untracked_file`: `src/helper.rs` in a new folder, named by its own path, not its folder's. From TR-21, a change git is told not to look at: `g5_fails_for_a_file_marked_skip_worktree` and `g5_fails_for_a_file_marked_assume_unchanged`. From TR-25, such a file deleted: `g5_fails_for_a_deleted_file_marked_skip_worktree` and `g5_fails_for_a_deleted_file_marked_assume_unchanged`, each with `git status --porcelain` printing nothing and G5 failing once, naming the flag and `xx/a.txt` |
+| An ignored file doesn't fail it, and neither does a dirty file outside a subfolder project's root. | `g5_ignores_an_ignored_file`: `debug.log` under `*.log`. `g5_ignores_a_dirty_file_outside_a_subfolder_projects_root`: a changed `other/notes.txt`, a new `other/new.txt` and a new `top.txt` pass, then `xx/new.txt` fails, and the message names none of the others. From TR-25, `g5_ignores_a_flagged_file_outside_a_subfolder_projects_root`: `other/notes.txt` marked skip-worktree and changed passes |
 | `feat(XX-1): …` and `fix(XX-1)!: …` count as XX-1's commits. | `a_feat_commit_scoped_to_the_item_counts_as_its_commit`, `a_breaking_fix_commit_scoped_to_the_item_counts_as_its_commit`: "has no commits" before, a pass after |
 | These don't: a commit scoped to `XX-12`, one headed `XX-1: …`, one that names XX-1 only in its body, a `feat(XX-1)` commit on another branch. | `a_commit_scoped_to_another_item_doesnt_count_as_its_commit`, `a_commit_headed_with_the_bare_id_doesnt_count_as_its_commit`, `a_commit_naming_the_item_only_in_its_body_doesnt_count_as_its_commit` (the body holds a whole `feat(XX-1): …` line), `a_commit_on_another_branch_doesnt_count_as_its_commit`, which then fast-forwards `main` to it and passes. Each fails G5 for "has no commits" and nothing else |
 | A passing submit records the SHA and each check's result, duration and output, and creates the ref. Deleting the item removes the ref. | `a_passing_submit_records_the_commit_and_each_checks_result_and_creates_the_ref`: `auto`, the work's SHA, `refs/tracker/XX-1`, no `note`, and both checks with `criterion`, `cmd`, `ok`, `secs` and `output`, in the JSON and the file, with the ref at that SHA. `a_passing_submits_ref_is_removed_when_the_item_is_deleted`: under `script`, the prompt names the ref, the file and the ref are gone, and the commit stays on `main`. From TR-24: `a_second_verification_moves_the_ref_to_the_new_commit` and `delete_removes_a_ref_named_only_by_previous_verification` |
 | The commit is still readable after its branch is rebased away and `git gc --prune=now` runs. After the test is renamed, `show` still prints the saved output. | `the_verified_commit_outlives_a_rebase_and_gc`: verified on branch `work`, which is rebased onto a moved `main`. After `reflog expire` and `gc --prune=now`, a scratch commit nothing points to is gone, which shows the gc pruned, but the verified commit and its `xx/done.txt` are still readable. `the_saved_output_shows_after_the_test_is_renamed`: after `git mv` to `tests/tag_filter.sh`, `show` prints `test filters_by_tag ... ok` and the old command, and nothing of `tag_filter` |
-| Shelving an in-progress item is refused while the tree is dirty or a project check fails, and allowed once both are fixed. | `shelving_an_in_progress_item_is_refused_while_the_tree_is_dirty_or_a_project_check_fails`: an untracked `broken`, which also fails the project check `test ! -f broken`, fails G5 and G4. Committed, only G4 fails. Removed but not committed, only G5 fails, naming `xx/broken`. The file is unchanged after each. Committed as `revert(XX-1): …`, the shelve goes ahead. From TR-24: `status_shelved_on_an_in_progress_item_is_refused_while_the_tree_is_dirty` and `an_in_progress_shelve_fails_g5_for_a_file_the_checks_leave` |
+| Shelving an in-progress item is refused while the tree is dirty or a project check fails, and allowed once both are fixed. | `shelving_an_in_progress_item_is_refused_while_the_tree_is_dirty_or_a_project_check_fails`: an untracked `broken`, which also fails the project check `test ! -f broken`, fails G5 and G4. Committed, only G4 fails. Removed but not committed, only G5 fails, naming `xx/broken`. The file is unchanged after each. Committed as `revert(XX-1): …`, the shelve goes ahead. From TR-24: `status_shelved_on_an_in_progress_item_is_refused_while_the_tree_is_dirty` and `an_in_progress_shelve_fails_g5_for_a_file_the_checks_leave`. From TR-25: `an_in_progress_shelve_is_refused_for_a_flagged_file_under_the_root`, with `xx/a.txt` marked assume-unchanged and changed, and the item file unchanged |
 | If a check edits the item file while the gates run, `submit` writes nothing and exits 1. | `submit_writes_nothing_when_a_criterion_check_edits_the_item_file`, `submit_writes_nothing_when_a_project_check_edits_the_item_file`: a check that runs `tracker edit XX-1 --priority high` once a file outside the repository exists. Exit 1, "changed while its checks ran", the edit kept, no verification record, no new history entry but the edit's, and no ref |
 
 The eight criteria's 17 tests were committed in `89f5797`, 24 seconds before `tracker start TR-4`, which recorded criteria 1–7 as failing and criterion 8 as passing ([Tracking TR-4](#tracking-tr-4)). The code came in `ce56ee2` and `1bc57a9`.
@@ -500,7 +511,7 @@ Elsewhere:
 - `src/git.rs` `a_header_is_scoped_to_an_item_only_by_its_conventional_commit_scope`: three headers that match, and eleven that don't, such as `feat(BM-1):add search`, `Feat(BM-1): …`, `feat(bm-1): …`, `feat(BM-1)!!: …` and one with a leading space.
 - `tests/fixtures/slice-8/XX-19.json`, written by this branch's binary: done, `auto`, with `started.head`, `commit` and `ref`, a criterion check naming criterion 1 and a project check. `slice_8s_xx_19_has_a_commit_and_a_ref_and_comes_back_byte_for_byte` checks that the folder holds only it, its values, the order of `started`'s fields (`at`, `head`, `checks`) and the record's (`by`, `at`, `commit`, `ref`, `checks`), and that it comes back byte for byte with nothing lost on rewrite. The existing fixture tests load and rewrite it too, and slice 7's fixtures still load unchanged.
 
-Until review 1, four cases had no test: that a second verification moves the ref to the new commit, that `delete` removes a ref named only by `previous_verification`, `status <id> shelved` on a dirty tree, and a repository with no commits, where `started.head` is left out. Nor did G5's second look in `gates` and in an in-progress shelve. TR-24 tests all six, and TR-21 and TR-22 add three more ([Fixes after review 1](#fixes-after-review-1)).
+Until review 1, four cases had no test: that a second verification moves the ref to the new commit, that `delete` removes a ref named only by `previous_verification`, `status <id> shelved` on a dirty tree, and a repository with no commits, where `started.head` is left out. Nor did G5's second look in `gates` and in an in-progress shelve. TR-24 tests all six, and TR-21 and TR-22 add three more ([Fixes after review 1](#fixes-after-review-1)). Review 2's test gap 1 named three corners of those fixes that worked only by hand. TR-25 tests two of them, a flagged file outside the root and an in-progress shelve refused for a flagged file, and adds two for a flagged file that's deleted ([Fixes after review 2](#fixes-after-review-2)). The third, `deletion_warning`'s wording for a record with exactly one check, still has no test.
 
 ### Older tests that changed
 
@@ -577,6 +588,26 @@ So:
 - Each criterion check's filter matches what it names: TR-21's `g5_fails_for_a_file_marked` and TR-24's `fails_g5_for_a_file_the_checks_leave` match two tests each, and the others one each.
 - Every commit since review 1 is scoped to one of the four. `bd38b9f` came before TR-21's start, while no item was in progress.
 
+### Tracking review 2's fixes
+
+Review 2 was committed in `5921f5c` at 2026-11-21T15:43:36Z, and its fixes were created in the same second, as TR-25 and TR-26, each naming the review and its findings in its description. Each was tracked with the installed slice 7 binary, one at a time, as review 1's fixes were:
+
+| Item | Kind | For | Tests committed | Started | Fix | Submitted |
+| --- | --- | --- | --- | --- | --- | --- |
+| TR-25 | `fix` | security 1 and test gap 1 | `b508afc`, 15:45:26Z | 15:45:33Z | `bf9d9a7` and `157425a`, both at 15:45:57Z | 15:49:44Z |
+| TR-26 | `change` | design 1, design 2 and bug 1 | none: docs only | 15:50:01Z | `0df6a97`, 15:50:28Z | 15:53:36Z |
+
+So:
+
+- **Each reached done `unchecked`**, with slice 7's note. The slice 7 binary ran G3, TR-25's three criterion checks, and G4, TR's `cargo fmt --check`, `cargo clippy -- -D warnings` and `cargo test`, which took 57 seconds for TR-25 and 59 for TR-26. It has no G5, so neither record has a `commit` or a `ref`, neither `started` has a `head`, and nothing checked that the tree was clean at the submits. After the last, all 308 tests pass.
+- **TR-25's criterion 1 failed at start, and criteria 2 and 3 passed**, as `started.checks` records, so the start warned about those two, and slice 11's T13 would hold the item. Criterion 2's test is TR-21's, which passed before the fix too, and criterion 3's tests cover code that already worked. Each was seen failing against code broken on purpose, then restored ([Test gaps](#test-gaps-1)). For this readme, the runs were made again in copies outside the repo. With `b508afc`'s files, both of criterion 1's tests fail where `g5_failures` expects `gates` to exit 2, and the other three pass. With `0df6a97`'s files and `hidden`'s sparse-checkout exception taken out, `g5_fails_for_a_file_marked_skip_worktree` fails. With `ls-files`' pathspec changed from `.` to `:/`, `g5_ignores_a_flagged_file_outside_a_subfolder_projects_root` fails. With `hidden` returning nothing, `an_in_progress_shelve_is_refused_for_a_flagged_file_under_the_root` fails.
+- **`b508afc` changed lines in an existing test**, TR-21's `g5_fails_for_a_file_marked_skip_worktree`. Its last case asserted that a skip-worktree file deleted in an ordinary repository passes, which TR-25 makes untrue, so it now sets `core.sparseCheckout true` first, with a comment saying why. That's DESIGN.md §5's "fix it and say so" case, and it's criterion 2's test. It was committed before the start, and slice 10's T4 would hold TR-25 for it.
+- **`157425a` isn't asked for by a criterion.** §2.4's G5 row said a skipped file that isn't on disk passes, which the fix made untrue, so it says now what the code does.
+- **TR-26's two criteria are manual**, each with evidence quoting the §7 bullet it names. It changes docs only, so it has no `started.checks` and nothing to see fail. Its commit came 27 seconds after its start. Slice 9's T6 would hold it.
+- Each criterion check's filter matches what it names: `g5_fails_for_a_deleted_file_marked` and `flagged_file` match two tests each, and `g5_fails_for_a_file_marked_skip_worktree` one, as their saved output shows.
+- `b508afc` passes `cargo fmt --check`, so no commit since TR-25's start reformats a test (review 2's process 1).
+- Every commit since review 2 is scoped to one of the two. The unscoped `a451606` and `9cc67c8`, at 15:32:38Z, and `5921f5c` came after TR-24's submit and before TR-25's start, while no item was in progress.
+
 ## Decisions worth knowing
 
 - **G5 looks at the tree again after the checks** (the [Slice 8 must decide](reviews/slice-7-review-1.md#slice-8-must-decide) lists of slice 7's [review 1](reviews/slice-7-review-1.md) and [review 2](reviews/slice-7-review-2.md#slice-8-must-decide)). A check that leaves a file, or commits, fails this submit rather than the next one, or the next item's shelve. §2.4 says checks leave the tree as they found it, and that a check that needs to write does so outside the root or to an ignored file, as `cargo test` does under `target/`.
@@ -593,11 +624,13 @@ So:
 - **`ref_to_delete` asks git only when a record names a ref**, so deleting an item that was never verified `auto` needs no git, and works for an item whose root has gone.
 - **No command writes `unchecked` now.** `UNCHECKED_NOTE` is removed. Records written before this slice keep their note, whichever slice's wording it has, and still load unchanged. `auto` records have no `note`.
 - **`show` says a previous record's criteria are numbered as at that submit** (slice 7 review 2's finding 2), next to its heading.
-- **G5 fails a file marked skip-worktree or assume-unchanged** (TR-21, review 1's security 1), since `git status` can't see a change to it, so it could hold work no commit has. A skipped file that isn't on disk passes, so a sparse checkout isn't refused.
+- **G5 fails a file marked skip-worktree or assume-unchanged** (TR-21, review 1's security 1), since `git status` can't see a change to it, so it could hold work no commit has. It fails even once it's deleted (TR-25, review 2's security 1), since `git status` doesn't report that either, so a failing test can't be hidden by flagging it and removing it. The one exception is a skip-worktree file that isn't on disk while `core.sparseCheckout` is true, so a sparse checkout isn't refused. Review 2's option (a) was taken over listing every flagged file and refusing sparse checkouts, at the cost of one more git call.
+- **G5's second look doesn't ask about the flags** (review 2's design 1, won't fix in code). A check that marks a file skip-worktree and changes it passes the submit, and the next item's G5, or a shelve, refuses it. It's very unlikely: no honest check sets the flag, short of a tool that manages a sparse checkout, and a check meant to cheat doesn't need it. §7 states it (TR-26).
+- **G5 refuses a repository with `core.ignoreStat=true`, and exits 3 for a committed file name that isn't UTF-8**, and §7 states both (TR-26, review 2's design 2 and bug 1). Refusing is right where `git status` can't see changes. The file name case can't happen on macOS, and fails closed, naming the git command, so `hidden` still reads `ls-files` as UTF-8.
 - **G5 still trusts git's exclude files.** A file excluded by `.git/info/exclude` or `core.excludesFile` counts as ignored, though no commit shows the rule. A global ignore is ordinary, so §2.4 and §7 state the limit rather than close it (TR-21).
 - **`delete`'s warning for an `unchecked` record says how many checks ran** (TR-22, review 1's bug 2), rather than leaving it to slice 16, since slice 8 already changed that function. Records from before slice 7 still get "no checks ran".
 - **Nothing protects `refs/tracker/<ID>`**, and §7 says so (TR-23, review 1's design 1). Slice 16's `audit` is where a missing or moved ref is reported, and PLAN.md's slice 16 _Done when_ now asks for it.
-- **Review 1's fixes were tracked by the slice 7 binary**, as slice 7's were by slice 6's (review 1's process 1). This slice's binary is installed once the slice is finished, so TR-5 (slice 9) is the first TR item G5 judges.
+- **Review 1's and review 2's fixes were tracked by the slice 7 binary**, as slice 7's were by slice 6's (review 1's process 1). This slice's binary is installed once the slice is finished, so TR-5 (slice 9) is the first TR item G5 judges.
 - **Tests read no git config of the developer's**, through `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1`. `tracker` itself does read the user's git config, except `log.showSignature` and `core.quotePath`, which `git::git` turns off.
 
 ## Fixes after review 1
@@ -615,7 +648,7 @@ So:
 
 | Finding | Commit | Fix | Tests |
 | --- | --- | --- | --- |
-| Security 1: work hidden from git with `--skip-worktree`, `--assume-unchanged` or `.git/info/exclude` passed G5 | `64fe658`, `782ac86` (TR-21) | Option (a). The new `git::hidden` runs `git rev-parse --show-prefix` and `git ls-files -v -z -- .` and lists each skip-worktree (`S` or `s`) or assume-unchanged (lower-case) file that's on disk, and `g5` adds a failure naming them, on submit, `gates` and an in-progress shelve. A skipped file that isn't on disk, as in a sparse checkout, passes. Git's exclude files are left open as a stated limit: §2.4's G5 row says "ignored" means git's own ignore rules, `.git/info/exclude` and `core.excludesFile` included, and a new §7 bullet, "G5 trusts git's ignore rules, and two of them leave no trace", says what that can hide. `24e2906` formatted the first test commit | `g5_fails_for_a_file_marked_skip_worktree`: a changed `xx/a.txt` that `git status --porcelain` doesn't show fails G5 once, naming `skip-worktree xx/a.txt`, then passes once the file is removed. `g5_fails_for_a_file_marked_assume_unchanged`: the same with `assume-unchanged xx/a.txt`, then passes once the flag is cleared and the change committed. Before the fix, `gates` passed for both. The exclude files aren't tested: they're a limit, not a check |
+| Security 1: work hidden from git with `--skip-worktree`, `--assume-unchanged` or `.git/info/exclude` passed G5 | `64fe658`, `782ac86` (TR-21) | Option (a). The new `git::hidden` runs `git rev-parse --show-prefix` and `git ls-files -v -z -- .` and lists each skip-worktree (`S` or `s`) or assume-unchanged (lower-case) file that's on disk, and `g5` adds a failure naming them, on submit, `gates` and an in-progress shelve. A skipped file that isn't on disk, as in a sparse checkout, passed, and so did an assume-unchanged one: review 2's security 1, which TR-25 fixes ([below](#security-items-1)). Git's exclude files are left open as a stated limit: §2.4's G5 row says "ignored" means git's own ignore rules, `.git/info/exclude` and `core.excludesFile` included, and a new §7 bullet, "G5 trusts git's ignore rules, and two of them leave no trace", says what that can hide. `24e2906` formatted the first test commit | `g5_fails_for_a_file_marked_skip_worktree`: a changed `xx/a.txt` that `git status --porcelain` doesn't show fails G5 once, naming `skip-worktree xx/a.txt`, then passes once the file is removed. `g5_fails_for_a_file_marked_assume_unchanged`: the same with `assume-unchanged xx/a.txt`, then passes once the flag is cleared and the change committed. Before the fix, `gates` passed for both. The exclude files aren't tested: they're a limit, not a check |
 
 ### Design decisions
 
@@ -641,25 +674,70 @@ The review's [Slice 9 must decide](reviews/slice-8-review-1.md#slice-9-must-deci
 
 A few consequences:
 
-- `submit`, `gates` and an in-progress shelve refuse, under G5, a file under the root that's marked skip-worktree or assume-unchanged and is on disk.
+- `submit`, `gates` and an in-progress shelve refuse, under G5, a file under the root that's marked skip-worktree or assume-unchanged and is on disk. Since TR-25, they refuse one that isn't on disk too, outside a sparse checkout.
 - `delete`'s warning for a record the slice 7 binary wrote, such as TR-1's or TR-4's, says how many checks ran and passed, and that no commit records them.
-- The Try it output is unchanged, apart from the SHAs and times that change on every run: no step marks a file or deletes an `unchecked` item.
+- The Try it output didn't change with these fixes, apart from the SHAs and times that change on every run: no step marked a file or deleted an `unchecked` item. Review 2's update adds a step that marks one ([below](#fixes-after-review-2)).
+
+## Fixes after review 2
+
+[Review 2](reviews/slice-8-review-2.md) found that every fix in review 1's Outcome is in the code, with a test, and found one bug, one security issue, two places where the design was unclear, one test gap and one process note. Security 1 and test gap 1 became TR-25, with its tests committed before `tracker start`, and design 1, design 2 and bug 1 became TR-26, which changes docs only ([Tracking review 2's fixes](#tracking-review-2s-fixes)). Design 1 won't be fixed in code, only stated. Process 1 is settled by formatting tests before they're committed. The review's [Outcome](reviews/slice-8-review-2.md#outcome) records the same decisions.
+
+### Low severity
+
+| Finding | Commit | Fix | Tests |
+| --- | --- | --- | --- |
+| Bug 1: a committed file under the root whose name isn't UTF-8 makes every G5 exit 3, since TR-21 | `0df6a97` (TR-26) | Option (b), in docs only. §7's "Some repositories defeat G5's reading of git" says tracker reads git's output as UTF-8 while G5 lists every tracked file under the root, so such a name makes G5 exit 3 for every `gates`, `submit` and in-progress shelve until the file is renamed, that macOS's file system refuses such a name, and that it fails closed, naming the git command. `hidden` still reads `ls-files` as UTF-8 | None: a stated limit |
+
+### Security items
+
+| Finding | Commit | Fix | Tests |
+| --- | --- | --- | --- |
+| Security 1: a flagged file that's been deleted passes G5, so a failing test can be hidden from the checks and still be in the verified commit | `b508afc`, `bf9d9a7`, `157425a` (TR-25) | Option (a). `git::hidden` lists every flagged file under the root, on disk or not, except a skip-worktree file that isn't on disk while `git config --bool --default false core.sparseCheckout` is `true`. §2.4's G5 row says a flagged file fails G5 even once it's deleted, since `git status` doesn't report its deletion either, except that one, which passes. TR-21's skip-worktree test asserted the old behaviour at its end, so it now makes its repository a sparse checkout first | `g5_fails_for_a_deleted_file_marked_skip_worktree` and `g5_fails_for_a_deleted_file_marked_assume_unchanged`: `xx/a.txt` committed, flagged and deleted, with `git status --porcelain` printing nothing, fails G5 once, naming the flag and the file. Seen failing at start, before the fix. `g5_fails_for_a_file_marked_skip_worktree`'s last case: the deleted file passes once `core.sparseCheckout` is true. Seen failing with `hidden`'s sparse-checkout exception taken out |
+
+### Design decisions
+
+| Question | Decision | Commits |
+| --- | --- | --- |
+| Design 1: a check that marks a file skip-worktree and changes it passes G5's second look, though §2.4 says a check that changes a file under the root fails G5 | Won't fix in code: `tree_after_checks` still doesn't ask `git::hidden`. It's very unlikely: no honest check sets the flag, a check meant to cheat doesn't need it, and the next item's G5, or a shelve, refuses the flagged file. The proof isn't weakened, since the check's command is in the record. A §7 bullet, "G5's second look doesn't ask about the flags", says all of this | `0df6a97` (TR-26) |
+| Design 2: in a repository with `core.ignoreStat` set, G5 refuses every submit, and its advice can't be followed | Option (a), in docs only. §7's "Some repositories defeat G5's reading of git" says `core.ignoreStat=true` flags every committed file under the root, so G5 refuses every submit, that clearing the flags doesn't help since the next commit sets them again, so the setting has to be turned off, and that refusing is right, since `git status` can't see changes there. `g5` doesn't detect the setting | `0df6a97` (TR-26) |
+
+### Test gaps
+
+| Finding | Commit | Fix | Tests |
+| --- | --- | --- | --- |
+| Test gap 1: three corners of TR-21's and TR-22's fixes work by hand but have no test | `b508afc` (TR-25) | Two of the three, added with security 1's tests, as the review suggests. The code already worked. The third, `deletion_warning`'s one-check wording, still has no test ([Still open](#still-open)) | `g5_ignores_a_flagged_file_outside_a_subfolder_projects_root`: `other/notes.txt` marked skip-worktree and changed passes G5. Seen failing with `ls-files`' pathspec changed from `.` to `:/`. `an_in_progress_shelve_is_refused_for_a_flagged_file_under_the_root`: with `xx/a.txt` marked assume-unchanged and changed, the shelve exits 2, "can't be shelved", G5 failing and naming the file, and the item file is unchanged. Seen failing with `hidden` returning nothing |
+
+### Process
+
+| Finding | Commit | Fix | Tests |
+| --- | --- | --- | --- |
+| Process 1: TR-21's test commit didn't pass `cargo fmt --check`, so its fix changed an existing test file after `start` | none | Settled: `cargo fmt` now runs before every commit, tests included. TR-25's test commit, `b508afc`, passes `cargo fmt --check`, and no commit since reformats a test. `24e2906` stays as it was | |
+
+The review's [Still open, carried forward](reviews/slice-8-review-2.md#still-open-carried-forward) list is covered above and in [Still open](#still-open): review 1's bug 1 still won't be fixed, review 1's process 1 is settled, with this slice's binary to be installed now the slice is finished, before TR-5 starts, review 1's process 2 is still the user's, and slice 7 review 1's finding 6 is left for slice 11. Its [Slice 9 must decide](reviews/slice-8-review-2.md#slice-9-must-decide) list repeats review 1's four points, and is left for slice 9, whose item is TR-5, and carried into [Limits](#limits-and-what-later-slices-change). TR-25's fix landed first, so `approve` gets it through `gates::g5`. Design 1 isn't fixed, so `approve`'s `tree_after_checks` won't ask about the flags either.
+
+A few consequences:
+
+- `submit`, `gates` and an in-progress shelve refuse, under G5, a flagged file under the root that's been deleted, unless it's skip-worktree and the checkout is sparse. The message is TR-21's, naming the flag and the file.
+- An ordinary repository with a skip-worktree file left over from an old sparse checkout, whose `core.sparseCheckout` is now off, is refused until the flag is cleared.
+- The Try it has a new step: a committed `tags.txt` marked skip-worktree and deleted refuses BM-2's shelve under G5 until the flag is cleared. The rest of its output is unchanged, apart from the SHAs and times that change on every run.
 
 ## Still open
 
-- **Process** (review 1's process 2): typing the ID into `delete` in a real terminal hasn't been checked by hand. Removing the ref is tested only under `script`, as PLAN.md's [integration risks](PLAN.md#integration-risks) say interactive commands are.
-- **Process** (review 1's process 1): this slice's binary is to be installed with `cargo install --path .` once the slice is finished, before TR-5 (slice 9) starts, so slice 9's item is the first that G5 checks and the first that can reach done `auto`.
-- **Test gaps** (slice 7 review 1's finding 6, carried forward): `Env::add_criterion` in [tests/common/mod.rs](../tests/common/mod.rs) still adds `--check true`, left for slice 11.
+- **Process** (review 1's process 2, carried forward by review 2): typing the ID into `delete` in a real terminal hasn't been checked by hand. Removing the ref is tested only under `script`, as PLAN.md's [integration risks](PLAN.md#integration-risks) say interactive commands are.
+- **Process** (review 1's process 1, carried forward by review 2): this slice's binary is to be installed with `cargo install --path .` now the slice is finished, after this readme and review 2's Outcome are committed, and before TR-5 (slice 9) starts, so slice 9's item is the first that G5 checks and the first that can reach done `auto`. The binary in `~/.cargo/bin` is still slice 7's.
+- **Test gaps** (review 2's test gap 1, third case): `deletion_warning`'s wording for an `unchecked` record with exactly one check, "1 check ran and passed, but no commit records it", has no test. TR-22's test covers 3 checks and none.
+- **Test gaps** (slice 7 review 1's finding 6, carried forward by both reviews): `Env::add_criterion` in [tests/common/mod.rs](../tests/common/mod.rs) still adds `--check true`, left for slice 11.
 
 ## Limits, and what later slices change
 
-- **Slice 9** adds triggers after every gate passes. A held submit goes to review, and §2.7 creates the ref only when the item reaches done, so `git::set_ref` must move to the done branch of `apply`, and a held item gets no `commit` or ref until `approve`. `approve` re-runs the gates, G5 and `tree_after_checks` included, so it lets the lock go for the checks, re-reads with `Store::lock_unchanged_after_checks`, then sets the ref and writes `by: "human"` with the commit. `show --diff` can start from `git::item_commits`, which returns SHAs, newest first, and needs a new function for the combined diff. `submit` from in-progress then has two outcomes, so `Run::Submit`'s text and `submit.schema.json`'s "result is always done" change. Slice 9's item, TR-5, is the first TR item G5 checks, so everything under `tracker/`, docs and reviews included, must be committed before its submit, and at least one commit scoped to TR-5 must exist. TR-24's `a_second_verification_moves_the_ref_to_the_new_commit` and `delete_removes_a_ref_named_only_by_previous_verification` must still pass once `set_ref` moves, and `approve`'s G5 gets TR-21's skip-worktree and assume-unchanged check through `gates::g5`. These are review 1's [Slice 9 must decide](reviews/slice-8-review-1.md#slice-9-must-decide) points.
+- **Slice 9** adds triggers after every gate passes. A held submit goes to review, and §2.7 creates the ref only when the item reaches done, so `git::set_ref` must move to the done branch of `apply`, and a held item gets no `commit` or ref until `approve`. `approve` re-runs the gates, G5 and `tree_after_checks` included, so it lets the lock go for the checks, re-reads with `Store::lock_unchanged_after_checks`, then sets the ref and writes `by: "human"` with the commit. `show --diff` can start from `git::item_commits`, which returns SHAs, newest first, and needs a new function for the combined diff. `submit` from in-progress then has two outcomes, so `Run::Submit`'s text and `submit.schema.json`'s "result is always done" change. Slice 9's item, TR-5, is the first TR item G5 checks, so everything under `tracker/`, docs and reviews included, must be committed before its submit, and at least one commit scoped to TR-5 must exist. TR-24's `a_second_verification_moves_the_ref_to_the_new_commit` and `delete_removes_a_ref_named_only_by_previous_verification` must still pass once `set_ref` moves, and `approve`'s G5 gets TR-21's skip-worktree and assume-unchanged check, and TR-25's for a deleted flagged file, through `gates::g5`. Its `tree_after_checks` doesn't ask about the flags, as `submit`'s doesn't (§7). Review 2 found no file under the real repo's `tracker/` marked either way, and no `core.ignoreStat`, so TR-5 isn't refused for something already there. These are the [Slice 9 must decide](reviews/slice-8-review-1.md#slice-9-must-decide) points of review 1, which [review 2](reviews/slice-8-review-2.md#slice-9-must-decide) repeats.
 - **Slice 10** works out changed files from the item's commits (§2.1): `item_commits` gives the SHAs, and it needs each commit's files, including deleted ones, made relative to the root with `git` run in it, while files outside the root still count toward T7. A scoped commit made after an item is done, such as `e5f37b1`, is one of its commits, and counts if the item is reopened. Changing an existing test, as `8ba0e95` did, fires T4.
 - **Slice 11**'s T14 reads `started.head..HEAD` for unscoped commits that touch the root. `started.head` is missing for a repository that had no commits at start, where every commit counts, and for items started before this slice, such as TR-4, which T14 must treat as having nothing to compare rather than failing. `started.criteria_hash` goes before `head` (§4.3), and `item::Started`'s comment says so. Slice 11 also changes `Env::add_criterion`'s `true`, which T13 would hold, and TR-4's criterion 8 is the kind of check T13 holds.
 - **Slices 12 and 14**: a judge whose input is `diff` reads the item's commits, and slice 14's G1 refuses to start one before the item has a commit, which `git::item_commits` answers. Slice 12 decides whether judges run before or after `tree_after_checks`. A judge runs in an empty temporary folder, so it can't change the tree either way.
 - **Slice 16**'s digest lists each auto-verified item's commit from `verification.commit`, and `audit` finds done items with no record. Records from before this slice are `unchecked`, with no commit or ref, and must still list. `audit` also reports a done `auto` or `human` item whose `refs/tracker/<ID>` is missing or doesn't point at its record's `commit` (TR-23, §7), and must skip `unchecked` records, which have no ref. `delete`'s warning already says how many checks an `unchecked` record ran (TR-22).
 - **The ref is local, and nothing protects it.** `refs/tracker/<ID>` isn't pushed unless pushed by hand, so a fresh clone has no refs and a verified commit that a rebase dropped is only in the clone that verified it (§2.7). Any git command can move or delete it, and nothing notices until slice 16's `audit` (§7, TR-23).
-- **G5 trusts git's exclude files.** An untracked file excluded by `.git/info/exclude` or `core.excludesFile` passes G5 and isn't in the verified commit, though a check may read it (§7, TR-21). The skip-worktree and assume-unchanged flags fail G5, but only at its first look: `tree_after_checks` doesn't ask `git::hidden` again.
+- **G5 trusts git's exclude files.** An untracked file excluded by `.git/info/exclude` or `core.excludesFile` passes G5 and isn't in the verified commit, though a check may read it (§7, TR-21). The skip-worktree and assume-unchanged flags fail G5, even on a deleted file outside a sparse checkout (TR-25), but only at its first look: `tree_after_checks` doesn't ask `git::hidden` again, and §7 says so (TR-26).
+- **Some repositories defeat G5's reading of git** (§7, TR-26). With `core.ignoreStat=true`, every committed file under the root is flagged assume-unchanged, so G5 refuses every submit until the setting is off. A committed file name under the root that isn't UTF-8 makes G5 exit 3, since `git::hidden` lists every tracked file and the `git` helper refuses output that isn't UTF-8. A later slice that reads `ls-files` or `diff` output for every file, such as slice 10's changed files, has the same limit unless it reads bytes.
 - **A subfolder project is checked only under its root** (§7). A change outside the root that the project's tests read isn't caught by G5, and the verified commit may not hold what they read.
 - **`item_commits` reads the whole history reachable from `HEAD`** on every G5, as §2.1 defines an item's commits. In a large repository, such as guild-portfolio, that's every commit message, each time.
 - **Interrupting `tracker` leaves a check running**, now for shelving too, which §7 says. A process a project check starts outside its group is left running, as slice 7's TR-13 describes.
