@@ -800,3 +800,165 @@ fn show_prints_started_and_each_saved_output_escaped() {
         assert!(text.contains(&expected), "{expected:?} isn't in:\n{text}");
     }
 }
+
+// TR-24 (slice 8 review 1, test gaps 1 and 2): cases that worked by hand,
+// tested before slice 9 moves the code under them.
+
+/// The ref's target in `repo`, or `None` if there's no `refs/tracker/XX-1`.
+fn ref_target(repo: &Path) -> Option<String> {
+    let ref_name = "refs/tracker/XX-1";
+    git_ok(repo, &["rev-parse", "--verify", "--quiet", ref_name])
+        .then(|| git(repo, &["rev-parse", ref_name]))
+}
+
+/// From `env_ready_to_submit`: submits XX-1, then reopens it, so only
+/// `previous_verification` names the ref.
+fn env_submitted_and_reopened() -> (Env, PathBuf, PathBuf, String) {
+    let (env, repo, root, sha) = env_ready_to_submit();
+    env.json(&["submit", "XX-1"]);
+    env.json(&["reopen", "XX-1", "--reason", "Missed a case."]);
+    let item = env.item("XX-1");
+    assert_eq!(item.get("verification"), None, "{item}");
+    assert_eq!(
+        item["previous_verification"]["ref"], "refs/tracker/XX-1",
+        "{item}"
+    );
+    (env, repo, root, sha)
+}
+
+// Criterion 1: a second verification moves the ref to the new commit.
+
+#[test]
+fn a_second_verification_moves_the_ref_to_the_new_commit() {
+    let (env, repo, root, first) = env_submitted_and_reopened();
+    assert_eq!(ref_target(&repo), Some(first.clone()));
+
+    // The work is undone, so the check fails at start, then done again.
+    fs::remove_file(root.join("done.txt")).unwrap();
+    git_commit_all(&root, "revert(XX-1): take out done.txt");
+    env.json(&["start", "XX-1"]);
+    assert_eq!(ref_target(&repo), Some(first.clone()));
+    fs::write(root.join("done.txt"), "done\n").unwrap();
+    let second = git_commit_all(&root, "feat(XX-1): write done.txt again");
+
+    let output = env.json(&["submit", "XX-1"]);
+    assert_eq!(output["result"], "done", "{output}");
+    assert_eq!(output["item"]["verification"]["commit"], second.as_str());
+    assert_ne!(first, second);
+    assert_eq!(ref_target(&repo), Some(second));
+}
+
+// Criterion 2: `delete` removes a ref that only `previous_verification`
+// names.
+
+#[test]
+fn delete_removes_a_ref_named_only_by_previous_verification() {
+    let (env, repo, _, sha) = env_submitted_and_reopened();
+    assert_eq!(ref_target(&repo), Some(sha));
+
+    let Some((output, ok)) =
+        env.in_terminal_typing(&["delete", "XX-1"], "Type XX-1 to confirm", "XX-1", || {})
+    else {
+        return;
+    };
+    assert!(ok, "{output}");
+    assert!(output.contains("refs/tracker/XX-1"), "{output}");
+    assert!(!env.item_path("XX-1").exists());
+    assert_eq!(ref_target(&repo), None);
+}
+
+// Criterion 3: `status <id> shelved` on an in-progress item is refused
+// while the tree is dirty, and `start` in a repository with no commits
+// leaves out `started.head`.
+
+#[test]
+fn status_shelved_on_an_in_progress_item_is_refused_while_the_tree_is_dirty() {
+    let (env, _, root) = env_with_item();
+    env.json(&["start", "XX-1"]);
+    let before = fs::read_to_string(env.item_path("XX-1")).unwrap();
+    fs::write(root.join("scratch.txt"), "").unwrap();
+
+    let error = refused(&env, &["status", "XX-1", "shelved", "--reason", "later"]);
+    assert_eq!(gate_ok(&error["gates"], "G5"), Some(false), "{error}");
+    let message = error["error"].as_str().unwrap();
+    assert!(message.contains("can't be shelved"), "{error}");
+    assert!(
+        failures_from(&error, "G5")[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("xx/scratch.txt"),
+        "{error}"
+    );
+    assert_eq!(fs::read_to_string(env.item_path("XX-1")).unwrap(), before);
+}
+
+#[test]
+fn start_in_a_repository_with_no_commits_leaves_out_started_head() {
+    // Outside the work folder's repository, which `create` commits to.
+    let env = Env::new();
+    let elsewhere = tempfile::TempDir::new().unwrap();
+    let root = elsewhere.path().join("xx");
+    fs::create_dir_all(&root).unwrap();
+    git(&root, &["init", "--quiet"]);
+    env.json(&[
+        "project",
+        "add",
+        "XX",
+        "--name",
+        "XX project",
+        "--root",
+        root.to_str().unwrap(),
+    ]);
+    env.create_bare("XX", "a");
+    env.add_criterion("XX-1");
+
+    let output = env.json(&["start", "XX-1"]);
+    let started = &output["item"]["started"];
+    assert!(started["at"].is_string(), "{output}");
+    assert!(started["checks"].is_array(), "{output}");
+    assert_eq!(started.get("head"), None, "{output}");
+}
+
+// Criterion 4: G5's second look, once the checks have run, also fails a
+// dry run of the gates and an in-progress shelve.
+
+/// XX-1, with its work committed and a project check that leaves
+/// `left-behind.txt` in the root.
+fn env_with_a_check_that_leaves_a_file() -> (Env, PathBuf, PathBuf) {
+    let (env, repo, root) = env_with_item();
+    git_commit_all(&root, "feat(XX-1): the work");
+    set_project(&env, "XX", "checks", json!(["touch left-behind.txt"]));
+    (env, repo, root)
+}
+
+/// Asserts that `error`'s only G5 failure says the checks left
+/// `xx/left-behind.txt`.
+fn the_checks_left_a_file(error: &Value) {
+    assert_eq!(gate_ok(&error["gates"], "G4"), Some(true), "{error}");
+    assert_eq!(gate_ok(&error["gates"], "G5"), Some(false), "{error}");
+    let g5 = failures_from(error, "G5");
+    assert_eq!(g5.len(), 1, "{error}");
+    let message = g5[0]["message"].as_str().unwrap();
+    assert!(message.contains("The checks left"), "{message}");
+    assert!(message.contains("xx/left-behind.txt"), "{message}");
+}
+
+#[test]
+fn gates_fails_g5_for_a_file_the_checks_leave() {
+    let (env, _, root) = env_with_a_check_that_leaves_a_file();
+    let error = refused(&env, &["gates", "XX-1"]);
+    assert_eq!(error["result"], "refused", "{error}");
+    the_checks_left_a_file(&error);
+    assert!(root.join("left-behind.txt").exists());
+}
+
+#[test]
+fn an_in_progress_shelve_fails_g5_for_a_file_the_checks_leave() {
+    let (env, _, _) = env_with_a_check_that_leaves_a_file();
+    env.json(&["start", "XX-1"]);
+    let before = fs::read_to_string(env.item_path("XX-1")).unwrap();
+
+    let error = refused(&env, &["shelve", "XX-1", "--reason", "later"]);
+    the_checks_left_a_file(&error);
+    assert_eq!(fs::read_to_string(env.item_path("XX-1")).unwrap(), before);
+}
