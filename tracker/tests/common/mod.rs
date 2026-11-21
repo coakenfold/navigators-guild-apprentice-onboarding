@@ -396,6 +396,67 @@ fn read_until(
     }
 }
 
+/// Runs `git <args>` in `dir`, expects it to succeed, and returns its
+/// stdout without the final line break. It reads no global or system git
+/// config, and commits under a test identity without signing, so a
+/// developer's own settings can't change what a test does.
+pub fn git(dir: &Path, args: &[&str]) -> String {
+    let output = git_cmd(dir, args).output().unwrap();
+    assert!(
+        output.status.success(),
+        "`git {}` failed in {}:\n{}",
+        args.join(" "),
+        dir.display(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout)
+        .unwrap()
+        .trim_end()
+        .to_string()
+}
+
+/// Whether `git <args>` succeeds in `dir`.
+pub fn git_ok(dir: &Path, args: &[&str]) -> bool {
+    git_cmd(dir, args).output().unwrap().status.success()
+}
+
+fn git_cmd(dir: &Path, args: &[&str]) -> std::process::Command {
+    let mut cmd = std::process::Command::new("git");
+    cmd.current_dir(dir)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .args([
+            "-c",
+            "user.name=Tracker Test",
+            "-c",
+            "user.email=test@tracker.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "init.defaultBranch=main",
+        ])
+        .args(args);
+    cmd
+}
+
+/// Makes `dir` a git repository with one commit, so it has a `HEAD`.
+pub fn git_init(dir: &Path) {
+    fs::create_dir_all(dir).unwrap();
+    git(dir, &["init", "--quiet"]);
+    git(
+        dir,
+        &["commit", "--quiet", "--allow-empty", "-m", "chore: start"],
+    );
+}
+
+/// Commits everything under `dir`, in the repository that holds it, with
+/// `message`, even if nothing changed. Returns the new commit's SHA.
+pub fn git_commit_all(dir: &Path, message: &str) -> String {
+    git(dir, &["add", "--all", "."]);
+    git(dir, &["commit", "--quiet", "--allow-empty", "-m", message]);
+    git(dir, &["rev-parse", "HEAD"])
+}
+
 /// The binary followed by `args`.
 fn tracker_argv(args: &[&str]) -> Vec<String> {
     let mut argv = vec![env!("CARGO_BIN_EXE_tracker").to_string()];
