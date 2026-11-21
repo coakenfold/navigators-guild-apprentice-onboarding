@@ -530,8 +530,17 @@ fn verification_checks_name_the_criterion_each_came_from() {
     add_check(&env, "XX-1", "third", "true");
     env.json(&["start", "XX-1"]);
 
+    // The manual criterion holds the item under T6 (slice 9), so its record
+    // is the one `approve` writes, with the checks it ran again.
     let submitted = env.json(&["submit", "XX-1"]);
-    let checks = submitted["item"]["verification"]["checks"].clone();
+    assert_eq!(submitted["result"], "held", "{submitted}");
+    let Some((output, ok)) =
+        env.in_terminal_typing(&["approve", "XX-1"], "Type XX-1 to confirm", "XX-1", || {})
+    else {
+        return;
+    };
+    assert!(ok, "{output}");
+    let checks = env.item("XX-1")["verification"]["checks"].clone();
     let shape: Vec<(Option<u64>, &str)> = checks
         .as_array()
         .unwrap()
@@ -550,9 +559,8 @@ fn verification_checks_name_the_criterion_each_came_from() {
             (Some(3), "true"),
             (None, "test -f marker"),
         ],
-        "{submitted}"
+        "{checks}"
     );
-    assert_eq!(env.item("XX-1")["verification"]["checks"], checks);
 }
 
 /// A check that changes item `id` while it runs, as another agent could,
