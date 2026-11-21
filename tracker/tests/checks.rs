@@ -513,3 +513,43 @@ fn a_kept_line_longer_than_the_limit_is_cut_and_marked() {
     assert_eq!(lines[0], "x".repeat(499) + "…");
     assert_eq!(lines[1], "short");
 }
+
+#[test]
+fn verification_checks_name_the_criterion_each_came_from() {
+    // TR-16: the same command as a criterion check and as a project check,
+    // which only `criterion` tells apart. A manual criterion between them
+    // has no entry, so the numbers aren't just the entries' order.
+    let (env, root) = env_with_project();
+    fs::write(root.join("marker"), "").unwrap();
+    set_project(&env, "XX", "checks", json!(["test -f marker"]));
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "first", "test -f marker");
+    env.json(&["criterion", "add", "XX-1", "second"]);
+    env.json(&["evidence", "XX-1", "2", "See the readme."]);
+    add_check(&env, "XX-1", "third", "true");
+    env.json(&["start", "XX-1"]);
+
+    let submitted = env.json(&["submit", "XX-1"]);
+    let checks = submitted["item"]["verification"]["checks"].clone();
+    let shape: Vec<(Option<u64>, &str)> = checks
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|check| {
+            (
+                check.get("criterion").map(|n| n.as_u64().unwrap()),
+                check["cmd"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        shape,
+        [
+            (Some(1), "test -f marker"),
+            (Some(3), "true"),
+            (None, "test -f marker"),
+        ],
+        "{submitted}"
+    );
+    assert_eq!(env.item("XX-1")["verification"]["checks"], checks);
+}
