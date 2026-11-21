@@ -1,0 +1,91 @@
+{
+  "id": "XX-21",
+  "title": "Search filters by tag",
+  "project": "XX",
+  "kind": "change",
+  "status": "done",
+  "priority": "medium",
+  "created": "2026-11-21T22:43:41Z",
+  "updated": "2026-11-21T22:43:46Z",
+  "written": [
+    "The filter reads well"
+  ],
+  "criteria": [
+    {
+      "text": "The filter reads well",
+      "evidence": "the screenshot in docs/filter.png"
+    },
+    {
+      "text": "filters by tag",
+      "check": "true"
+    }
+  ],
+  "started": {
+    "at": "2026-11-21T22:43:41Z",
+    "head": "535ba538ccba58e64a893eeb5890d2ef1dcf3482",
+    "checks": [
+      {
+        "criterion": 2,
+        "passed": true
+      }
+    ]
+  },
+  "verification": {
+    "by": "human",
+    "at": "2026-11-21T22:43:46Z",
+    "commit": "2c89ae8a5a38fd2cb0bafc9251dfd4c1788d547d",
+    "ref": "refs/tracker/XX-21",
+    "checks": [
+      {
+        "criterion": 2,
+        "cmd": "true",
+        "ok": true,
+        "secs": 0
+      }
+    ],
+    "triggers": [
+      {
+        "trigger": "T6",
+        "message": "criterion 1 is manual, so only a human can check its evidence"
+      }
+    ]
+  },
+  "history": [
+    {
+      "at": "2026-11-21T22:43:41Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-21T22:43:41Z",
+      "from": "in-progress",
+      "to": "review",
+      "via": "submit",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-21T22:43:42Z",
+      "from": "review",
+      "to": "in-progress",
+      "via": "reject",
+      "interactive": true,
+      "reason": "The empty state is missing."
+    },
+    {
+      "at": "2026-11-21T22:43:44Z",
+      "from": "in-progress",
+      "to": "review",
+      "via": "submit",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-21T22:43:46Z",
+      "from": "review",
+      "to": "done",
+      "via": "approve",
+      "interactive": true
+    }
+  ]
+}

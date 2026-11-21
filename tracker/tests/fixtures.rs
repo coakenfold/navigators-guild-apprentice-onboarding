@@ -370,3 +370,62 @@ fn slice_8s_xx_19_has_a_commit_and_a_ref_and_comes_back_byte_for_byte() {
     let lost = tracker::item::lost_on_rewrite(&text).unwrap();
     assert!(lost.is_empty(), "{lost:?}");
 }
+
+/// XX-20 is held in review by T6 and T9, with its `holds`, after
+/// `verification`'s place and before `history`. XX-21 was held, rejected
+/// with a reason, resubmitted and approved, so its record is a human's,
+/// with the triggers it approved after its checks.
+#[test]
+fn slice_9s_held_and_approved_fixtures_come_back_byte_for_byte() {
+    assert_eq!(names_in("slice-9"), ["XX-20.json", "XX-21.json"]);
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/slice-9");
+    let read = |name: &str| -> (String, Value) {
+        let text = fs::read_to_string(root.join(name)).unwrap();
+        let file = serde_json::from_str(&text).unwrap();
+        (text, file)
+    };
+
+    let (held_text, held) = read("XX-20.json");
+    assert_eq!(held["status"], "review");
+    assert!(held.get("verification").is_none(), "{held}");
+    let triggers: Vec<&str> = held["holds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|hold| hold["trigger"].as_str().unwrap())
+        .collect();
+    assert_eq!(triggers, ["T6", "T9"]);
+    let fields: Vec<&String> = held.as_object().unwrap().keys().collect();
+    let at = |name: &str| fields.iter().position(|f| *f == name).unwrap();
+    assert_eq!(at("holds") + 1, at("history"), "{fields:?}");
+    assert_eq!(held["history"][1]["to"], "review");
+
+    let (approved_text, approved) = read("XX-21.json");
+    assert_eq!(approved["status"], "done");
+    assert!(approved.get("holds").is_none(), "{approved}");
+    let record = &approved["verification"];
+    assert_eq!(record["by"], "human");
+    assert_eq!(record["triggers"][0]["trigger"], "T6");
+    let fields: Vec<&String> = record.as_object().unwrap().keys().collect();
+    assert_eq!(fields, ["by", "at", "commit", "ref", "checks", "triggers"]);
+    let vias: Vec<&str> = approved["history"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["via"].as_str().unwrap())
+        .collect();
+    assert_eq!(vias, ["start", "submit", "reject", "submit", "approve"]);
+    assert_eq!(
+        approved["history"][2]["reason"],
+        "The empty state is missing."
+    );
+    assert_eq!(approved["history"][4]["interactive"], true);
+
+    for text in [held_text, approved_text] {
+        let item = tracker::item::from_json(&text).unwrap();
+        assert_eq!(tracker::item::to_json(&item), text);
+        let lost = tracker::item::lost_on_rewrite(&text).unwrap();
+        assert!(lost.is_empty(), "{lost:?}");
+        check_schema("item", &serde_json::from_str(&text).unwrap());
+    }
+}

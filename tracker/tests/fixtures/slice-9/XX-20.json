@@ -1,0 +1,62 @@
+{
+  "id": "XX-20",
+  "title": "Tag chips look right",
+  "project": "XX",
+  "kind": "change",
+  "status": "review",
+  "priority": "medium",
+  "labels": [
+    "needs-review"
+  ],
+  "created": "2026-11-21T22:43:27Z",
+  "updated": "2026-11-21T22:43:27Z",
+  "written": [
+    "The chips match the mock-up"
+  ],
+  "criteria": [
+    {
+      "text": "The chips match the mock-up",
+      "evidence": "docs/chips.png"
+    },
+    {
+      "text": "it builds",
+      "check": "true"
+    }
+  ],
+  "started": {
+    "at": "2026-11-21T22:43:27Z",
+    "head": "243e18958b372fdd0451e0ba598a21e08357f06f",
+    "checks": [
+      {
+        "criterion": 2,
+        "passed": true
+      }
+    ]
+  },
+  "holds": [
+    {
+      "trigger": "T6",
+      "message": "criterion 1 is manual, so only a human can check its evidence"
+    },
+    {
+      "trigger": "T9",
+      "message": "it has the label needs-review, which asks for a human's review"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-11-21T22:43:27Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-21T22:43:27Z",
+      "from": "in-progress",
+      "to": "review",
+      "via": "submit",
+      "interactive": false
+    }
+  ]
+}
