@@ -14,6 +14,11 @@
     "item": {
       "description": "The item after the change, exactly as its file holds it.",
       "$ref": "item.schema.json"
+    },
+    "warnings": {
+      "description": "Only for criterion add and set, where it's always present. On an in-progress item, a check given to a criterion runs once, as start runs them, and its result goes in item.started.checks (DESIGN.md §2.4). If it already passes, this holds start's warning for it. Otherwise, and when nothing ran, it's empty.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
     }
   },
   "additionalProperties": false

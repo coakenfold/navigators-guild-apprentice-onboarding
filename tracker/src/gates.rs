@@ -338,6 +338,13 @@ pub fn criterion_runs(item: &Item, config: &Config) -> Vec<(usize, checks::Run)>
         .collect()
 }
 
+/// Runs criterion `n`'s check, `cmd`, once in the project's root, as
+/// `criterion_runs` runs each one. For a check given after `start` (§2.4).
+pub fn criterion_run(item: &Item, config: &Config, n: usize, cmd: &str) -> checks::Run {
+    let what = format!("criterion {n}'s check");
+    run_in(cmd, &root(item, config), timeout(item, config), &what)
+}
+
 /// Runs `cmd` in `root`, or, if the root can't be found, a run that failed
 /// saying why, without running anything.
 fn run_in(cmd: &str, root: &Result<PathBuf, String>, timeout: Duration, what: &str) -> checks::Run {

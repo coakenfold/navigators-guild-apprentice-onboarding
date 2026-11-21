@@ -1428,8 +1428,8 @@ fn criterion_add(store: &Store, id: &str, text: &str, check: Option<String>) -> 
     let text = check_criterion_text(text)?;
     let check = check.as_deref().map(check_command).transpose()?;
 
-    let _lock = store.lock()?;
-    let mut item = store.load_item(&id)?;
+    let lock = store.lock()?;
+    let (mut item, file) = store.load_item_with_text(&id)?;
     check_criteria_changeable(&item)?;
     if let Some(i) = item.criteria.iter().position(|c| c.text == text) {
         return Err(Error::input(format!(
@@ -1447,10 +1447,12 @@ fn criterion_add(store: &Store, id: &str, text: &str, check: Option<String>) -> 
         check,
         evidence: None,
     });
+    let n = item.criteria.len();
+    let how = format!("tracker criterion add {id} \"…\" --check \"…\"");
+    let (_lock, ran) = run_check_given_after_start(store, lock, &mut item, &file, n, &how)?;
     item.updated = item::now();
     store.update_item(&item)?;
 
-    let n = item.criteria.len();
     let added = &item.criteria[n - 1];
     let mut text = format!("Added criterion {n} to {id}: {}\n", added.text);
     if added.is_manual() {
@@ -1460,7 +1462,72 @@ fn criterion_add(store: &Store, id: &str, text: &str, check: Option<String>) -> 
              \"…\"`.\n"
         ));
     }
-    Ok(Output::plain(text, json!({ "criterion": n, "item": item })))
+    Ok(criterion_output(text, &item, n, ran))
+}
+
+/// After `start`, a check given to criterion `n` runs once, as `start` runs
+/// each one, since a check that already passes can't be proving the new
+/// work (§2.4). `item` already has the check, and `file` is the text its
+/// file had when it was read under `lock`. The check runs without the lock,
+/// as `start`'s do, and the lock is taken again only if the file hasn't
+/// changed meanwhile; `how` is the command to run again if it has. The
+/// result replaces any `started.checks` entry for `n`. An item started
+/// before slice 7 has no `started` record to add it to.
+///
+/// Nothing runs for an item that isn't in progress, since `start` runs the
+/// check, or for a manual criterion. Returns the lock, and the run, if
+/// there was one.
+fn run_check_given_after_start(
+    store: &Store,
+    lock: std::fs::File,
+    item: &mut Item,
+    file: &str,
+    n: usize,
+    how: &str,
+) -> Result<(std::fs::File, Option<checks::Run>)> {
+    let Some(cmd) = item.criteria[n - 1].check.clone() else {
+        return Ok((lock, None));
+    };
+    if item.status != Status::InProgress {
+        return Ok((lock, None));
+    }
+    let config = config::load(store)?;
+    drop(lock);
+    let run = gates::criterion_run(item, &config, n, &cmd);
+    let lock = store.lock_unchanged_after_checks(&item.id, file, how)?;
+    if let Some(started) = &mut item.started {
+        started.checks.retain(|check| check.criterion != n);
+        started.checks.push(StartedCheck {
+            criterion: n,
+            passed: run.ok,
+        });
+        started.checks.sort_by_key(|check| check.criterion);
+    }
+    Ok((lock, Some(run)))
+}
+
+/// What `criterion add` and `criterion set` print, with `text` saying what
+/// changed. If criterion `n`'s check ran, because the item is in progress,
+/// the text says how it went, and a check that already passes gets the
+/// warning `start` gives for one (§2.4). `warnings` is always in the JSON.
+fn criterion_output(mut text: String, item: &Item, n: usize, ran: Option<checks::Run>) -> Output {
+    let mut warnings = Vec::new();
+    if let Some(run) = ran {
+        if run.ok {
+            warnings = already_passing(item, &[(n, run)]);
+        } else {
+            text.push_str(&format!(
+                "{} is in progress, so its check ran once, as `start` runs them, and fails, as \
+                 it should before the work is done.\n",
+                item.id
+            ));
+        }
+    }
+    Output {
+        text: text.into(),
+        json: json!({ "criterion": n, "item": item, "warnings": warnings }),
+        warnings,
+    }
 }
 
 /// `criterion set <n> --check`: gives criterion `n` a script check, in
@@ -1471,19 +1538,19 @@ fn criterion_set(store: &Store, id: &str, n: usize, check: &str) -> Result<Outpu
     let id = normalize_id(id);
     let check = check_command(check)?;
 
-    let _lock = store.lock()?;
-    let mut item = store.load_item(&id)?;
+    let lock = store.lock()?;
+    let (mut item, file) = store.load_item_with_text(&id)?;
     check_criteria_changeable(&item)?;
     let i = criterion_index(&item, n)?;
     let criterion = &mut item.criteria[i];
     if criterion.check.as_deref() == Some(check.as_str()) {
-        return Ok(Output::plain(
-            format!("Criterion {n} of {id} already has that check. Nothing changed.\n"),
-            json!({ "criterion": n, "item": item }),
-        ));
+        let text = format!("Criterion {n} of {id} already has that check. Nothing changed.\n");
+        return Ok(criterion_output(text, &item, n, None));
     }
     criterion.check = Some(check);
     let evidence = criterion.evidence.take();
+    let how = format!("tracker criterion set {id} {n} --check \"…\"");
+    let (_lock, ran) = run_check_given_after_start(store, lock, &mut item, &file, n, &how)?;
     item.updated = item::now();
     store.update_item(&item)?;
 
@@ -1496,7 +1563,7 @@ fn criterion_set(store: &Store, id: &str, n: usize, check: &str) -> Result<Outpu
             text::for_terminal(&evidence, false)
         ));
     }
-    Ok(Output::plain(text, json!({ "criterion": n, "item": item })))
+    Ok(criterion_output(text, &item, n, ran))
 }
 
 /// `criterion remove <n>`: removes criterion `n` (§3). Its text stays in
