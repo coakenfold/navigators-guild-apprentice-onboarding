@@ -23,6 +23,8 @@ The findings that matter most:
 - **Test gap 1:** nothing tests that a second verification moves the ref, and slice 9 has to move the code that sets it.
 - **Test gap 2:** the dry run's and the shelve's second look at the tree can both be taken out without a test failing.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -95,3 +97,36 @@ The findings that matter most:
 - **`approve`'s G5.** It re-runs the gates, so it needs G5's first look under the lock, the second look after the checks, the re-read with `lock_unchanged_after_checks`, then the ref at its own `HEAD`. Its record's `commit` is the `HEAD` approve saw, not the submit's. If security 1's fix lands first, `approve` gets it through `gates::g5`.
 - **TR-5 is the first TR item G5 checks.** Everything under `tracker/` has to be committed before its submit, including this review, its Outcome and any readme edits, and at least one commit scoped to TR-5 has to exist.
 - **`submit` from in-progress has two results.** `Run::Submit`'s text, "Verified automatically", and `submit.schema.json`'s "result is always done" change for a held item.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `53c6b7c`, not at the fixed code. Each fix was built as a tracker item of its own, TR-21 to TR-24, with its tests committed before `tracker start`, apart from TR-23, which changes docs only, and the readme's [Fixes after review 1](../slice-8-readme.md#fixes-after-review-1) lists them too.
+
+This round fixed security 1, bug 2, design 1 and both test gaps. Option (a) was taken wherever there was a choice. Bug 1 won't be fixed. Of the two process notes, process 1 is settled by the bootstrap rather than as suggested, and process 2 is still the user's. The four items in "Slice 9 must decide" are left for slice 9, and this round helps with two of them. The commits after this review (`bd38b9f`), in order:
+
+- **Fixes:** `38a7b24`, `24e2906`, `64fe658` and `782ac86` (TR-21, security 1), `eb999aa` and `dbeebcf` (TR-22, bug 2), `5eac0b0` (TR-23, design 1) and `f13d76a` (TR-24, test gaps 1 and 2).
+- **Docs:** the readme's update and the commit that adds this Outcome.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: a submit whose item file can't be written leaves a ref that `delete` never removes | Won't fix. It's unlikely, since it needs an item file that can't be written between the ref and the rename, and harmless: an ID is never used again, so nothing else can claim the ref. `ref_to_delete` still asks git only when a record names a ref. The readme's sentence that `delete` removes such a ref is corrected in its update |
+| Bug 2: `delete`'s warning says "no checks ran" for `unchecked` records that ran 8 and 11 | TR-22, `dbeebcf`, option (a): `deletion_warning`'s `unchecked` arm counts the record's checks and says "N checks ran and passed, but no commit records them", or "1 check ran and passed, but no commit records it", and still "no checks ran" for a record with none. Test: `delete_says_how_many_checks_an_unchecked_record_ran`, under `script`, with a record of 3 checks and no `commit` or `ref`, as the slice 7 binary wrote, and one with none |
+| Security 1: work hidden from git with `--skip-worktree`, `--assume-unchanged` or `.git/info/exclude` passes G5 | TR-21, `64fe658` and `782ac86`, option (a): the new `git::hidden` runs `git rev-parse --show-prefix` and `git ls-files -v -z -- .` in the root, and lists each skip-worktree (`S` or `s`) or assume-unchanged (lower-case) file that exists on disk. `g5` adds a failure naming them, on submit, `gates` and an in-progress shelve. A skipped file that isn't on disk, as in a sparse checkout, passes. §2.4's G5 row says "ignored" means git's own ignore rules, `.git/info/exclude` and `core.excludesFile` included, and a new §7 bullet, "G5 trusts git's ignore rules, and two of them leave no trace", says what that can hide, so the exclude files stay a stated limit. `24e2906` fixed the formatting of the first test commit. Tests: `g5_fails_for_a_file_marked_skip_worktree` and `g5_fails_for_a_file_marked_assume_unchanged`. `tree_after_checks` doesn't ask `git::hidden` again, so a check that sets a flag isn't caught by the second look |
+| Design 1: nothing protects `refs/tracker/<ID>`, and §7 doesn't say so | TR-23, `5eac0b0`, option (a): a §7 bullet, "Nothing protects `refs/tracker/<ID>`", says any git command can move or delete it, that nothing notices until slice 16's `audit`, and what's lost if it goes. PLAN.md's slice 16 _Done when_ gains a line for `audit` to report a done `auto` or `human` item whose ref is missing or doesn't point at its record's `commit` |
+| Test gap 1: four cases the readme lists as untested work by hand, and slice 9 rewrites the code under two of them | TR-24, `f13d76a`, as suggested, all four: `a_second_verification_moves_the_ref_to_the_new_commit`, `delete_removes_a_ref_named_only_by_previous_verification` (under `script`), `status_shelved_on_an_in_progress_item_is_refused_while_the_tree_is_dirty` and `start_in_a_repository_with_no_commits_leaves_out_started_head`, in `tests/commits.rs` |
+| Test gap 2: the `gates` dry run's and an in-progress shelve's second look at the tree have no test | TR-24, `f13d76a`, as suggested: `gates_fails_g5_for_a_file_the_checks_leave` and `an_in_progress_shelve_fails_g5_for_a_file_the_checks_leave`, with a project check, `touch left-behind.txt`, that fails G5 with "The checks left", the shelve leaving the item file unchanged |
+| Process 1: TR-4 is verified `unchecked`, so G5 never checked this slice's own work, and criterion 8 couldn't fail first | No fix for TR-4, as suggested. This slice's binary wasn't installed for this review's fixes: a slice and its review fixes are tracked by the previous slice's binary (CLAUDE.md, and PLAN.md's "The bootstrap"), as slice 7's were by slice 6's. It's installed once slice 8 is finished, so TR-5 (slice 9) is the first TR item G5 judges. This review was committed, in `bd38b9f`, before the first fix item, TR-21, started |
+| Process 2: typing the ID into `delete` in a real terminal still hasn't been checked by hand | Still the user's hand check: type `tracker delete` on a throwaway item once, in a real terminal, before the branch merges. TR-22's and TR-24's delete tests run under `script`, as the others do |
+| Slice 9 must decide: where the ref is set | Left for slice 9 (TR-5). TR-24's two ref tests, which the point asks for before `set_ref` moves, are in place |
+| Slice 9 must decide: `approve`'s G5 | Left for slice 9 (TR-5). Security 1's fix landed first, so `approve` gets it through `gates::g5` |
+| Slice 9 must decide: TR-5 is the first TR item G5 checks | Left for slice 9 (TR-5), and process 1's decision keeps it so |
+| Slice 9 must decide: `submit` from in-progress has two results | Left for slice 9 (TR-5) |
+
+Seen failing:
+
+- **Security 1:** before the fix, `gates` passed for both files, so each test failed where it expected exit 2.
+- **Bug 2:** before the fix, the warning said "no checks ran" for the record with 3 checks.
+- **Test gaps 1 and 2:** these cover code that already worked, so each test was run against code broken on purpose, then the code was restored: `git::set_ref` setting the ref only if it was missing, `ref_to_delete` reading only `verification`, the in-progress shelve's refusal skipped, `head_at_start` returning a dummy SHA, and `tree_after_checks` taken out of `gates_dry_run`, then out of the shelve arm. TR-24's four checks passed at start, as they had to.
+- **Design 1, and security 1's DESIGN.md half,** change docs only, so there was nothing to see fail. TR-23's criterion and TR-21's second are manual, with evidence quoting each passage.
+
+The installed slice 7 binary verified each of TR-21 to TR-24 as `unchecked`. It ran their criterion checks through G3 and TR's project checks through G4, but it has no G5, so none has a `commit` or a `ref`. After all four, `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo clippy --all-targets -- -D warnings` and all 304 tests pass, 9 more than at `53c6b7c`: 8 in `tests/commits.rs` and 1 in `tests/show_and_delete.rs`. The readme's Try it output is unchanged, apart from the SHAs and times that differ on every run.
