@@ -1430,6 +1430,8 @@ fn criterion_add(store: &Store, id: &str, text: &str, check: Option<String>) -> 
 
     let lock = store.lock()?;
     let (mut item, file) = store.load_item_with_text(&id)?;
+    // Refused before the check runs, for a change that couldn't be written.
+    refuse_newer_file(store, &id, &file)?;
     check_criteria_changeable(&item)?;
     if let Some(i) = item.criteria.iter().position(|c| c.text == text) {
         return Err(Error::input(format!(
@@ -1540,6 +1542,8 @@ fn criterion_set(store: &Store, id: &str, n: usize, check: &str) -> Result<Outpu
 
     let lock = store.lock()?;
     let (mut item, file) = store.load_item_with_text(&id)?;
+    // Refused before the check runs, as `criterion add` refuses.
+    refuse_newer_file(store, &id, &file)?;
     check_criteria_changeable(&item)?;
     let i = criterion_index(&item, n)?;
     let criterion = &mut item.criteria[i];
