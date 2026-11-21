@@ -34,6 +34,9 @@ pub struct Item {
     /// The **Done when** list (§2.3), numbered from 1 in commands.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub criteria: Vec<Criterion>,
+    /// What the last `start` found (§4.3). Each `start` replaces it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started: Option<Started>,
     /// Filled in when the item reaches done (§2.7), and present only while
     /// it's done: reopening moves it to `previous_verification`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -72,15 +75,50 @@ impl Criterion {
     }
 }
 
+/// What `start` recorded (§2.4, §4.3). Slice 8 adds `head`, and slice 11
+/// the criteria's fingerprint.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Started {
+    pub at: Timestamp,
+    /// Each criterion check, run once at start, where failing is expected
+    /// because the work isn't done yet (T13).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub checks: Vec<StartedCheck>,
+}
+
+/// Whether one criterion's check passed at start.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StartedCheck {
+    /// The criterion, numbered from 1.
+    pub criterion: usize,
+    pub passed: bool,
+}
+
 /// How an item reached done (§2.1, §2.7). Later slices add the commit, its
-/// ref, and the checks and judges that ran.
+/// ref, and the judges that ran.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Verification {
     pub by: VerifiedBy,
     pub at: Timestamp,
+    /// Every check the submit ran, criterion checks first, then the
+    /// project's, in order (§4.3).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub checks: Vec<CheckRecord>,
     /// Why the record says what it does, such as that no gates ran.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+}
+
+/// One check in a verification record: its command, whether it passed,
+/// how long it took, and its last lines of output, left out if it printed
+/// nothing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CheckRecord {
+    pub cmd: String,
+    pub ok: bool,
+    pub secs: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

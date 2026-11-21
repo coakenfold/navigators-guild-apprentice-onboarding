@@ -2,15 +2,17 @@
 //! submitted. A gate never changes anything. It reports every reason it
 //! failed, and the command that ran it refuses with exit 2.
 //!
-//! This version has G1 (at `start`), G2 and G6 (at `submit`, and in the
-//! `gates` dry run). Slice 7 adds G3 and G4, which run checks, and slice 8
+//! This version has G1 (at `start`), and G2, G6, G3 and G4 (at `submit`,
+//! and in the `gates` dry run). G3 and G4 run checks (`checks.rs`). Slice 8
 //! adds G5, which reads git.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde_json::{Value, json};
 
+use crate::checks;
 use crate::config::Config;
 use crate::error::Error;
 use crate::item::{Item, Status, is_valid_id};
@@ -27,14 +29,25 @@ pub struct Failure {
     pub criterion: Option<usize>,
     /// What's wrong, and how to fix it, on one line.
     pub message: String,
+    /// For a check that failed, its run: the command, exit code and last
+    /// lines of output.
+    pub check: Option<checks::Run>,
 }
 
-/// What a run of the gates found: the gates that ran, in order, and every
-/// reason any of them failed.
+/// What a run of the gates found: the gates that ran, in order, every
+/// reason any of them failed, and every check they ran.
 #[derive(Debug, Default)]
 pub struct Report {
     pub ran: Vec<&'static str>,
     pub failures: Vec<Failure>,
+    pub checks: Vec<Ran>,
+}
+
+/// One check a gate ran: G3 for a criterion's, G4 for a project's.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Ran {
+    pub gate: &'static str,
+    pub run: checks::Run,
 }
 
 /// Which command ran the gates, for what a refusal says.
@@ -49,6 +62,13 @@ pub enum Run {
 impl Report {
     pub fn passed(&self) -> bool {
         self.failures.is_empty()
+    }
+
+    /// Adds what `other` found after what this one did.
+    pub fn extend(&mut self, other: Report) {
+        self.ran.extend(other.ran);
+        self.failures.extend(other.failures);
+        self.checks.extend(other.checks);
     }
 
     /// The gates that failed, each once, in the order they ran.
@@ -67,7 +87,17 @@ impl Report {
             .iter()
             .map(|gate| {
                 let ok = !self.failures.iter().any(|f| f.gate == *gate);
-                json!({ "gate": gate, "ok": ok })
+                let mut object = json!({ "gate": gate, "ok": ok });
+                if matches!(*gate, "G3" | "G4") {
+                    let secs: u64 = self
+                        .checks
+                        .iter()
+                        .filter(|ran| ran.gate == *gate)
+                        .map(|ran| ran.run.secs)
+                        .sum();
+                    object["secs"] = json!(secs);
+                }
+                object
             })
             .collect();
         Value::Array(gates)
@@ -84,6 +114,12 @@ impl Report {
                     object["criterion"] = json!(n);
                 }
                 object["message"] = json!(failure.message);
+                if let Some(run) = &failure.check {
+                    object["cmd"] = json!(run.cmd);
+                    object["exit_code"] = json!(run.exit_code);
+                    object["timed_out"] = json!(run.timed_out);
+                    object["output"] = json!(run.output);
+                }
                 object
             })
             .collect();
@@ -114,11 +150,17 @@ impl Report {
             ("gates".to_string(), self.gates_json()),
             ("failures".to_string(), self.failures_json()),
         ];
-        let mut details: Vec<String> = self
-            .failures
-            .iter()
-            .map(|failure| format!("{}  {}", failure.gate, failure.message))
-            .collect();
+        // A failed check's last lines of output go under its reason, one
+        // per line, indented past the gate.
+        let mut details = Vec::new();
+        for failure in &self.failures {
+            details.push(format!("{}  {}", failure.gate, failure.message));
+            if let Some(run) = &failure.check {
+                for line in run.output.lines() {
+                    details.push(format!("      {line}"));
+                }
+            }
+        }
         if run == Run::DryRun
             && let Some(line) = not_submittable(status)
         {
@@ -175,6 +217,7 @@ pub fn start(item: &Item, items: &[Item], skipped: &[Skipped]) -> Report {
             gate: "G1",
             criterion: None,
             message,
+            check: None,
         });
     }
     for problem in skipped {
@@ -201,21 +244,181 @@ pub fn start(item: &Item, items: &[Item], skipped: &[Skipped]) -> Report {
                 problem.describe(),
                 problem.fix
             ),
+            check: None,
         });
     }
     Report {
         ran: vec!["G1"],
         failures,
+        checks: Vec::new(),
     }
 }
 
-/// The gates `submit` and `gates` run, cheapest first (§2.4): G2, then G6.
-pub fn submit(item: &Item, config: &Config) -> Report {
+/// The gates `submit` and `gates` run first, since they read only files
+/// (§2.4): G2, then G6. `scripts` runs the rest.
+pub fn statics(item: &Item, config: &Config) -> Report {
     let mut failures = g2(item);
     failures.extend(g6(item, config));
     Report {
         ran: vec!["G2", "G6"],
         failures,
+        checks: Vec::new(),
+    }
+}
+
+/// The gates that run checks, after `statics` (§2.4): G3 runs each
+/// criterion's check, and G4 each of the project's checks, in the project's
+/// root. Every check runs, so the refusal lists every one that fails.
+pub fn scripts(item: &Item, config: &Config) -> Report {
+    let mut report = Report {
+        ran: vec!["G3", "G4"],
+        ..Report::default()
+    };
+    for (n, run) in criterion_runs(item, config) {
+        if !run.ok {
+            report
+                .failures
+                .push(check_failure(item, config, "G3", Some(n), &run));
+        }
+        report.checks.push(Ran { gate: "G3", run });
+    }
+
+    let key = &item.project;
+    let Some(project) = config.projects.get(key) else {
+        // Its checks aren't known, so G4 can't pass.
+        report.failures.push(Failure {
+            gate: "G4",
+            criterion: None,
+            message: format!(
+                "{key} isn't in config.json, so its project checks aren't known. Register {key} \
+                 again with `tracker project add`."
+            ),
+            check: None,
+        });
+        return report;
+    };
+    let root = root(item, config);
+    for cmd in &project.checks {
+        let run = run_in(cmd, &root, project.check_timeout(), "project check");
+        if !run.ok {
+            report
+                .failures
+                .push(check_failure(item, config, "G4", None, &run));
+        }
+        report.checks.push(Ran { gate: "G4", run });
+    }
+    report
+}
+
+/// Each criterion that has a check, numbered from 1, with its check.
+pub fn criterion_checks(item: &Item) -> Vec<(usize, &str)> {
+    item.criteria
+        .iter()
+        .enumerate()
+        .filter_map(|(i, criterion)| criterion.check.as_deref().map(|check| (i + 1, check)))
+        .collect()
+}
+
+/// Runs each criterion's check once, in the project's root, for G3 and for
+/// `start`. A check that can't be run, because the root can't be found,
+/// is a run that failed, with `error` saying why.
+pub fn criterion_runs(item: &Item, config: &Config) -> Vec<(usize, checks::Run)> {
+    let checks = criterion_checks(item);
+    if checks.is_empty() {
+        return Vec::new();
+    }
+    let root = root(item, config);
+    let timeout = timeout(item, config);
+    checks
+        .into_iter()
+        .map(|(n, cmd)| {
+            let what = format!("criterion {n}'s check");
+            (n, run_in(cmd, &root, timeout, &what))
+        })
+        .collect()
+}
+
+/// Runs `cmd` in `root`, or, if the root can't be found, a run that failed
+/// saying why, without running anything.
+fn run_in(cmd: &str, root: &Result<PathBuf, String>, timeout: Duration, what: &str) -> checks::Run {
+    match root {
+        Ok(root) => checks::run(cmd, root, timeout, what),
+        Err(why) => checks::not_run(cmd, why),
+    }
+}
+
+/// The project's root, where its checks run, followed through symlinks,
+/// or what's wrong with it.
+fn root(item: &Item, config: &Config) -> Result<PathBuf, String> {
+    let key = &item.project;
+    let Some(project) = config.projects.get(key) else {
+        return Err(format!(
+            "{key} isn't in config.json, so there's no root to run it in. Register {key} again \
+             with `tracker project add`"
+        ));
+    };
+    match fs::canonicalize(project.root_path()) {
+        Ok(root) if root.is_dir() => Ok(root),
+        Ok(_) => Err(format!("{key}'s root, {}, isn't a folder", project.root)),
+        Err(e) => Err(format!(
+            "{key}'s root, {}, can't be read: {e}",
+            project.root
+        )),
+    }
+}
+
+/// How long one of the item's project's checks may run (§4.2).
+fn timeout(item: &Item, config: &Config) -> Duration {
+    config.projects.get(&item.project).map_or(
+        Duration::from_secs(crate::config::DEFAULT_CHECK_TIMEOUT_SECS),
+        |project| project.check_timeout(),
+    )
+}
+
+/// The failure, from `gate`, for a check that didn't pass: its command, how
+/// it ended, and where its last lines of output are. `criterion` is the
+/// criterion it belongs to, for G3.
+fn check_failure(
+    item: &Item,
+    config: &Config,
+    gate: &'static str,
+    criterion: Option<usize>,
+    run: &checks::Run,
+) -> Failure {
+    let what = match criterion {
+        Some(n) => format!("Criterion {n}'s check"),
+        None => "A project check".to_string(),
+    };
+    let cmd = &run.cmd;
+    let key = &item.project;
+    let mut message = if run.timed_out {
+        format!(
+            "{what}, `{cmd}`, ran longer than {}s, so it was stopped and fails. Make it faster, \
+             or raise check_timeout_secs for {key} in config.json.",
+            timeout(item, config).as_secs()
+        )
+    } else if let Some(why) = &run.error {
+        format!("{what}, `{cmd}`, couldn't be run: {why}.")
+    } else {
+        let how = match (run.exit_code, run.signal) {
+            (Some(code), _) => format!("exit {code}"),
+            (None, Some(signal)) => format!("stopped by signal {signal}"),
+            (None, None) => "no exit code".to_string(),
+        };
+        format!("{what} failed: `{cmd}` ({how}).")
+    };
+    if run.error.is_none() {
+        if run.output.is_empty() {
+            message.push_str(" It printed nothing.");
+        } else {
+            message.push_str(" Its last lines of output follow.");
+        }
+    }
+    Failure {
+        gate,
+        criterion,
+        message,
+        check: Some(run.clone()),
     }
 }
 
@@ -230,6 +433,7 @@ fn no_criteria(item: &Item, gate: &'static str) -> Failure {
             "{id} has no criteria, so nothing says when it's done. Add one with `tracker \
              criterion add {id} \"…\" --check \"…\"`."
         ),
+        check: None,
     }
 }
 
@@ -257,6 +461,7 @@ fn g2(item: &Item) -> Vec<Failure> {
                      `tracker criterion set {id} {n} --check \"…\"`.",
                     criterion.text
                 ),
+                check: None,
             }
         })
         .collect()
@@ -276,6 +481,7 @@ fn g6(item: &Item, config: &Config) -> Vec<Failure> {
             gate: "G6",
             criterion: None,
             message,
+            check: None,
         }],
     }
 }

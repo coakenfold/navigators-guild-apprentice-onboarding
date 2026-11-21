@@ -248,6 +248,37 @@ impl Store {
         Ok(lock)
     }
 
+    /// Takes the lock again after checks ran without it (§4.4), and checks
+    /// that item `id`'s file still holds exactly `before`, the text it held
+    /// when the lock was let go. A check can run for minutes, so `start`,
+    /// `submit` and `gates` never hold the lock while one runs. Refuses with
+    /// exit 1, writing nothing, if the item was removed or changed
+    /// meanwhile. `command` is how it was run, such as `tracker submit
+    /// XX-1`, so the message can say what to run again.
+    pub fn lock_unchanged_after_checks(
+        &self,
+        id: &str,
+        before: &str,
+        command: &str,
+    ) -> Result<File> {
+        let lock = self.lock()?;
+        let now = match self.item_text(id) {
+            Ok(text) => text,
+            Err(err) if err.code == 1 => {
+                return Err(Error::input(format!(
+                    "{id} was removed while its checks ran. Nothing was changed."
+                )));
+            }
+            Err(err) => return Err(err),
+        };
+        if now != before {
+            return Err(Error::input(format!(
+                "{id} changed while its checks ran, so nothing was changed. Run `{command}` again."
+            )));
+        }
+        Ok(lock)
+    }
+
     /// Hands out the next ID for `project` from `counters.json` and records
     /// the number after it. IDs never come from the item files, so a deleted
     /// item's ID is never reused. Call this only while holding the lock.

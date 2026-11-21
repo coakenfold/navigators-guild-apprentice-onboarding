@@ -9,6 +9,11 @@
     "item": {
       "description": "The item after the move, exactly as its file holds it.",
       "$ref": "item.schema.json"
+    },
+    "warnings": {
+      "description": "Only for start, where it's always present: one message for each criterion check that already passed at start, before the work is done (DESIGN.md §2.4). The start still went ahead. item.started.checks has every check's result.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
     }
   },
   "additionalProperties": false

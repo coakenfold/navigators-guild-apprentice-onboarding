@@ -60,13 +60,18 @@
         "required": ["gate", "ok"],
         "properties": {
           "gate": { "type": "string", "pattern": "^G[0-9]+$" },
-          "ok": { "type": "boolean" }
+          "ok": { "type": "boolean" },
+          "secs": {
+            "description": "For G3 and G4, which run checks: how long their checks took together, in seconds.",
+            "type": "integer",
+            "minimum": 0
+          }
         },
         "additionalProperties": false
       }
     },
     "failures": {
-      "description": "Only for a gate's refusal: every reason a gate failed, each with its gate, the criterion it's about if it's about one, numbered from 1, and a message saying what to do.",
+      "description": "Only for a gate's refusal: every reason a gate failed, each with its gate, the criterion it's about if it's about one, numbered from 1, and a message saying what to do. A check that failed (G3 or G4) adds cmd, exit_code, timed_out and output.",
       "type": "array",
       "minItems": 1,
       "items": {
@@ -75,9 +80,32 @@
         "properties": {
           "gate": { "type": "string", "pattern": "^G[0-9]+$" },
           "criterion": { "type": "integer", "minimum": 1 },
-          "message": { "type": "string", "minLength": 1 }
+          "message": { "type": "string", "minLength": 1 },
+          "cmd": {
+            "description": "For a check that failed: its command, a line of sh run in the project's root.",
+            "type": "string",
+            "minLength": 1
+          },
+          "exit_code": {
+            "description": "For a check that failed: its exit code, or null if it was stopped, ran out of time, or couldn't be run.",
+            "type": ["integer", "null"]
+          },
+          "timed_out": {
+            "description": "For a check that failed: whether it ran longer than the project's check_timeout_secs, and was stopped.",
+            "type": "boolean"
+          },
+          "output": {
+            "description": "For a check that failed: its last 20 lines of output, stdout and stderr together, without a final line break. Empty if it printed nothing.",
+            "type": "string"
+          }
         },
-        "additionalProperties": false
+        "additionalProperties": false,
+        "dependentRequired": {
+          "cmd": ["exit_code", "timed_out", "output"],
+          "exit_code": ["cmd"],
+          "timed_out": ["cmd"],
+          "output": ["cmd"]
+        }
       }
     }
   },

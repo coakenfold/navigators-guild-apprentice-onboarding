@@ -10,11 +10,13 @@ use clap::{Args, Parser, Subcommand};
 use serde_json::{Value, json};
 use unicode_width::UnicodeWidthStr;
 
+use tracker::checks;
 use tracker::config::{self, Project};
 use tracker::error::{Error, Result};
 use tracker::gates::{self, Run};
 use tracker::item::{
-    self, Criterion, HistoryEntry, Item, Kind, Priority, Status, Verification, VerifiedBy, Via,
+    self, CheckRecord, Criterion, HistoryEntry, Item, Kind, Priority, Started, StartedCheck,
+    Status, Verification, VerifiedBy, Via,
 };
 use tracker::states;
 use tracker::store::{Skipped, Store};
@@ -79,17 +81,21 @@ enum Command {
     /// Gate G1 runs first: the item needs at least one criterion, and no
     /// other item in its project may be in progress or in review. If it
     /// fails, start is refused with exit 2 and every reason, and nothing
-    /// changes
+    /// changes. Then each criterion's check runs once and its result is
+    /// recorded. A check is expected to fail before the work is done, so
+    /// start warns about one that already passes, and goes ahead
     Start {
         /// The item's ID, such as BM-12
         id: String,
     },
     /// Submit an in-progress item: → done
     ///
-    /// Gates G2 and G6 run first, as `tracker gates` runs them. If any
+    /// Gates G2, G6, G3 and G4 run first, as `tracker gates` runs them: G3
+    /// runs each criterion's check, and G4 the project's checks. If any
     /// fails, submit is refused with exit 2 and every reason, and nothing
-    /// changes. Until checks run (a later version), an item that passes goes
-    /// to done with a verification record that says it's unchecked
+    /// changes. Until commits are recorded (a later version), an item that
+    /// passes goes to done with a verification record that says it's
+    /// unchecked, and keeps each check's last lines of output
     Submit {
         /// The item's ID, such as BM-12
         id: String,
@@ -624,6 +630,8 @@ fn project_add(
         name: name.to_string(),
         root: root.to_string(),
         design,
+        checks: Vec::new(),
+        check_timeout_secs: None,
     };
     let _lock = store.lock()?;
     // Two projects with one root would leave `create` guessing which one the
@@ -871,6 +879,7 @@ fn create(store: &Store, args: CreateArgs) -> Result<Output> {
         updated: now,
         written,
         criteria,
+        started: None,
         verification: None,
         previous_verification: None,
         history: Vec::new(),
@@ -1673,7 +1682,7 @@ fn record_evidence(store: &Store, id: &str, n: usize, evidence: &str) -> Result<
     ))
 }
 
-/// `gates`: runs the gates `submit` runs, G2 and G6, without changing
+/// `gates`: runs the gates `submit` runs, G2, G6, G3 and G4, without changing
 /// anything (§2.4). Exits 2, listing every failure, if any fails.
 fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
     store.require_exists()?;
@@ -1681,7 +1690,8 @@ fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
     let (item, file) = store.load_item_with_text(&id)?;
     refuse_newer_file(store, &id, &file)?;
     let config = config::load(store)?;
-    let report = gates::submit(&item, &config);
+    let mut report = gates::statics(&item, &config);
+    report.extend(gates::scripts(&item, &config));
     if !report.passed() {
         return Err(report.refusal(&id, item.status, Run::DryRun));
     }
@@ -1957,13 +1967,13 @@ fn list_table(items: &[Item], config: &config::Config) -> Styled {
 fn move_item(store: &Store, id: &str, via: Via, reason: Option<String>) -> Result<Output> {
     store.require_exists()?;
     let id = normalize_id(id);
-    let _lock = store.lock()?;
+    let lock = store.lock()?;
     let (item, file) = store.load_item_with_text(&id)?;
     let Some(step) = states::find(via, item.status) else {
         return Err(states::not_from(&id, item.status, via));
     };
     let reason = check_reason(&id, via, reason, &states::command(&id, via))?;
-    apply(store, item, &file, step, reason)
+    apply(store, lock, item, &file, step, reason)
 }
 
 /// `status <id> <state>`: the alias that maps a state onto the command that
@@ -1971,7 +1981,7 @@ fn move_item(store: &Store, id: &str, via: Via, reason: Option<String>) -> Resul
 fn status(store: &Store, id: &str, to: Status, reason: Option<String>) -> Result<Output> {
     store.require_exists()?;
     let id = normalize_id(id);
-    let _lock = store.lock()?;
+    let lock = store.lock()?;
     let (item, file) = store.load_item_with_text(&id)?;
     let step = match states::via_to(to) {
         // A held item is mine to decide, with approve or reject (§2.7).
@@ -1993,7 +2003,7 @@ fn status(store: &Store, id: &str, to: Status, reason: Option<String>) -> Result
     }
     let how = format!("tracker status {id} {state} --reason \"…\"");
     let reason = check_reason(&id, step.via, reason, &how)?;
-    apply(store, item, &file, step, reason)
+    apply(store, lock, item, &file, step, reason)
 }
 
 /// The longest reason a move takes, in characters. A reason is printed on
@@ -2029,34 +2039,64 @@ fn check_reason(id: &str, via: Via, reason: Option<String>, how: &str) -> Result
     Ok(Some(reason))
 }
 
-/// Makes `step` on `item`, which was read under the lock from `file`, adds
+/// Makes `step` on `item`, which was read under `lock` from `file`, adds
 /// its history entry, and writes the item. A file from a newer tracker is
 /// refused first, with exit 3. A move that has gates runs them next, and
 /// refuses with exit 2, changing nothing, if any fails (§2.4): G1 for
-/// `start`, and G2 and G6 for `submit`.
+/// `start`, and G2, G6, G3 and G4 for `submit`.
+///
+/// Checks run without the lock (§4.4), since one can take minutes. Once
+/// they've run, the lock is taken again, and the move is refused with exit
+/// 1 if the item's file changed meanwhile. `start` runs G1 again then,
+/// since another item in the project may have started while its checks
+/// ran.
 fn apply(
     store: &Store,
+    lock: std::fs::File,
     mut item: Item,
     file: &str,
     step: states::Move,
     reason: Option<String>,
 ) -> Result<Output> {
     refuse_newer_file(store, &item.id, file)?;
-    let report = match step.via {
+    let command = states::command(&item.id, step.via);
+    let mut report = None;
+    let mut started = Vec::new();
+    let _lock = match step.via {
         Via::Start => {
             // A file that can't be read as an item can't say whether it's
             // in progress, so G1 fails on one in the item's project (§4.4).
             let (items, skipped) = store.load_items()?;
-            Some((gates::start(&item, &items, &skipped), Run::Start))
+            let g1 = gates::start(&item, &items, &skipped);
+            if !g1.passed() {
+                return Err(g1.refusal(&item.id, item.status, Run::Start));
+            }
+            let config = config::load(store)?;
+            drop(lock);
+            started = gates::criterion_runs(&item, &config);
+            let lock = store.lock_unchanged_after_checks(&item.id, file, &command)?;
+            let (items, skipped) = store.load_items()?;
+            let g1 = gates::start(&item, &items, &skipped);
+            if !g1.passed() {
+                return Err(g1.refusal(&item.id, item.status, Run::Start));
+            }
+            report = Some(g1);
+            lock
         }
-        Via::Submit => Some((gates::submit(&item, &config::load(store)?), Run::Submit)),
-        _ => None,
+        Via::Submit => {
+            let config = config::load(store)?;
+            let mut gates = gates::statics(&item, &config);
+            drop(lock);
+            gates.extend(gates::scripts(&item, &config));
+            let lock = store.lock_unchanged_after_checks(&item.id, file, &command)?;
+            if !gates.passed() {
+                return Err(gates.refusal(&item.id, item.status, Run::Submit));
+            }
+            report = Some(gates);
+            lock
+        }
+        _ => lock,
     };
-    if let Some((report, run)) = &report
-        && !report.passed()
-    {
-        return Err(report.refusal(&item.id, item.status, *run));
-    }
 
     let now = item::now();
     item.status = step.to;
@@ -2065,6 +2105,20 @@ fn apply(
     text.push(&format!("{}: {} → ", item.id, step.from.as_str()));
     text.push_styled(step.to.as_str(), styled::status(step.to));
     text.push("\n");
+    let mut warnings = Vec::new();
+    if step.via == Via::Start {
+        warnings = already_passing(&item, &started);
+        item.started = Some(Started {
+            at: now,
+            checks: started
+                .iter()
+                .map(|(n, run)| StartedCheck {
+                    criterion: *n,
+                    passed: run.ok,
+                })
+                .collect(),
+        });
+    }
     // `verification` is only present while the item is done (§2.1). A file
     // written by slice 2 can still hold one on a shelved item, so this
     // doesn't check that the move starts from done.
@@ -2074,9 +2128,14 @@ fn apply(
         item.previous_verification = Some(record);
     }
     if step.via == Via::Submit {
+        let checks = report
+            .as_ref()
+            .map(|report| report.checks.iter().map(check_record).collect())
+            .unwrap_or_default();
         item.verification = Some(Verification {
             by: VerifiedBy::Unchecked,
             at: now,
+            checks,
             note: Some(states::UNCHECKED_NOTE.to_string()),
         });
         // The note says which gates passed.
@@ -2097,7 +2156,7 @@ fn apply(
     let json = if step.via == Via::Submit {
         // §3's shape for a submit. The triggers (slice 9) fill in
         // `triggers` and `holds` and can make the result `held`.
-        let gates = report.map_or(json!([]), |(report, _)| report.gates_json());
+        let gates = report.map_or(json!([]), |report| report.gates_json());
         json!({
             "id": item.id,
             "result": "done",
@@ -2107,14 +2166,45 @@ fn apply(
             "holds": [],
             "item": item,
         })
+    } else if step.via == Via::Start {
+        json!({ "item": item, "warnings": warnings })
     } else {
         json!({ "item": item })
     };
     Ok(Output {
         text,
         json,
-        warnings: Vec::new(),
+        warnings,
     })
+}
+
+/// `start`'s warning for each criterion check in `started` that already
+/// passes. It can't be proving the new work, but the start goes ahead,
+/// since some pass for a good reason (§2.4).
+fn already_passing(item: &Item, started: &[(usize, checks::Run)]) -> Vec<String> {
+    started
+        .iter()
+        .filter(|(_, run)| run.ok)
+        .map(|(n, run)| {
+            format!(
+                "Criterion {n}'s check, `{}`, already passes before the work is done, so it \
+                 can't be proving the new work. Make sure it tests what criterion {n} says, \
+                 such as with a filter that matches a test that fails now. {} started anyway.",
+                run.cmd, item.id
+            )
+        })
+        .collect()
+}
+
+/// A check a gate ran, as the verification record keeps it (§4.3).
+fn check_record(ran: &gates::Ran) -> CheckRecord {
+    let run = &ran.run;
+    CheckRecord {
+        cmd: run.cmd.clone(),
+        ok: run.ok,
+        secs: run.secs,
+        output: (!run.output.is_empty()).then(|| run.output.clone()),
+    }
 }
 
 /// `show`: everything about one item (§3): every field, its verification
