@@ -24,6 +24,8 @@ I found no bug that loses data. The findings that matter most:
 - **Test gap 1:** no test fails if the re-read after checks is taken out, at `start`, `submit`, or `criterion add` and `criterion set`.
 - **Process 7:** slices 8–16 have no items yet, and the walkthrough that creates them still numbers slice 8 as TR-2, which is now one of this slice's fixes.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -103,3 +105,51 @@ I found no bug that loses data. The findings that matter most:
 - **The shape of `verification.checks`** (finding 8) should be settled before `auto` records exist.
 - **`show` prints `started` and each check's saved output**, escaped, as the readme says. A kept line's length (bug 5) decides how long that output can be.
 - **Which ID slice 8's item gets** (process 7), and that the installed binary is this slice's (process 3) before it starts.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `40a7c7a`, not at the fixed code. Each fix was built as a tracker item of its own, TR-13 to TR-18, with its tests committed before `tracker start`, and the readme's [Fixes after review 1](../slice-7-readme.md#fixes-after-review-1) lists them too.
+
+This round fixed bugs 1, 4 and 5, findings 7 and 8, finding 6's docs half and both test gaps. Option (a) was taken wherever there was a choice, and bug 2 got option (b)'s §7 limit instead of a fix. Bugs 2 and 3 won't be fixed in code, and finding 6's test-helper half is left for slice 11. Of the seven process notes, process 1, 2 and 7 are done, process 3 is planned for before slice 8 starts, process 4 is advice for later items, and process 5 and 6 needed no action. Of the six items in "Slice 8 must decide", this round settles three, helps with two, and leaves one for slice 8. The commits after this review (`3ec8698`), in order:
+
+- **Process 7:** `065a308` (the creating-items walkthrough's note), after TR-4 to TR-12 were created.
+- **Fixes:** `f7ef9dd` and `5e239bb` (TR-13, bug 1), `fd61aac` and `f4dbd44` (TR-14, bug 4), `06375a8` and `33ee754` (TR-15, bug 5), `88bf66f`, `0af662d` and `b3ca602` (TR-16, finding 8), `99625be` (TR-17, findings 6 and 7, and bug 2's limit) and `02ef286` (TR-18, test gaps 1 and 2).
+- **Docs:** the readme's update and the commit that adds this Outcome.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: a check that starts a process outside its group keeps `tracker` waiting past the timeout | TR-13, `5e239bb`, option (a): `src/checks.rs`'s reader fills a buffer it shares with `run`, and ends an `mpsc` channel when the pipe closes. Once the group is stopped, `run` waits for that at most 1s (`LEFTOVER_OUTPUT`), then goes on with what was read. The failure doesn't say that something the check started kept running, which (a) also suggested, and the escaped process is left running. Test: `a_timed_out_check_with_an_escaped_process_fails_soon_after_its_timeout`, a `perl` process that calls `setsid`, under a 1-second timeout, which must fail in under 10s with `timed_out` and the output read so far |
+| Bug 2: Ctrl-C on `tracker` leaves the running check going | Won't fix in code. Catching the signals needs a crate such as `signal-hook`, which §8 doesn't list, and the harm is small: a check that runs on to its end. TR-17's `99625be` adds a §7 limit instead, "Interrupting `tracker` can leave a check running", as option (b) asked, and the readme's limits say so |
+| Bug 3: a very large `check_timeout_secs` panics | Won't fix. Only an absurd hand-edited config reaches it. `run` still adds the timeout to `Instant::now()` with `+`, and the readme's limits say so |
+| Bug 4: `criterion add` and `criterion set` run a check before refusing a newer tracker's file | TR-14, `f4dbd44`, as suggested: `criterion_add` and `criterion_set` call `refuse_newer_file` right after the load, before any check runs. Test: `criterion_add_and_set_refuse_a_newer_trackers_file_before_running_a_check`, the review's case, with `started.head` added by hand: both exit 3, the file is unchanged, and the check never runs |
+| Bug 5: a kept line has no length limit | TR-15, `33ee754`, as suggested: `last_lines` cuts each kept line to `KEPT_LINE_CHARS`, 500 characters, 499 of them and `…`. Test: `a_kept_line_longer_than_the_limit_is_cut_and_marked`, a 2000-character line and a short one. Left open: `item.schema.json`'s description of `output` still says "last 20 lines" and doesn't mention the cut, and nor does `error.schema.json`'s |
+| Finding 6: what `gates` runs for an item that isn't in progress | TR-17, `99625be`, option (a): `gates` keeps running every check in any state. §2.4's paragraph on `tracker gates` and §3's `gates` row say so, and so do the readme's decisions |
+| Finding 6: the shared test helper's check is still `true` | Left for slice 11. `Env::add_criterion` still adds `--check true`. Slice 11's T13 will hold every item it starts with a passing check, so slice 11 has to change the helper anyway |
+| Finding 7: DESIGN.md doesn't say what the slice decided about `started.checks` | TR-17, `99625be`, as suggested: §2.4's "Checks must fail first" says a check given after start is recorded in `started.checks` in place of any earlier result for its criterion, and warned about as at start, and that `criterion remove` drops and renumbers the entries. §4.3's `started.checks` bullet says it holds the latest run of each criterion's check before the work, numbered as the criteria are now |
+| Finding 8: a verification record's checks don't say which criterion or gate each came from | TR-16, `0af662d` and `b3ca602`, option (a): `CheckRecord.criterion: Option<usize>`, its first field, with a serde default and `skip_serializing_if`, so a project check names none and older records load unchanged. `item.schema.json` has it, and §4.3's example and a new bullet show it. Test: `verification_checks_name_the_criterion_each_came_from`, with the same command as a criterion check and a project check, and a manual criterion between two checks, recorded as 1, 3 and none |
+| Test gap 1: no test fails if the re-read after checks is taken out | TR-18, `02ef286`: `start_refuses_when_the_item_changed_while_its_checks_ran` and `criterion_add_after_start_refuses_when_the_item_changed_while_its_check_ran`, each with a check that runs `tracker edit XX-1 --priority high; false`, expecting exit 1, the edit kept, and nothing else written |
+| Test gap 2: no test that a check's printed command and output are escaped, or that a check's leftover background process is stopped | TR-18, `02ef286`: `control_characters_in_a_checks_output_are_escaped_in_the_text_output`, the review's escape and U+202E read from `gates`'s stderr, and `a_background_process_a_timed_out_check_started_is_stopped`, with `(sleep 3; touch late) & sleep 30` as a criterion check under a 1-second timeout and `(sleep 3; touch later) & true` as a project check. The printed command isn't tested with a real control character, since `criterion add` refuses one, so only a hand-edited file can hold it |
+| Process 1: the readme stops at TR-2 | Done in the readme's update: TR-3 in the opening paragraph and the Status row, 267 tests with 17 in `tests/checks.rs`, a coverage table for TR-3 with its check, `cargo test --test checks criterion_remove_after_start`, which matches one test, and "Tracking TR-3" |
+| Process 2: nothing records that TR-3's test was seen failing before `tracker start TR-3` | Done in the readme's update: it says the test was run against `d7f8b60`'s files and fails at `tests/checks.rs:419`, with the old entries left in place |
+| Process 3: no slice 7 check was run by a binary other than the code it checks | Planned: the slice 7 binary will be installed before TR-4 (slice 8) starts. Until then the slice 6 binary tracks, so TR-13 to TR-18 were verified as TR-2 and TR-3 were |
+| Process 4: TR-2's kind is `change` | TR-2 stays a `change`. Later out-of-scope items that add behaviour get `capability` |
+| Process 5: the unscoped commits are all between items | No action needed. `065a308`, the one unscoped commit since, came after TR-3's submit and before TR-13's start |
+| Process 6: `0ac6b10` changed the expected values of eight slice 6 tests | No action needed |
+| Process 7: slices 8–16 have no items, and the walkthrough numbers them from TR-2 | Option (a): the nine items were created in order as TR-4 to TR-12, with the walkthrough's commands, and `065a308` adds a note to the walkthrough that in the real store slice N is TR-(N−4). Its table, step 2 and examples still show the throwaway store's numbers |
+| Slice 8 must decide: whether G5 runs again after the checks | Left for slice 8 |
+| Slice 8 must decide: shelving runs project checks, so it inherits bugs 1 and 2 | Left for slice 8. TR-13 fixes bug 1, and bug 2 is now a §7 limit. TR-18's two tests show how to test its re-read after checks |
+| Slice 8 must decide: `started.head` makes bug 4 likely | Settled by TR-14, before slice 8 writes `head` |
+| Slice 8 must decide: the shape of `verification.checks` | Settled by TR-16, before any `auto` record exists |
+| Slice 8 must decide: `show` prints `started` and each check's saved output | Left for slice 8. TR-15 settles how long a kept line can be: 500 characters |
+| Slice 8 must decide: which ID slice 8's item gets, and that the installed binary is this slice's | Settled by process 7: it's TR-4. Installing the binary is process 3, planned for before TR-4 starts |
+
+Seen failing:
+
+- **Bug 1:** before the fix, the test took 30.07s, against a limit of under 10s. It now takes about 2.5s.
+- **Bug 4:** before the fix, `criterion add`'s check ran before its exit 3. The `criterion set` half was seen failing on its own too.
+- **Bug 5:** before the fix, the 2000-character line was kept whole.
+- **Finding 8:** before the fix, no entry had a criterion.
+- **Test gaps 1 and 2:** these cover code that already worked, so each test was run against code broken on purpose, then the code was restored: `lock_unchanged_after_checks` swapped for `store.lock()` in `start`, then in `run_check_given_after_start`; the output printed without `text::for_terminal`; and `stop_group` taken out in two ways.
+- **Findings 6 and 7, and bug 2's limit,** change docs only, so there was nothing to see fail. TR-17's three criteria are manual, with evidence quoting each passage.
+
+The installed slice 6 binary verified each of TR-13 to TR-18 as `unchecked`, on G2 and G6 alone, so none ran its checks through G3. The full test command was run by hand before each submit instead. After all six, `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo clippy --all-targets -- -D warnings` and all 267 tests pass, 8 more than at `40a7c7a`, all in `tests/checks.rs`. The readme's Try it output changed only in its item file, where each criterion check in `verification.checks` now names its `criterion`.
