@@ -2745,8 +2745,20 @@ fn deletion_warning(item: &Item, has_ref: bool) -> String {
                 None => format!("done, verified by its gates at {}", record.at),
             },
             VerifiedBy::Human => format!("done, approved by a human at {}", record.at),
-            // Nothing verified it, so the warning mustn't say it was.
-            VerifiedBy::Unchecked => format!("done at {}, unchecked: no checks ran", record.at),
+            // Nothing verified it, so the warning mustn't say it was. The
+            // slice 7 binary ran checks but recorded no commit.
+            VerifiedBy::Unchecked => match record.checks.len() {
+                0 => format!("done at {}, unchecked: no checks ran", record.at),
+                1 => format!(
+                    "done at {}, unchecked: 1 check ran and passed, but no commit records it",
+                    record.at
+                ),
+                count => format!(
+                    "done at {}, unchecked: {count} checks ran and passed, but no commit \
+                     records them",
+                    record.at
+                ),
+            },
         },
         (Status::Done, None) => "done, with no verification record".to_string(),
         (Status::InProgress, _) => "in-progress, so someone may be working on it".to_string(),
