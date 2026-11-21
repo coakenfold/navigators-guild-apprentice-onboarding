@@ -1571,6 +1571,8 @@ fn criterion_set(store: &Store, id: &str, n: usize, check: &str) -> Result<Outpu
 /// wrote ends with `criterion accept`, which names the text, asks for the
 /// ID and leaves the history entry the digest lists (§2.1). `script` gets
 /// past the terminal check (§7), and would otherwise drop it unrecorded.
+/// On a started item, the removed criterion's `started.checks` entry goes
+/// and the later entries are renumbered to match.
 fn criterion_remove(store: &Store, id: &str, n: usize) -> Result<Output> {
     store.require_exists()?;
     let id = normalize_id(id);
@@ -1580,6 +1582,16 @@ fn criterion_remove(store: &Store, id: &str, n: usize) -> Result<Output> {
     check_criteria_changeable(&item)?;
     let i = criterion_index(&item, n)?;
     let removed = item.criteria.remove(i);
+    // `started.checks` is keyed by criterion number, so the removed one's
+    // entry goes and the later ones move up with their criteria (T13).
+    if let Some(started) = &mut item.started {
+        started.checks.retain(|check| check.criterion != n);
+        for check in &mut started.checks {
+            if check.criterion > n {
+                check.criterion -= 1;
+            }
+        }
+    }
     item.updated = item::now();
     store.update_item(&item)?;
 
