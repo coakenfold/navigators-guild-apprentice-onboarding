@@ -22,6 +22,8 @@ The findings that matter most:
 - **Security 1:** TR-21's check skips a flagged file that isn't on disk, so marking a failing test `--assume-unchanged` or `--skip-worktree` and deleting it passes G5, and the verified commit holds a test that fails. It's the same deliberate dodge review 1's security 1 described, in a form the fix left open.
 - **Design 1:** the dodge the orchestrator asked about. A check that marks a file skip-worktree and changes it passes G5's second look. I reproduced it. It's unlikely: no honest check sets the flag. The harm is that the next item's G5 is refused for a file it never touched.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -95,3 +97,39 @@ Review 1's four points still stand, as the readme carries them:
 - **`approve`'s G5.** It calls `gates::g5` under the lock, which brings TR-21's flag check and, if made first, security 1's fix. It also calls `tree_after_checks` after the checks, which brings design 1's fix if that's made first. Then it re-reads with `lock_unchanged_after_checks` and sets the ref at its own `HEAD`.
 - **TR-5 is the first TR item G5 checks.** Everything under `tracker/` has to be committed before its submit, this review and its Outcome included, and at least one commit scoped to TR-5 has to exist. I found no file under the real repo's `tracker/` marked skip-worktree or assume-unchanged, and no `core.ignoreStat`, so TR-21's check won't refuse TR-5 for something already there.
 - **`submit` from in-progress has two results.** `Run::Submit`'s text and `submit.schema.json`'s "result is always done" change for a held item.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `9cc67c8`, not at the fixed code. The fixes were built as two tracker items, TR-25 and TR-26, and the readme's [Fixes after review 2](../slice-8-readme.md#fixes-after-review-2) lists them too. TR-25's tests were committed before `tracker start`, and TR-26 changes docs only.
+
+This round fixed security 1, with option (a), and test gap 1, as suggested, and stated design 2 and bug 1 in §7, with option (a) for design 2 and option (b) for bug 1. Design 1 won't be fixed in code: it's stated in §7 instead. Process 1 is settled. Of the four items carried forward, review 1's bug 1 still won't be fixed, review 1's process 1 is settled, review 1's process 2 is still the user's, and slice 7 review 1's finding 6 is left for slice 11. The four items in "Slice 9 must decide" are left for slice 9. The commits after this review (`5921f5c`), in order:
+
+- **Fixes:** `b508afc`, `bf9d9a7` and `157425a` (TR-25, security 1 and test gap 1), and `0df6a97` (TR-26, design 1, design 2 and bug 1).
+- **Docs:** the readme's update and the commit that adds this Outcome.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: a committed file under the root whose name isn't UTF-8 makes every G5 exit 3, since TR-21 | TR-26, `0df6a97`, option (b), as suggested: §7's new bullet "Some repositories defeat G5's reading of git" says tracker reads git's output as UTF-8 while G5 lists every tracked file under the root, so such a name makes G5 exit 3 for every `gates`, `submit` and in-progress shelve until the file is renamed, that macOS's file system refuses such a name, and that it fails closed, naming the git command. `hidden` is unchanged |
+| Security 1: a flagged file that's been deleted passes G5 | TR-25, `bf9d9a7` and `157425a`, option (a): `git::hidden` lists every flagged file, on disk or not, except a skip-worktree file that isn't on disk while `git config --bool --default false core.sparseCheckout` is true. §2.4's G5 row says a flagged file fails G5 even once it's deleted, except that one, which passes. `g5_fails_for_a_file_marked_skip_worktree`'s end was wrong, not weakened, as the finding says: `b508afc` sets `core.sparseCheckout true` before deleting the file, with a comment saying why, and it's TR-25's criterion 2 test. Tests for the deleted file in an ordinary repository, one per flag: `g5_fails_for_a_deleted_file_marked_skip_worktree` and `g5_fails_for_a_deleted_file_marked_assume_unchanged` |
+| Design 1: a check that marks a file skip-worktree and changes it passes G5's second look | Won't fix in code. It's very unlikely: no honest check sets the flag, a check meant to cheat doesn't need it, and the next item's G5, or a shelve, refuses the flagged file. TR-26, `0df6a97`, states it instead: a §7 bullet, "G5's second look doesn't ask about the flags", says the second look asks only for uncommitted files and `HEAD`, that such a check's submit passes with the file as it was in the verified commit, that the next item's G5 or a shelve refuses it, and that the check's command is in the record |
+| Design 2: in a repository with `core.ignoreStat` set, G5 refuses every submit, and its advice can't be followed | TR-26, `0df6a97`, option (a), as suggested: the same §7 bullet says `core.ignoreStat=true` flags every committed file under the root, so G5 refuses every submit, that clearing the flags doesn't help since the next commit sets them again, so the setting has to be turned off, and that refusing is right. `g5` doesn't detect the setting |
+| Test gap 1: three corners of TR-21's and TR-22's fixes work by hand but have no test | TR-25, `b508afc`, as suggested, the first two, next to security 1's tests: `g5_ignores_a_flagged_file_outside_a_subfolder_projects_root` and `an_in_progress_shelve_is_refused_for_a_flagged_file_under_the_root`. The third, `deletion_warning`'s one-check wording, still has no test, and the readme lists it as still open |
+| Process 1: TR-21's test commit didn't pass `cargo fmt --check`, so its fix changed an existing test file after `start` | Settled, as suggested: `cargo fmt` now runs before every commit, tests included. TR-25's test commit, `b508afc`, passes `cargo fmt --check`, and nothing since has reformatted a test |
+| Carried forward: review 1, bug 1, a ref that `delete` never removes | Still won't fix, as review 1's Outcome records |
+| Carried forward: review 1, process 1, no slice 8 item was checked by G5 | Settled by the bootstrap: TR-25 and TR-26 were tracked by the slice 7 binary too, and are `done`, verified `unchecked`, with no `commit` or `ref`. This slice's binary is to be installed now the slice is finished, once this Outcome is committed and before TR-5 (slice 9) starts, so TR-5 is the first item G5 checks |
+| Carried forward: review 1, process 2, typing the ID into `delete` in a real terminal | Still the user's hand check, once, before the branch merges |
+| Carried forward: slice 7 review 1, finding 6, `Env::add_criterion` adds `--check true` | Left for slice 11 |
+| Slice 9 must decide: where the ref is set | Left for slice 9 (TR-5). TR-24's two ref tests are in place |
+| Slice 9 must decide: `approve`'s G5 | Left for slice 9 (TR-5). Security 1's fix landed first, so `approve` gets it through `gates::g5`. Design 1 isn't fixed, so its `tree_after_checks` won't ask about the flags either |
+| Slice 9 must decide: TR-5 is the first TR item G5 checks | Left for slice 9 (TR-5). Everything under `tracker/`, this Outcome and the readme's update included, has to be committed before its submit |
+| Slice 9 must decide: `submit` from in-progress has two results | Left for slice 9 (TR-5) |
+
+Seen failing:
+
+- **Security 1:** TR-25's criterion 1 failed at `tracker start TR-25`, before any code changed: both deleted-file tests failed where they expect `gates` to exit 2. Criterion 2's test, `g5_fails_for_a_file_marked_skip_worktree`, passed at start, since its last case is now a sparse checkout, which the old code also passed. It failed with `hidden`'s sparse-checkout exception taken out, then the code was restored.
+- **Test gap 1:** these cover code that already worked, so criterion 3 passed at start, and each test was run against code broken on purpose, then restored: `g5_ignores_a_flagged_file_outside_a_subfolder_projects_root` failed with `ls-files`' pathspec changed from `.` to `:/`, and `an_in_progress_shelve_is_refused_for_a_flagged_file_under_the_root` with `hidden` returning nothing. `tracker start TR-25` warned that criteria 2 and 3 already passed, as expected.
+- **Design 1, design 2 and bug 1** change docs only, so there was nothing to see fail. TR-26's two criteria are manual, with evidence quoting each §7 bullet.
+
+`157425a` isn't one of TR-25's criteria. §2.4's G5 row said a skipped file that isn't on disk passes, which the fix made wrong, so it was corrected with it.
+
+The installed slice 7 binary verified TR-25 and TR-26 as `unchecked`. It ran TR-25's criterion checks through G3 and TR's project checks through G4 for both, but it has no G5, so neither has a `commit` or a `ref`. After both, `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo clippy --all-targets -- -D warnings` and all 308 tests pass, 4 more than at `9cc67c8`, all in `tests/commits.rs`. The readme's Try it gains a step in which a skip-worktree file that's been deleted refuses a shelve under G5. The rest of its output is unchanged, apart from the SHAs and times that differ on every run.
