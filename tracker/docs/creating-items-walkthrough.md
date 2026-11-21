@@ -2,6 +2,8 @@
 
 This walks through creating `tracker`'s own items for slices 8 to 16, by hand, with the `tracker` CLI. It's step 2 of PLAN.md's [self-tracking checkpoint](PLAN.md#slice-6-criteria-and-simple-gates): each slice becomes one item in project `TR`, ready for its agent to pick up when the slice starts.
 
+**In the real store the IDs are four higher than shown here, not two.** TR-2 and TR-3 were made first, as out-of-scope fixes found while building slice 7, so these nine items were created after them with the commands below unchanged, as TR-4 to TR-12: slice N is TR-(N−4). The IDs in this walkthrough's comments and output are from the throwaway store.
+
 [The self-tracking walkthrough](self-tracking-walkthrough.md) tells the story before this one: registering `TR`, creating TR-1 for slice 7, and fixing one of its criteria by hand. This one gives every command in full, with what it prints. The output is from a throwaway store (`TRACKER_HOME` set to a temporary folder) set up the same way, so only the timestamps differ from a run in the real store at `~/.tracker`.
 
 ## Contents
