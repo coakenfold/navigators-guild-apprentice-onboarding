@@ -10,6 +10,7 @@ use std::io::Read;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -27,6 +28,11 @@ const TAIL_BYTES: usize = 64 * 1024;
 /// How often a running check is looked at, to see whether it has ended or
 /// run out of time.
 const POLL: Duration = Duration::from_millis(20);
+
+/// How long the rest of a check's output is waited for once its process
+/// group is stopped. Only a process that left the group can hold the output
+/// open past then.
+const LEFTOVER_OUTPUT: Duration = Duration::from_secs(1);
 
 /// What one run of a check found.
 #[derive(Debug, Clone, PartialEq)]
@@ -106,26 +112,37 @@ pub fn run(cmd: &str, root: &Path, timeout: Duration, what: &str) -> Run {
         Err(e) => return failed(e.to_string()),
     };
 
-    let tail = thread::spawn(move || {
-        let mut tail = Vec::new();
+    // The output is read on a thread of its own, into `tail`, which it
+    // shares, so the wait for it below can be cut short. Its end is seen
+    // when `finished` closes, as the thread drops it.
+    let tail = Arc::new(Mutex::new(Vec::new()));
+    let (finished, ended) = mpsc::channel::<()>();
+    let reading = Arc::clone(&tail);
+    thread::spawn(move || {
+        let _finished = finished;
         let mut buffer = [0; 8192];
         while let Ok(n) = reader.read(&mut buffer) {
             if n == 0 {
                 break;
             }
+            let mut tail = reading.lock().unwrap_or_else(|e| e.into_inner());
             tail.extend_from_slice(&buffer[..n]);
             if tail.len() > 2 * TAIL_BYTES {
-                tail.drain(..tail.len() - TAIL_BYTES);
+                let cut = tail.len() - TAIL_BYTES;
+                tail.drain(..cut);
             }
         }
-        tail
     });
 
     let (status, timed_out) = wait(&mut child, began + timeout);
     // Anything the check left running, such as a server it started in the
     // background, would hold the output open, so it's stopped too.
     stop_group(&child);
-    let tail = tail.join().unwrap_or_default();
+    // A process that left the group, with `setsid`, isn't stopped, and can
+    // hold the output open for ever, so the rest of the output is waited
+    // for only briefly, and the run goes on with what was read.
+    let _ = ended.recv_timeout(LEFTOVER_OUTPUT);
+    let tail = tail.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let secs = began.elapsed().as_secs_f64().round() as u64;
 
     let (exit_code, signal) = match status {
