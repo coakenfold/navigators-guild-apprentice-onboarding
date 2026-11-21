@@ -552,3 +552,207 @@ fn submit_writes_nothing_when_a_project_check_edits_the_item_file() {
     fs::write(&go, "").unwrap();
     submit_writes_nothing(&env, &repo);
 }
+
+// Beyond the criteria: what else slice 8's prompt asks for, and how it
+// settles slice 7 review 2's "Slice 8 must decide" list.
+
+#[test]
+fn start_records_head() {
+    let (env, repo, _) = env_with_item();
+    let head = git(&repo, &["rev-parse", "HEAD"]);
+    let output = env.json(&["start", "XX-1"]);
+    assert_eq!(output["item"]["started"]["head"], head.as_str(), "{output}");
+}
+
+#[test]
+fn a_root_outside_any_git_work_tree_exits_3() {
+    // The work folder is a repository (`Env`), so this root is elsewhere.
+    let env = Env::new();
+    let elsewhere = tempfile::TempDir::new().unwrap();
+    let root = elsewhere.path().join("xx");
+    fs::create_dir_all(&root).unwrap();
+    env.json(&[
+        "project",
+        "add",
+        "XX",
+        "--name",
+        "XX project",
+        "--root",
+        root.to_str().unwrap(),
+    ]);
+    env.create_bare("XX", "a");
+    env.add_criterion("XX-1");
+    let before = fs::read_to_string(env.item_path("XX-1")).unwrap();
+
+    for args in [&["gates", "XX-1"][..], &["start", "XX-1"]] {
+        let message = env.error(args, 3);
+        assert!(
+            message.contains("isn't inside a git work tree"),
+            "{message}"
+        );
+        assert_eq!(fs::read_to_string(env.item_path("XX-1")).unwrap(), before);
+    }
+
+    // Started while the root was in a repository, which is then removed.
+    git_init(&root);
+    env.json(&["start", "XX-1"]);
+    fs::remove_dir_all(root.join(".git")).unwrap();
+    let before = fs::read_to_string(env.item_path("XX-1")).unwrap();
+    for args in [
+        &["submit", "XX-1"][..],
+        &["shelve", "XX-1", "--reason", "later"],
+    ] {
+        let message = env.error(args, 3);
+        assert!(
+            message.contains("isn't inside a git work tree"),
+            "{message}"
+        );
+        assert_eq!(fs::read_to_string(env.item_path("XX-1")).unwrap(), before);
+    }
+}
+
+#[test]
+fn a_check_that_leaves_a_file_in_the_root_fails_g5() {
+    // Review 1's "must decide": G5 looks at the tree again once the checks
+    // have run, so a check that leaves a file fails this submit, not the
+    // next one or the next item's.
+    let (env, repo, root) = env_with_repo();
+    env.create_bare("XX", "a");
+    env.json(&[
+        "criterion",
+        "add",
+        "XX-1",
+        "it works",
+        "--check",
+        "test -f done.txt && touch left-behind.txt",
+    ]);
+    env.json(&["start", "XX-1"]);
+    fs::write(root.join("done.txt"), "done\n").unwrap();
+    git_commit_all(&root, "feat(XX-1): the work");
+
+    let error = refused(&env, &["submit", "XX-1"]);
+    assert_eq!(gate_ok(&error["gates"], "G3"), Some(true), "{error}");
+    assert_eq!(gate_ok(&error["gates"], "G5"), Some(false), "{error}");
+    let g5 = failures_from(&error, "G5");
+    assert_eq!(g5.len(), 1, "{error}");
+    let message = g5[0]["message"].as_str().unwrap();
+    assert!(message.contains("The checks left"), "{message}");
+    assert!(message.contains("xx/left-behind.txt"), "{message}");
+    assert_eq!(env.item("XX-1")["status"], "in-progress");
+    assert!(!git_ok(
+        &repo,
+        &["rev-parse", "--verify", "--quiet", "refs/tracker/XX-1"]
+    ));
+
+    // A file that was already there before the checks is listed once,
+    // under the first G5 failure, not again as left by them.
+    let error = refused(&env, &["submit", "XX-1"]);
+    let g5 = failures_from(&error, "G5");
+    assert_eq!(g5.len(), 1, "{error}");
+    assert!(
+        !g5[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("The checks left"),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_check_that_moves_head_fails_g5() {
+    let (env, _, root) = env_with_item();
+    git_commit_all(&root, "feat(XX-1): the work");
+    set_project(
+        &env,
+        "XX",
+        "checks",
+        json!([
+            "git -c user.name=t -c user.email=t@t.invalid -c commit.gpgsign=false commit \
+             --quiet --allow-empty -m 'feat(XX-1): sneaked in'"
+        ]),
+    );
+    env.json(&["start", "XX-1"]);
+    let error = refused(&env, &["submit", "XX-1"]);
+    let g5 = failures_from(&error, "G5");
+    assert_eq!(g5.len(), 1, "{error}");
+    assert!(
+        g5[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("HEAD moved from"),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_shelve_writes_nothing_when_a_project_check_edits_the_item_file() {
+    // Review 2's "must decide": shelving runs project checks without the
+    // lock, so it reads the item again afterwards, as TR-18's tests show
+    // for `start`.
+    let (env, _, _) = env_with_item();
+    let go = env.outside().join("go");
+    set_project(&env, "XX", "checks", json!([check_that_edits(&go)]));
+    env.json(&["start", "XX-1"]);
+    fs::write(&go, "").unwrap();
+    let message = env.error(&["shelve", "XX-1", "--reason", "later"], 1);
+    assert!(
+        message.contains("changed while its checks ran"),
+        "{message}"
+    );
+    let item = env.item("XX-1");
+    assert_eq!(item["status"], "in-progress", "{item}");
+    assert_eq!(item["priority"], "high", "{item}");
+}
+
+#[test]
+fn an_open_item_shelves_whatever_the_tree_and_checks_say() {
+    // Only an in-progress item frees its project (§2.8).
+    let (env, _, root) = env_with_item();
+    set_project(&env, "XX", "checks", json!(["false"]));
+    fs::write(root.join("scratch.txt"), "").unwrap();
+    let output = env.json(&["shelve", "XX-1", "--reason", "later"]);
+    assert_eq!(output["item"]["status"], "shelved", "{output}");
+}
+
+#[test]
+fn show_prints_started_and_each_saved_output_escaped() {
+    // Review 2's "must decide": `show` prints what start recorded, and
+    // each check's saved output with its criterion, through `Styled`, so a
+    // control character in the output is written out.
+    let (env, _, root) = env_with_repo();
+    set_project(&env, "XX", "checks", json!(["echo two; echo lines"]));
+    env.create_bare("XX", "a");
+    env.json(&[
+        "criterion",
+        "add",
+        "XX-1",
+        "it works",
+        "--check",
+        "test -f done.txt && printf 'a\\033[2Kb\\n'",
+    ]);
+    env.json(&["start", "XX-1"]);
+    fs::write(root.join("done.txt"), "done\n").unwrap();
+    git_commit_all(&root, "feat(XX-1): the work");
+    env.json(&["submit", "XX-1"]);
+    let item = env.item("XX-1");
+
+    let output = env.cmd().args(["show", "XX-1"]).assert().success();
+    let text = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+    assert!(!text.contains('\u{1b}'), "{text:?}");
+    for expected in [
+        "Started:".to_string(),
+        format!("  head    {}", item["started"]["head"].as_str().unwrap()),
+        "  checks  criterion 1 failed".to_string(),
+        format!(
+            "  commit  {}",
+            item["verification"]["commit"].as_str().unwrap()
+        ),
+        "  ref     refs/tracker/XX-1".to_string(),
+        "    criterion 1, passed in".to_string(),
+        "      a\\u{1b}[2Kb\n".to_string(),
+        "    project, passed in".to_string(),
+        ": `echo two; echo lines`\n      two\n      lines\n".to_string(),
+    ] {
+        assert!(text.contains(&expected), "{expected:?} isn't in:\n{text}");
+    }
+}
