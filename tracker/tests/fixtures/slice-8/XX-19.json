@@ -1,0 +1,66 @@
+{
+  "id": "XX-19",
+  "title": "Search filters bookmarks by tag",
+  "project": "XX",
+  "kind": "capability",
+  "status": "done",
+  "priority": "medium",
+  "created": "2026-11-21T14:29:30Z",
+  "updated": "2026-11-21T14:29:30Z",
+  "written": [
+    "Clicking a tag shows only bookmarks with that tag"
+  ],
+  "criteria": [
+    {
+      "text": "Clicking a tag shows only bookmarks with that tag",
+      "check": "cat done.txt"
+    }
+  ],
+  "started": {
+    "at": "2026-11-21T14:29:30Z",
+    "head": "79ccc98a447884d2f6360687ef17fce9eae9428f",
+    "checks": [
+      {
+        "criterion": 1,
+        "passed": false
+      }
+    ]
+  },
+  "verification": {
+    "by": "auto",
+    "at": "2026-11-21T14:29:30Z",
+    "commit": "0e949586dff8e8424f1fbdf9cfaea3035cdf0cf7",
+    "ref": "refs/tracker/XX-19",
+    "checks": [
+      {
+        "criterion": 1,
+        "cmd": "cat done.txt",
+        "ok": true,
+        "secs": 0,
+        "output": "test filters_by_tag ... ok"
+      },
+      {
+        "cmd": "echo all 4 tests passed",
+        "ok": true,
+        "secs": 0,
+        "output": "all 4 tests passed"
+      }
+    ]
+  },
+  "history": [
+    {
+      "at": "2026-11-21T14:29:30Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-21T14:29:30Z",
+      "from": "in-progress",
+      "to": "done",
+      "via": "submit",
+      "interactive": false
+    }
+  ]
+}

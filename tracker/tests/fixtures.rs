@@ -334,3 +334,39 @@ fn the_binary_shows_every_fixture_with_each_history_time() {
         }
     }
 }
+
+/// TR-4: XX-19 was written by slice 8's binary, the first to prove work
+/// against a commit. It's done, `auto`, with the `HEAD` its start recorded,
+/// and the commit and ref its submit recorded, before its checks: a
+/// criterion's, which names criterion 1, and a project check.
+#[test]
+fn slice_8s_xx_19_has_a_commit_and_a_ref_and_comes_back_byte_for_byte() {
+    assert_eq!(names_in("slice-8"), ["XX-19.json"]);
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/slice-8/XX-19.json");
+    let text = fs::read_to_string(&path).unwrap();
+    let file: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(file["status"], "done");
+    assert_eq!(
+        file["started"]["head"],
+        "79ccc98a447884d2f6360687ef17fce9eae9428f"
+    );
+    let record = &file["verification"];
+    assert_eq!(record["by"], "auto");
+    assert_eq!(record["commit"], "0e949586dff8e8424f1fbdf9cfaea3035cdf0cf7");
+    assert_eq!(record["ref"], "refs/tracker/XX-19");
+    assert!(record.get("note").is_none(), "{record}");
+    // The fields come in §4.3's order: `head` after `at`, and `commit`
+    // and `ref` before `checks`.
+    let started: Vec<&String> = file["started"].as_object().unwrap().keys().collect();
+    assert_eq!(started, ["at", "head", "checks"]);
+    let fields: Vec<&String> = record.as_object().unwrap().keys().collect();
+    assert_eq!(fields, ["by", "at", "commit", "ref", "checks"]);
+    assert_eq!(record["checks"][0]["criterion"], 1);
+    assert_eq!(record["checks"][0]["output"], "test filters_by_tag ... ok");
+    assert!(record["checks"][1].get("criterion").is_none());
+
+    let item = tracker::item::from_json(&text).unwrap();
+    assert_eq!(tracker::item::to_json(&item), text);
+    let lost = tracker::item::lost_on_rewrite(&text).unwrap();
+    assert!(lost.is_empty(), "{lost:?}");
+}
