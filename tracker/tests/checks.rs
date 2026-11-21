@@ -5,6 +5,9 @@
 //!
 //! TR-2: a check given to a criterion after `start`, by `criterion add` or
 //! `criterion set`, runs once then too, as §2.4 says.
+//!
+//! TR-3: `criterion remove` after `start` drops the removed criterion's
+//! `started.checks` entry and renumbers the later ones to match.
 
 mod common;
 
@@ -382,4 +385,48 @@ fn check_given_after_start_that_already_passes_is_warned_about() {
     assert_eq!(warnings.len(), 1, "{stderr}");
     assert!(warnings[0].contains("Criterion 3"), "{stderr}");
     assert!(warnings[0].contains("already passes"), "{stderr}");
+}
+
+#[test]
+fn criterion_remove_after_start_keeps_started_checks_on_their_criteria() {
+    let (env, _) = env_with_project();
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "first", "true");
+    add_check(&env, "XX-1", "second", "false");
+    env.json(&["criterion", "add", "XX-1", "third"]);
+    add_check(&env, "XX-1", "fourth", "true");
+    // Before start there's no record, and removing one doesn't make one.
+    env.json(&["criterion", "add", "XX-1", "fifth"]);
+    let removed = env.json(&["criterion", "remove", "XX-1", "5"]);
+    assert_eq!(removed["item"].get("started"), None, "{removed}");
+
+    env.json(&["start", "XX-1"]);
+    assert_eq!(
+        env.item("XX-1")["started"]["checks"],
+        json!([
+            { "criterion": 1, "passed": true },
+            { "criterion": 2, "passed": false },
+            { "criterion": 4, "passed": true },
+        ])
+    );
+
+    // Removing criterion 2 drops its entry, and "fourth" moves up to 3.
+    let removed = env.json(&["criterion", "remove", "XX-1", "2"]);
+    let expected = json!([
+        { "criterion": 1, "passed": true },
+        { "criterion": 3, "passed": true },
+    ]);
+    assert_eq!(removed["item"]["started"]["checks"], expected, "{removed}");
+    assert_eq!(env.item("XX-1")["started"]["checks"], expected);
+
+    // Removing a manual criterion, which has no entry, still moves the
+    // later entries up.
+    env.json(&["criterion", "remove", "XX-1", "2"]);
+    assert_eq!(
+        env.item("XX-1")["started"]["checks"],
+        json!([
+            { "criterion": 1, "passed": true },
+            { "criterion": 2, "passed": true },
+        ])
+    );
 }
