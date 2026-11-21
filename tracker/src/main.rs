@@ -82,21 +82,24 @@ enum Command {
     /// Gate G1 runs first: the item needs at least one criterion, and no
     /// other item in its project may be in progress or in review. If it
     /// fails, start is refused with exit 2 and every reason, and nothing
-    /// changes. Then each criterion's check runs once and its result is
-    /// recorded. A check is expected to fail before the work is done, so
-    /// start warns about one that already passes, and goes ahead
+    /// changes. Then it records the commit HEAD points to, and each
+    /// criterion's check runs once and its result is recorded. A check is
+    /// expected to fail before the work is done, so start warns about one
+    /// that already passes, and goes ahead
     Start {
         /// The item's ID, such as BM-12
         id: String,
     },
     /// Submit an in-progress item: → done
     ///
-    /// Gates G2, G6, G3 and G4 run first, as `tracker gates` runs them: G3
-    /// runs each criterion's check, and G4 the project's checks. If any
-    /// fails, submit is refused with exit 2 and every reason, and nothing
-    /// changes. Until commits are recorded (a later version), an item that
-    /// passes goes to done with a verification record that says it's
-    /// unchecked, and keeps each check's last lines of output
+    /// Gates G2, G5, G6, G3 and G4 run first, as `tracker gates` runs them:
+    /// G5 needs a clean tree under the project's root and a commit scoped to
+    /// the item, such as `feat(BM-12): …`, G3 runs each criterion's check,
+    /// and G4 the project's checks. If any fails, submit is refused with
+    /// exit 2 and every reason, and nothing changes. An item that passes
+    /// goes to done, verified automatically against HEAD, with each check's
+    /// last lines of output, and the git ref refs/tracker/<ID> keeps that
+    /// commit
     Submit {
         /// The item's ID, such as BM-12
         id: String,
@@ -131,6 +134,12 @@ enum Command {
     // `reason` is optional to clap, so that a missing one gets tracker's
     // own message saying how to give it. The usage line shows it as needed.
     /// Put an open or in-progress item back in the backlog: → shelved
+    ///
+    /// The next item builds on an in-progress item's tree, so shelving one
+    /// needs a clean tree under its project's root (G5) and passing project
+    /// checks (G4). If either fails, shelve is refused with exit 2 and every
+    /// reason, and nothing changes. Revert unfinished work first, in a
+    /// commit scoped to the item
     #[command(override_usage = "tracker shelve [OPTIONS] <ID> --reason <REASON>")]
     Shelve {
         /// The item's ID, such as BM-12
