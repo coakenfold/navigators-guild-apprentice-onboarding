@@ -2696,7 +2696,16 @@ fn commits_and_patches(
             item.id
         ))
     })?;
-    git::require_work_tree(&root, &item.project, &item.id)?;
+    if !git::is_work_tree(&root)? {
+        return Err(Error::store(format!(
+            "Can't show {id}'s commits: {key}'s root, {}, isn't inside a git work tree. Make it a \
+             repository with `git init`, or register {key} with a root that's inside one. \
+             Nothing was changed.",
+            root.display(),
+            id = item.id,
+            key = item.project,
+        )));
+    }
     let commits = git::item_log(&root, &item.id)?;
     let oldest_first: Vec<String> = commits.iter().rev().map(|(sha, _)| sha.clone()).collect();
     let patches = git::patches(&root, &oldest_first)?;
@@ -3009,7 +3018,7 @@ fn review(store: &Store) -> Result<Output> {
             format!("{} items are held for review", held.len())
         };
         text.push(&format!(
-            "{count}, waiting for you to approve or reject it:\n"
+            "{count}, waiting for you to approve or reject each one:\n"
         ));
         for item in &held {
             let id = &item.id;

@@ -58,6 +58,19 @@ fn git(root: &Path, args: &[&str]) -> Result<String> {
 /// Refuses, with exit 3, a project root that isn't inside a git work tree
 /// (§4.4). `key` names the project, and `id` the item, in the message.
 pub fn require_work_tree(root: &Path, key: &str, id: &str) -> Result<()> {
+    if is_work_tree(root)? {
+        return Ok(());
+    }
+    Err(Error::store(format!(
+        "{key}'s root, {}, isn't inside a git work tree, so tracker can't record or prove \
+         {id}'s work against a commit. Make it a repository with `git init`, or register \
+         {key} with a root that's inside one. Nothing was changed.",
+        root.display()
+    )))
+}
+
+/// Whether `root` is inside a git work tree. Exits 3 if git can't be run.
+pub fn is_work_tree(root: &Path) -> Result<bool> {
     let inside = Command::new("git")
         .current_dir(root)
         .args(["rev-parse", "--is-inside-work-tree"])
@@ -65,13 +78,7 @@ pub fn require_work_tree(root: &Path, key: &str, id: &str) -> Result<()> {
         .stderr(Stdio::null())
         .output();
     match inside {
-        Ok(output) if output.status.success() && output.stdout.starts_with(b"true") => Ok(()),
-        Ok(_) => Err(Error::store(format!(
-            "{key}'s root, {}, isn't inside a git work tree, so tracker can't record or prove \
-             {id}'s work against a commit. Make it a repository with `git init`, or register \
-             {key} with a root that's inside one. Nothing was changed.",
-            root.display()
-        ))),
+        Ok(output) => Ok(output.status.success() && output.stdout.starts_with(b"true")),
         Err(e) => Err(Error::store(format!(
             "Can't run git in {}: {e}. tracker needs git installed to prove work against a \
              commit. Nothing was changed.",
