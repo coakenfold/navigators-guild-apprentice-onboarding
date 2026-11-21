@@ -111,7 +111,8 @@ enum Command {
     ///
     /// Says what would block a submit now: every gate that ran, and every
     /// reason one failed. Exits 2 if any failed, as submit would, and 0 if
-    /// they all passed
+    /// they all passed. Once they all pass, it also runs the triggers and
+    /// lists any hold that would keep a submit in review
     Gates {
         /// The item's ID, such as BM-12
         id: String,
@@ -1815,8 +1816,10 @@ fn record_evidence(store: &Store, id: &str, n: usize, evidence: &str) -> Result<
 }
 
 /// `gates`: runs the gates `submit` runs, G2, G5, G6, G3 and G4, without
-/// changing anything (§2.4). Exits 2, listing every failure, if any fails,
-/// and 3 if the project's root isn't inside a git work tree (§4.4).
+/// changing anything (§2.4). Once they all pass, it runs the triggers and
+/// lists them and the holds a submit would get (§3). Exits 2, listing every
+/// failure, if any fails, and 3 if the project's root isn't inside a git
+/// work tree (§4.4).
 fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
     store.require_exists()?;
     let id = normalize_id(id);
@@ -1834,9 +1837,21 @@ fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
         "{id} passes the gates submit runs: {}.\n",
         states::join(&ran, "and")
     );
+    // Every gate passed, so the triggers run, as they would on a submit
+    // (§2.5), and say whether it would be held.
+    let triggers = triggers::run(&item);
+    let holds = triggers::holds(&triggers);
+    if !holds.is_empty() {
+        text.push_str("A submit would be held for review:\n");
+        text.push_str(&holds_text(&holds));
+    }
     if let Some(line) = gates::not_submittable(item.status) {
         text.push_str(&format!("{line}\n"));
     }
+    let triggers: Vec<Value> = triggers
+        .iter()
+        .map(|ran| json!({ "trigger": ran.trigger, "fired": ran.hold.is_some() }))
+        .collect();
     Ok(Output::plain(
         text,
         json!({
@@ -1844,6 +1859,8 @@ fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
             "status": item.status.as_str(),
             "result": "passed",
             "gates": report.gates_json(),
+            "triggers": triggers,
+            "holds": holds,
         }),
     ))
 }

@@ -443,6 +443,12 @@ fn a_script_criterion_needs_no_evidence() {
                 { "gate": "G3", "ok": true, "secs": 0 },
                 { "gate": "G4", "ok": true, "secs": 0 }
             ],
+            // TR-29: once every gate passes, the triggers run too.
+            "triggers": [
+                { "trigger": "T6", "fired": false },
+                { "trigger": "T9", "fired": false }
+            ],
+            "holds": [],
         })
     );
 }

@@ -464,13 +464,23 @@ fn a_wrong_criterion_or_gate_output_is_caught() {
     }]);
     fails("item", bad);
 
-    // The gates dry run, when every gate passed.
+    // The gates dry run, when every gate passed, with the triggers and the
+    // holds a submit would get (TR-29).
     let gates = json!({
         "id": "XX-1", "status": "open", "result": "passed",
-        "gates": [{ "gate": "G2", "ok": true }, { "gate": "G6", "ok": true }]
+        "gates": [{ "gate": "G2", "ok": true }, { "gate": "G6", "ok": true }],
+        "triggers": [{ "trigger": "T6", "fired": true }, { "trigger": "T9", "fired": false }],
+        "holds": [{ "trigger": "T6", "message": "criterion 1 is manual" }]
     });
     check_schema("gates", &gates);
+    for field in ["triggers", "holds"] {
+        let mut bad = gates.clone();
+        bad.as_object_mut().unwrap().remove(field);
+        fails("gates", bad);
+    }
     for (field, value) in [
+        ("triggers", json!([{ "trigger": "G6", "fired": true }])),
+        ("holds", json!([{ "trigger": "T6", "message": "" }])),
         ("result", json!("refused")),
         ("gates", json!([])),
         ("gates", json!([{ "gate": "G2", "ok": false }])),
