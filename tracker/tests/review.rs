@@ -847,3 +847,164 @@ mod tr_29 {
         assert_eq!(fs::read(env.item_path("XX-1")).unwrap(), before);
     }
 }
+
+mod tr_30 {
+    //! Slice 9 review 1, test gaps 1 to 3: `approve`'s second look at the
+    //! tree, `reject`'s re-read under the lock and a wrong ID typed into
+    //! it, and `approve --json`'s output against its schema.
+    use super::*;
+
+    /// `tracker <line>` under `script` with stdout redirected to a file,
+    /// typing `answer`, followed by a line saying how it exited. Returns
+    /// the terminal's output and stdout's JSON.
+    fn json_in_terminal(env: &Env, args: &str, answer: &str) -> Option<(String, Value)> {
+        let out = env.work.path().join("out.json");
+        let line = format!(
+            "\"$TRACKER\" {args} --json > '{}'; echo \"tracker exited with $?\"",
+            out.to_str().unwrap()
+        );
+        let (output, _) = env.in_terminal_typing_sh(&line, PROMPT, answer)?;
+        Some((output, common::parse(&fs::read(&out).unwrap())))
+    }
+
+    // Criterion 1.
+
+    #[test]
+    fn approve_fails_g5_for_a_file_its_checks_leave() {
+        // The check leaves `xx/left.txt` once `go` exists, which it does
+        // only after the held submit.
+        let env = env_with_project();
+        let go = env.outside().join("go");
+        let left = env.work.path().join("xx/left.txt");
+        let check = format!(
+            "if [ -f '{}' ]; then touch '{}'; fi",
+            go.display(),
+            left.display()
+        );
+        env.create_bare("XX", "a");
+        env.json(&["criterion", "add", "XX-1", "it works", "--check", &check]);
+        env.json(&["edit", "XX-1", "--label", "needs-review"]);
+        env.json(&["start", "XX-1"]);
+        let output = env.json(&["submit", "XX-1"]);
+        assert_eq!(output["result"], "held", "{output}");
+        fs::write(&go, "").unwrap();
+        let before = fs::read(env.item_path("XX-1")).unwrap();
+
+        let Some((output, error)) = json_in_terminal(&env, "approve XX-1", "XX-1") else {
+            return;
+        };
+        assert!(output.contains("tracker exited with 2"), "{output}");
+        common::check_schema("error", &error);
+        assert_eq!(error["exit_code"], 2, "{error}");
+        let g5: Vec<&Value> = error["failures"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f["gate"] == "G5")
+            .collect();
+        assert_eq!(g5.len(), 1, "{error}");
+        let message = g5[0]["message"].as_str().unwrap();
+        assert!(message.contains("xx/left.txt"), "{message}");
+        assert!(left.exists());
+
+        assert_eq!(fs::read(env.item_path("XX-1")).unwrap(), before);
+        let item = env.item("XX-1");
+        assert_eq!(item["status"], "review", "{item}");
+        assert!(item.get("verification").is_none(), "{item}");
+        assert!(!has_ref(&env, "XX-1"));
+    }
+
+    // Criterion 2.
+
+    #[test]
+    fn reject_writes_nothing_when_the_item_changes_while_deciding() {
+        let env = env_with_project();
+        held_xx_1(&env);
+        let path = env.item_path("XX-1");
+        let Some((output, ok)) = env.in_terminal_typing(
+            &["reject", "XX-1", "--reason", "not yet"],
+            PROMPT,
+            "XX-1",
+            || {
+                // Something else writes the item while I read the warning.
+                let mut text = fs::read(&path).unwrap();
+                text.push(b' ');
+                fs::write(&path, text).unwrap();
+            },
+        ) else {
+            return;
+        };
+        let changed = fs::read(&path).unwrap();
+        assert!(!ok, "{output}");
+        assert!(
+            output.contains("changed while you were deciding"),
+            "{output}"
+        );
+        assert_eq!(fs::read(&path).unwrap(), changed);
+        assert_eq!(changed.last(), Some(&b' '));
+        assert_eq!(env.item("XX-1")["status"], "review");
+    }
+
+    #[test]
+    fn reject_typed_with_another_id_cancels_and_changes_nothing() {
+        let env = env_with_project();
+        held_xx_1(&env);
+        let before = fs::read(env.item_path("XX-1")).unwrap();
+        let Some((output, error)) =
+            json_in_terminal(&env, "reject XX-1 --reason 'not yet'", "XX-2")
+        else {
+            return;
+        };
+        assert!(output.contains("tracker exited with 1"), "{output}");
+        common::check_schema("error", &error);
+        assert_eq!(error["exit_code"], 1, "{error}");
+        let message = error["error"].as_str().unwrap();
+        assert!(
+            message.contains("Cancelled: \"XX-2\" isn't XX-1"),
+            "{message}"
+        );
+        assert_eq!(fs::read(env.item_path("XX-1")).unwrap(), before);
+    }
+
+    // Criterion 3.
+
+    #[test]
+    fn a_successful_approve_json_matches_its_schema() {
+        let env = env_with_project();
+        held_xx_1(&env);
+        let Some((output, approved)) = json_in_terminal(&env, "approve XX-1", "XX-1") else {
+            return;
+        };
+        assert!(output.contains("tracker exited with 0"), "{output}");
+        common::check_schema("approve", &approved);
+        assert_eq!(approved["id"], "XX-1", "{approved}");
+        assert_eq!(approved["result"], "approved", "{approved}");
+        assert_eq!(approved["status"], "done", "{approved}");
+        assert_eq!(approved["item"], env.item("XX-1"), "{approved}");
+        let fields: Vec<&String> = approved.as_object().unwrap().keys().collect();
+        assert_eq!(fields, ["id", "result", "status", "gates", "item"]);
+    }
+
+    #[test]
+    fn an_approve_json_refused_by_a_gate_matches_the_refusal_shape() {
+        // approve.schema.json says a refused approve prints the error shape,
+        // which for a gate's refusal adds id, status, result, gates and
+        // failures, so that's the schema it's checked against.
+        let env = env_with_project();
+        held_xx_1(&env);
+        fs::write(env.work.path().join("xx/stray.txt"), "stray\n").unwrap();
+        let before = fs::read(env.item_path("XX-1")).unwrap();
+        let Some((output, refused)) = json_in_terminal(&env, "approve XX-1", "XX-1") else {
+            return;
+        };
+        assert!(output.contains("tracker exited with 2"), "{output}");
+        common::check_schema("error", &refused);
+        assert_eq!(refused["exit_code"], 2, "{refused}");
+        assert_eq!(refused["id"], "XX-1", "{refused}");
+        assert_eq!(refused["status"], "review", "{refused}");
+        assert_eq!(refused["result"], "refused", "{refused}");
+        assert!(refused["gates"].is_array(), "{refused}");
+        assert_eq!(refused["failures"][0]["gate"], "G5", "{refused}");
+        assert_eq!(fs::read(env.item_path("XX-1")).unwrap(), before);
+    }
+}
