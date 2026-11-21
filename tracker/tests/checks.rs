@@ -8,6 +8,8 @@
 //!
 //! TR-3: `criterion remove` after `start` drops the removed criterion's
 //! `started.checks` entry and renumbers the later ones to match.
+//!
+//! TR-13 to TR-18: the fixes from slice 7's first review.
 
 mod common;
 
@@ -429,4 +431,37 @@ fn criterion_remove_after_start_keeps_started_checks_on_their_criteria() {
             { "criterion": 2, "passed": true },
         ])
     );
+}
+
+#[test]
+fn a_timed_out_check_with_an_escaped_process_fails_soon_after_its_timeout() {
+    // TR-13: a process that calls `setsid` leaves the check's process
+    // group, so stopping the group misses it, and it still holds the
+    // output open. `tracker` mustn't wait for it to end.
+    let (env, root) = env_with_project();
+    set_project(&env, "XX", "check_timeout_secs", json!(1));
+    env.create_bare("XX", "a");
+    let check = "perl -e 'use POSIX; POSIX::setsid(); open(F, \">escaped.pid\"); print F $$; \
+                 close F; sleep 30' & echo before; sleep 30";
+    add_check(&env, "XX-1", "it works", check);
+
+    let began = Instant::now();
+    let (error, _) = refused(&env, &["gates", "XX-1"]);
+    let took = began.elapsed();
+
+    // The escaped process is stopped here, so it doesn't outlive the test.
+    if let Ok(pid) = fs::read_to_string(root.join("escaped.pid")) {
+        let _ = std::process::Command::new("kill")
+            .args(["-KILL", pid.trim()])
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+    assert!(took < Duration::from_secs(10), "took {took:?}");
+    let g3 = failures_from(&error, "G3");
+    assert_eq!(g3.len(), 1, "{error}");
+    let failure = &g3[0];
+    assert_eq!(failure["timed_out"], true, "{failure}");
+    assert_eq!(failure["output"], "before", "{failure}");
+    let message = failure["message"].as_str().unwrap();
+    assert!(message.contains("check_timeout_secs"), "{message}");
 }
