@@ -23,6 +23,8 @@ I found no new bug and no security issue. The findings that matter most:
 - **Finding 2:** after a reopen and a `criterion remove`, `previous_verification` names the wrong criterion for each check, and DESIGN.md doesn't say whether it should be renumbered.
 - **Test gap 1:** TR-13's fix also stops a _passing_ check that leaves a detached process from hanging `tracker`, the more common case, but only the timed-out case has a test.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -86,3 +88,42 @@ I found no new bug and no security issue. The findings that matter most:
 - **`show` prints `started` and each check's saved output**, escaped, with each check's `criterion`. It should say whether a `previous_verification`'s numbers are as at that submit (finding 2).
 - **The first records slice 8 writes** carry `commit` and `ref` beside `criterion`. Add their fixture when the shape lands, as test gap 2 asks for this slice's.
 - **TR-4 is the first item whose checks the installed `tracker` runs**, once this slice's binary is installed (process 3). Its `start` writes the first real `started` record, so its criteria need checks that fail first.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `30d2a4d`, not at the fixed code. Each fix was built as a tracker item, TR-19 and TR-20, and the readme's [Fixes after review 2](../slice-7-readme.md#fixes-after-review-2) lists them too.
+
+This round settled findings 1 and 2, both test gaps and process 1 and 2. Option (a) was taken wherever there was a choice. Findings 1 and 2 are settled in DESIGN.md and PLAN.md, with no code change, and the test gaps with a test and a fixture for code that already worked. Process 3 needed no action. Of the six items carried forward, one is fixed, three won't be fixed, one is left for slice 11, and one is planned for before slice 8 starts. Every item in "Slice 8 must decide" is left for slice 8, whose item is TR-4. The commits after this review (`83740e4`), in order:
+
+- **Fixes:** `61cb404`, `8be2f4b` and `eb80e0f` (TR-19: findings 1 and 2, review 1's bug 5's schema wording, and process 2) and `1549d7d` (TR-20: test gaps 1 and 2).
+- **Docs:** the readme's update and the commit that adds this Outcome.
+
+| Finding | Resolved by |
+| --- | --- |
+| Finding 1: §2.4 says a check given "after `start`" runs then, but the code runs it only for an item in progress | TR-19, `61cb404`, option (a), docs only: §2.4's "Checks must fail first" says a check given after start runs only while the item is in progress. An item in review takes criterion changes only from my terminal, and T5 holds it anyway, so a check given then isn't run, and `started.checks` keeps the old check's result for that criterion, or none for one that was manual, until the item is started again. A note in PLAN.md's slice 11 prompt, under T13, says T13 reads a missing entry as a check that didn't pass, and an old one as it reads any other, since `started.checks` doesn't record the command |
+| Finding 2: after a reopen, `previous_verification` names the wrong criterion for each check once a criterion is removed | TR-19, `61cb404`, option (a), docs only: §4.3's `verification.checks` bullet says each `criterion` is numbered as the criteria were at that submit, and that a record is history, so unlike `started.checks` it's never renumbered. After a reopen, a `criterion remove` leaves `previous_verification`'s numbers as they were, and a reader matches its checks to today's criteria by `cmd` |
+| Test gap 1: only the timed-out half of TR-13's fix has a test | TR-20, `1549d7d`: `a_passing_check_with_an_escaped_process_finishes_soon_and_passes`, a check whose `perl` process calls `setsid`, writes its pid and sleeps 30 seconds, then `& echo ok`, under the default timeout. `gates --json` must pass within 10 seconds with G3 `ok`, and the test kills the escaped process, as the timed-out test does |
+| Test gap 2: no fixture holds a check record with `criterion` | TR-20, `1549d7d`, option (a): XX-18, written by this binary, done with checks on criteria 1 and 3, a manual criterion 2 between them and a project check, so its records name 1, 3 and none. XX-17 stays as the shape before TR-16. Test: `slice_7s_xx_18_names_each_checks_criterion_and_comes_back_byte_for_byte`, which checks the `criterion` values and that the file comes back byte for byte with nothing lost. The existing `slice_7_wrote_two_fixtures_with_check_results` lists the folder's files exactly, so it's renamed `slice_7_wrote_three_fixtures_with_check_results` and expects XX-18 too. Nothing it checked was removed |
+| Process 1: the readme's Status row says its update isn't committed | Done in the readme's update: the sentence is gone, and the Branch row names `464c239` and `30d2a4d`, then `83740e4` and this round's fixes. Its other mentions of `slice_7_wrote_two_fixtures_with_check_results` now use the new name |
+| Process 2: TR-16 is a `change`, though its code commit is `feat(TR-16)` | TR-19, `eb80e0f`, option (a): CLAUDE.md's Conventions say an item whose work adds behaviour or a field, and so needs a `feat` commit, is created with `--kind capability` (§2.1). TR-16 stays a `change`, since a done item can't be edited |
+| Process 3: the order of the fix items' work checks out | No action needed |
+| Still open: review 1's bug 1, the failure doesn't say that something the check started kept running | Won't fix. The failure reports the timeout, which is what matters, and the note was an optional part of review 1's option (a). The readme's decisions and limits say the escaped process is left running |
+| Still open: review 1's bug 2, Ctrl-C on `tracker` leaves the running check going | Won't fix in code, as review 1's Outcome says. §7's limit stays |
+| Still open: review 1's bug 3, a very large `check_timeout_secs` panics | Won't fix, as review 1's Outcome says |
+| Still open: review 1's bug 5, the schemas' descriptions of `output` | TR-19, `8be2f4b`: `item.schema.json`'s and `error.schema.json`'s descriptions add "Each kept line is cut at 500 characters, the last of them `…`, if it's longer." |
+| Still open: review 1's finding 6, the shared test helper's check is still `true` | Left for slice 11. `Env::add_criterion` still adds `--check true` |
+| Still open: review 1's process 3, no slice 7 check has been run by a binary other than the code it checks | Planned: the slice 7 binary is installed with `cargo install --path .` after this Outcome is committed, before TR-4 (slice 8) starts. Until then the slice 6 binary tracks, so TR-19 and TR-20 were verified as TR-13 to TR-18 were |
+| Slice 8 must decide: whether G5 runs again after the checks | Left for slice 8 |
+| Slice 8 must decide: shelving runs project checks | Left for slice 8. TR-18's two tests show how to test its re-read after checks |
+| Slice 8 must decide: `show` prints `started` and each check's saved output | Left for slice 8. Finding 2's §4.3 bullet now says what a `previous_verification`'s numbers mean, so `show` only has to say so |
+| Slice 8 must decide: the first records slice 8 writes, and their fixture | Left for slice 8. XX-18 shows the pattern for the shape before `commit` and `ref` |
+| Slice 8 must decide: TR-4 is the first item whose checks the installed `tracker` runs | Left for slice 8. The install is process 3's, planned for before TR-4 starts |
+
+Seen failing:
+
+- **Test gap 1:** the new test was run with `run`'s wait for the output made unbounded, `ended.recv()` in place of `ended.recv_timeout(LEFTOVER_OUTPUT)`, then the code was restored. It took 30.03s, against a limit of under 10s. It now takes about 1.5s.
+- **Test gap 2:** the XX-18 test was run with `criterion` moved after `cmd` in `CheckRecord`, and with the field renamed, then the code was restored. It failed both times.
+- For the readme, the unbounded wait and the moved field were made again in a copy of `1549d7d`'s files outside the repo, and both tests failed again: the first after 30.03s, the second at its byte-for-byte check.
+- **Findings 1 and 2, process 2 and bug 5's wording** change docs only, so there was nothing to see fail. TR-19's four criteria are manual, with evidence quoting each passage and naming its commit.
+
+The installed slice 6 binary verified TR-19 and TR-20 as `unchecked`, on G2 and G6 alone, so neither ran its checks through G3. The full test command was run by hand instead. After both, `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo clippy --all-targets -- -D warnings` and all 269 tests pass, 2 more than at `30d2a4d`: 1 in `tests/checks.rs` and 1 in `tests/fixtures.rs`. The readme's Try it output is unchanged.
