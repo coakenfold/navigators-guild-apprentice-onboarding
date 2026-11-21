@@ -108,6 +108,8 @@ fn busy_store() -> Env {
         env.add_criterion(item["item"]["id"].as_str().unwrap());
     }
     env.create("YY", "other project");
+    // So XX-3 has a commit, for G5 (slice 8).
+    env.commit_for("XX-3");
     // XX-3 first, since gate G1 starts no item while another in the
     // project is in progress.
     env.json(&["start", "XX-3"]);

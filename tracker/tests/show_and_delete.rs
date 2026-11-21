@@ -176,6 +176,8 @@ fn show_prints_every_field_the_verification_records_and_history_with_times() {
     ]);
     env.json(&["evidence", "XX-1", "1", "the tag chips on the home page"]);
     env.add_criterion("XX-1");
+    // So the design doc is committed, and XX-1 has a commit, for G5.
+    env.commit_for("XX-1");
     env.json(&["start", "XX-1"]);
     env.json(&["submit", "XX-1"]);
     env.json(&["reopen", "XX-1", "--reason", "The tag list is missing."]);
@@ -201,11 +203,19 @@ fn show_prints_every_field_the_verification_records_and_history_with_times() {
         "  1. Clicking a tag shows only bookmarks with that tag\n       manual, evidence: the \
          tag chips on the home page\n",
         "  2. it works\n       check: true\n",
-        // Both verification records, with their notes.
+        // What start recorded, and both verification records, with the
+        // commit, its ref, and each check with its saved output (slice 8).
+        "Started:",
+        item["started"]["head"].as_str().unwrap(),
+        "checks  criterion 2 passed",
         "Verification:",
         "Previous verification",
-        "unchecked",
-        "Submitted before tracker ran checks",
+        "numbered as they were at that submit",
+        "auto",
+        item["verification"]["commit"].as_str().unwrap(),
+        "refs/tracker/XX-1",
+        "    criterion 2, passed in",
+        ": `true`\n",
         // The history, with what the edit changed and the reopen's reason.
         "History, oldest first (6 entries):",
         "changed: kind, labels",
@@ -464,10 +474,7 @@ fn in_a_terminal_typing_the_id_deletes_an_item_in_each_state() {
     env.json(&["shelve", "XX-4", "--reason", "later"]);
     // Nothing reaches review until slice 9's triggers, but by hand.
     edit_file(&env, "XX-5", |item| item["status"] = json!("review"));
-    let done_at = env.item("XX-3")["verification"]["at"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let done_at = env.item("XX-3")["verification"]["commit"].as_str().unwrap()[..7].to_string();
 
     let cases = [
         (
@@ -485,9 +492,9 @@ fn in_a_terminal_typing_the_id_deletes_an_item_in_each_state() {
         (
             "XX-3",
             "done",
-            &format!("XX-3 \"finished\" is done at {done_at}, unchecked: no checks ran."),
-            "removes its file, its criterion, its history (2 entries) and its verification \
-             record.",
+            &format!("XX-3 \"finished\" is done, verified by its gates at {done_at}."),
+            "removes its file, its criterion, its history (2 entries), its verification record \
+             and refs/tracker/XX-3.",
         ),
         (
             "XX-4",

@@ -468,16 +468,17 @@ fn a_timed_out_check_with_an_escaped_process_fails_soon_after_its_timeout() {
 
 #[test]
 fn criterion_add_and_set_refuse_a_newer_trackers_file_before_running_a_check() {
-    // TR-14: `started.head`, as slice 8 will write it, is a field this
-    // version doesn't know, so it can't rewrite the file, and mustn't run
-    // a check for a change it will then refuse.
+    // TR-14: `started.criteria_hash`, as slice 11 will write it, is a
+    // field this version doesn't know, so it can't rewrite the file, and
+    // mustn't run a check for a change it will then refuse. (Until slice 8
+    // wrote it, the unknown field here was `started.head`.)
     let (env, root) = env_with_project();
     env.create_bare("XX", "a");
     add_check(&env, "XX-1", "first", "false");
     env.json(&["criterion", "add", "XX-1", "second"]);
     env.json(&["start", "XX-1"]);
     let mut item = env.item("XX-1");
-    item["started"]["head"] = json!("abc1234");
+    item["started"]["criteria_hash"] = json!("9f2c41");
     let newer = serde_json::to_string_pretty(&item).unwrap() + "\n";
     fs::write(env.item_path("XX-1"), &newer).unwrap();
 
@@ -673,6 +674,9 @@ fn a_passing_check_with_an_escaped_process_finishes_soon_and_passes() {
     // shell has ended, too. A test runner that exits 0 and leaves a
     // detached server holding the output open is the common case.
     let (env, root) = env_with_project();
+    // The pid file is ignored, so it leaves the tree clean for G5, which
+    // looks again once the checks have run (slice 8).
+    fs::write(root.join(".gitignore"), "escaped.pid\n").unwrap();
     env.create_bare("XX", "a");
     let check = "perl -e 'use POSIX; POSIX::setsid(); open(F, \">escaped.pid\"); print F $$; \
                  close F; sleep 30' & echo ok";

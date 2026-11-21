@@ -943,20 +943,21 @@ fn status_shows_exactly_the_states_named() {
 
 #[test]
 fn by_keeps_done_items_verified_that_way() {
+    // From slice 8, a passing submit verifies an item `auto`.
     let env = env_with_every_state();
-    assert_eq!(listed(&env, &["--by", "unchecked"]), ["XX-4"]);
-    assert!(listed(&env, &["--by", "auto"]).is_empty());
+    assert_eq!(listed(&env, &["--by", "auto"]), ["XX-4"]);
+    assert!(listed(&env, &["--by", "unchecked"]).is_empty());
     assert!(listed(&env, &["--by", "human"]).is_empty());
     // --by combines with --status: only done items have a record.
     assert_eq!(
-        listed(&env, &["--status", "done", "--by", "unchecked"]),
+        listed(&env, &["--status", "done", "--by", "auto"]),
         ["XX-4"]
     );
-    assert!(listed(&env, &["--status", "open", "--by", "unchecked"]).is_empty());
+    assert!(listed(&env, &["--status", "open", "--by", "auto"]).is_empty());
 
     // A reopened item's record is in previous_verification, so it doesn't count.
     env.json(&["reopen", "XX-4", "--reason", "found a bug"]);
-    assert!(listed(&env, &["--by", "unchecked"]).is_empty());
+    assert!(listed(&env, &["--by", "auto"]).is_empty());
 
     let message = env.error(&["list", "--by", "agent"], 1);
     assert!(message.contains("unchecked"), "{message}");
