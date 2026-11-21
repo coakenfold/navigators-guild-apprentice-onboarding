@@ -2,11 +2,14 @@
 //! describe. G3 runs each criterion's check and G4 the project's checks,
 //! each in the project's root, stopped after `check_timeout_secs`. `start`
 //! runs each criterion check once and records the results.
+//!
+//! TR-2: a check given to a criterion after `start`, by `criterion add` or
+//! `criterion set`, runs once then too, as §2.4 says.
 
 mod common;
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use common::Env;
@@ -252,4 +255,131 @@ fn a_passing_checks_last_20_lines_are_kept() {
     assert_eq!(checks[1]["output"], "project check", "{submitted}");
     // The file keeps them too, for `show`.
     assert_eq!(env.item("XX-1")["verification"]["checks"], json!(checks));
+}
+
+/// A check that adds a line to `runs`, in the project's root, each time it
+/// runs, and fails, as a check should before the work is done.
+const COUNTED: &str = "echo ran >> runs; false";
+
+/// How many times a `COUNTED` check has run in `root`.
+fn runs(root: &Path) -> usize {
+    fs::read_to_string(root.join("runs")).map_or(0, |text| text.lines().count())
+}
+
+#[test]
+fn check_given_after_start_by_add_runs_once_and_is_recorded() {
+    let (env, root) = env_with_project();
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "first", "false");
+    // Before start, a check is only stored: start runs it.
+    add_check(&env, "XX-1", "second", COUNTED);
+    assert_eq!(runs(&root), 0);
+    env.json(&["start", "XX-1"]);
+    assert_eq!(runs(&root), 1);
+
+    // After start, `criterion add` runs the new check once, and records it
+    // alongside the ones start ran.
+    let added = env.json(&["criterion", "add", "XX-1", "third", "--check", COUNTED]);
+    assert_eq!(runs(&root), 2);
+    let expected = json!([
+        { "criterion": 1, "passed": false },
+        { "criterion": 2, "passed": false },
+        { "criterion": 3, "passed": false },
+    ]);
+    assert_eq!(added["item"]["started"]["checks"], expected, "{added}");
+    assert_eq!(env.item("XX-1")["started"]["checks"], expected);
+    assert_eq!(added["warnings"], json!([]), "{added}");
+
+    // A manual criterion has nothing to run.
+    env.json(&["criterion", "add", "XX-1", "looks right"]);
+    assert_eq!(runs(&root), 2);
+    assert_eq!(env.item("XX-1")["started"]["checks"], expected);
+}
+
+#[test]
+fn check_given_after_start_by_set_runs_once_and_is_recorded() {
+    let (env, root) = env_with_project();
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "first", "true");
+    env.json(&["criterion", "add", "XX-1", "second"]);
+    env.json(&["start", "XX-1"]);
+    assert_eq!(
+        env.item("XX-1")["started"]["checks"],
+        json!([{ "criterion": 1, "passed": true }])
+    );
+
+    // A manual criterion given a check runs it once, and joins the record.
+    let set = env.json(&["criterion", "set", "XX-1", "2", "--check", COUNTED]);
+    assert_eq!(runs(&root), 1);
+    assert_eq!(
+        set["item"]["started"]["checks"],
+        json!([
+            { "criterion": 1, "passed": true },
+            { "criterion": 2, "passed": false },
+        ]),
+        "{set}"
+    );
+
+    // A new check for a criterion that had one replaces its result, rather
+    // than adding a second.
+    let set = env.json(&["criterion", "set", "XX-1", "1", "--check", COUNTED]);
+    assert_eq!(runs(&root), 2);
+    let expected = json!([
+        { "criterion": 1, "passed": false },
+        { "criterion": 2, "passed": false },
+    ]);
+    assert_eq!(set["item"]["started"]["checks"], expected, "{set}");
+    assert_eq!(env.item("XX-1")["started"]["checks"], expected);
+
+    // The same check again changes nothing, so nothing runs.
+    env.json(&["criterion", "set", "XX-1", "1", "--check", COUNTED]);
+    assert_eq!(runs(&root), 2);
+}
+
+#[test]
+fn check_given_after_start_that_already_passes_is_warned_about() {
+    let (env, _) = env_with_project();
+    env.add_project("YY", "yy");
+    // The warning start gives for a check that already passes.
+    env.create_bare("YY", "a");
+    add_check(&env, "YY-1", "not yet", "false");
+    add_check(&env, "YY-1", "already", "true");
+    let started = env.json(&["start", "YY-1"]);
+    let from_start = started["warnings"][0]
+        .as_str()
+        .unwrap()
+        .replace("YY-1", "XX-1");
+
+    // The same check, given after start, gets the same warning.
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "not yet", "false");
+    env.json(&["start", "XX-1"]);
+    let added = env.json(&["criterion", "add", "XX-1", "already", "--check", "true"]);
+    assert_eq!(added["warnings"], json!([from_start]), "{added}");
+    assert_eq!(
+        added["item"]["started"]["checks"],
+        json!([
+            { "criterion": 1, "passed": false },
+            { "criterion": 2, "passed": true },
+        ]),
+        "{added}"
+    );
+
+    // As text, from `criterion set`: one warning on stderr.
+    env.json(&["criterion", "add", "XX-1", "later"]);
+    let output = env
+        .cmd()
+        .args(["criterion", "set", "XX-1", "3", "--check", "true"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let warnings: Vec<&str> = stderr
+        .lines()
+        .filter(|line| line.starts_with("warning:"))
+        .collect();
+    assert_eq!(warnings.len(), 1, "{stderr}");
+    assert!(warnings[0].contains("Criterion 3"), "{stderr}");
+    assert!(warnings[0].contains("already passes"), "{stderr}");
 }
