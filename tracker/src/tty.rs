@@ -37,8 +37,8 @@ pub fn require_interactive(command: &str, id: &str, otherwise: &str) -> Result<(
     Err(Error::input(message))
 }
 
-/// The confirmation every human-only command asks for (§2.7): `delete` and
-/// `criterion accept` now, and later `approve`, `reject` and `digest ack`.
+/// The confirmation every human-only command asks for (§2.7): `delete`,
+/// `criterion accept`, `approve` and `reject` now, and later `digest ack`.
 ///
 /// 1. Refuses, with exit 1, unless stdin is a terminal (`is_interactive`).
 ///    `command` is how the command was run, such as `tracker delete XX-1`,
