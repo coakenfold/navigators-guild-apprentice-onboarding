@@ -179,10 +179,6 @@ $ cat $TRACKER_HOME/items/BM-1.json
       {
         "criterion": 2,
         "passed": true
-      },
-      {
-        "criterion": 3,
-        "passed": false
       }
     ]
   },
@@ -231,7 +227,7 @@ Notes on the output:
 
 - On macOS, `project add` prints the root with `/private` in front of `$DEMO`, since it stores the path with symlinks followed.
 - `criterion add` for criterion 3 ran `sleep 10` once, since BM-1 was in progress, and it was stopped after 2 seconds and recorded as `passed: false` (TR-2). The `gates` after it ran it again.
-- `started.checks` still has criterion 3 after `criterion remove BM-1 3`. `criterion remove` doesn't touch `started`, so the entry names a criterion that's gone ([Limits](#limits-and-what-later-slices-change)).
+- `started.checks` has no criterion 3 after `criterion remove BM-1 3`: removing a criterion drops its entry and moves the later ones up with their criteria (TR-3).
 - No check printed anything on the passing submit, so `verification.checks` has no `output`. A check that prints, such as `cargo test`, keeps its last 20 lines there, as `tests/fixtures/slice-7/XX-17.json` shows.
 - History says `"interactive": false` because the demo ran from a script. Typed at a terminal, it's `true`.
 
@@ -314,7 +310,7 @@ The command then writes the item as before. `criterion_output` builds the text a
 
 ### What's recorded
 
-- **`started`:** `item::Started`, with `at` and `checks`, a list of `StartedCheck` with `criterion` and `passed`, in criterion order. It sits between `criteria` and `verification`, and each `start` replaces it. A check given after start adds or replaces its criterion's entry ([above](#a-check-given-after-start)). It stays through shelve and reopen, as fixture XX-16 shows. `already_passing` in [src/main.rs](../src/main.rs) writes one warning per passing check.
+- **`started`:** `item::Started`, with `at` and `checks`, a list of `StartedCheck` with `criterion` and `passed`, in criterion order. It sits between `criteria` and `verification`, and each `start` replaces it. A check given after start adds or replaces its criterion's entry ([above](#a-check-given-after-start)), and `criterion remove` drops the removed criterion's entry and renumbers the later ones (TR-3). It stays through shelve and reopen, as fixture XX-16 shows. `already_passing` in [src/main.rs](../src/main.rs) writes one warning per passing check.
 - **`verification.checks`:** `item::CheckRecord`, with `cmd`, `ok`, `secs` and `output`, made by `check_record`. Criterion checks come first, then the project's, in order. `output` is left out when a check printed nothing. The list sits before `note`, so slice 8 can put `commit` and `ref` before it, as §4.3 shows.
 - **`verification.note`:** [src/states.rs](../src/states.rs) `UNCHECKED_NOTE`.
 
@@ -447,7 +443,7 @@ TR-2 was created while TR-1 was being built, as out-of-scope work. It was tracke
 
 - **Slice 8** adds G5 between G2 and G6 (§2.4's cheapest-first order), `started.head` and `criteria_hash` before `started.checks` (§4.3's order), and `commit` and `ref` before `verification.checks`. It replaces `unchecked` with `auto` and drops `UNCHECKED_NOTE` from new records, but files with it must still load. Shelving an in-progress item needs G4, so it needs the project-check half of `gates::scripts` on its own. Its test that a check editing the item file makes `submit` exit 1 covers `lock_unchanged_after_checks`, which has no automated test yet. `show` prints `started` and each check's saved output, which must go through `Styled::push`, escaped with its line breaks kept, as [slice 5's readme](slice-5-readme.md#limits-and-what-later-slices-change) asks.
 - **Slice 9**'s triggers run after `scripts` passes. `approve` re-runs the gates and must let the lock go and re-read the item in the same way.
-- **Slice 11**'s T13 reads `started.checks[].passed`. Each entry is numbered by criterion position when its check ran, at start or when it was given after start. `criterion remove` doesn't touch `started`, so a criterion removed after start leaves its entry behind, naming a criterion that's gone or the one that moved up into its place, as the demo's criterion 3 shows. T5 fires on that change anyway. T13 must treat an item started before slice 7, with no `started`, such as TR-1 and TR-2, as having nothing to compare.
+- **Slice 11**'s T13 reads `started.checks[].passed`. Each entry is numbered by criterion position when its check ran, at start or when it was given after start. `criterion remove` drops the removed criterion's entry and renumbers the later ones (TR-3), so each entry still names the criterion it was recorded for. T5 fires on a removal anyway. T13 must treat an item started before slice 7, with no `started`, such as TR-1 and TR-2, as having nothing to compare.
 - **Slice 12** runs judges in G3 only after every check in G3 and G4 passed, and adds their failures, with `ref`, `answer` and `reason`, beside the check failures. `criterion_checks` must keep skipping judge criteria.
 - **Slice 14** runs judges at `start` too, alongside `criterion_runs`, and records them in `started`.
 - **Slice 12** adds `criterion add --judge` and `criterion set --judge`. A judge criterion has no `check`, so `run_check_given_after_start` returns early for one, and a judge given after start won't run then unless a later slice adds it. §2.4 says a new check after start runs once, and says nothing of a new judge, so slice 14, which runs judges at `start`, should decide whether one runs then too.
