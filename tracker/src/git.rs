@@ -145,14 +145,27 @@ pub fn uncommitted(root: &Path) -> Result<Vec<String>> {
 /// Every tracked file under `root` that git is told not to look at, so that
 /// `git status` can't see a change to it, by its path from the top of the
 /// repository, each with its flag, such as `skip-worktree xx/a.txt` (G5,
-/// §2.4). A skipped file that isn't on disk, as in a sparse checkout, isn't
-/// listed, since it can't hold a change.
+/// §2.4). A file is listed whether or not it's on disk, since `git status`
+/// doesn't report a flagged file's deletion either. The one exception is a
+/// skip-worktree file that isn't on disk in a sparse checkout
+/// (`core.sparseCheckout` true), where that's how files are left out.
 pub fn hidden(root: &Path) -> Result<Vec<String>> {
     // `ls-files -v` tags a skip-worktree file `S` and an assume-unchanged
     // one in lower case. Its paths are from `root`, and the prefix makes
     // them from the top, as `uncommitted` names them.
     let prefix = git(root, &["rev-parse", "--show-prefix"])?;
     let text = git(root, &["ls-files", "-v", "-z", "--", "."])?;
+    let sparse = git(
+        root,
+        &[
+            "config",
+            "--bool",
+            "--default",
+            "false",
+            "core.sparseCheckout",
+        ],
+    )?;
+    let sparse = sparse.trim() == "true";
     let mut files = Vec::new();
     for entry in text.split('\0') {
         let Some((tag, path)) = entry.split_at_checked(2) else {
@@ -163,9 +176,11 @@ pub fn hidden(root: &Path) -> Result<Vec<String>> {
             tag if tag.chars().any(|c| c.is_ascii_lowercase()) => "assume-unchanged",
             _ => continue,
         };
-        if root.join(path).symlink_metadata().is_ok() {
-            files.push(format!("{what} {}{path}", prefix.trim_end()));
+        let left_out = sparse && what == "skip-worktree";
+        if left_out && root.join(path).symlink_metadata().is_err() {
+            continue;
         }
+        files.push(format!("{what} {}{path}", prefix.trim_end()));
     }
     Ok(files)
 }
