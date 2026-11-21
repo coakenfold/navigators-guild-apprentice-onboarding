@@ -46,7 +46,7 @@ The stack, where things live, the conventions and the test command are in `guild
 | 6   | Criteria and simple gates       | write Done-when criteria; get refused when they're missing or incomplete                              | 5          | —             | merged |
 |     | _Checkpoint: self-tracking_     |                                                                                                       |            |               |        |
 | 7   | Running checks                  | see checks run at start and submit, and fail with their output                                        | 6          | —             | in review |
-| 8   | Submit proves committed work    | get items auto-verified against a commit, with saved output and a pinned ref                          | 7          | —             | todo   |
+| 8   | Submit proves committed work    | get items auto-verified against a commit, with saved output and a pinned ref                          | 7          | —             | in progress |
 | 9   | Inbox, approve, reject          | see held items in `review` and approve or reject them                                                 | 8          | —             | todo   |
 | 10  | Risky changes are held          | have new capabilities, new dependencies, risky paths, edited tests, big diffs and design changes held | 9          | —             | todo   |
 | 11  | Tampered proof is held          | have moved goalposts, checks that pass before the work, and unscoped commits held                     | 10         | —             | todo   |
