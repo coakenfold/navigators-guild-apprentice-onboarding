@@ -11,4 +11,5 @@ pub mod states;
 pub mod store;
 pub mod styled;
 pub mod text;
+pub mod triggers;
 pub mod tty;

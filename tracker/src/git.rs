@@ -208,6 +208,13 @@ pub fn is_item_header(header: &str, id: &str) -> bool {
 /// `HEAD` whose header is scoped to it, newest first. None in a repository
 /// with no commits yet.
 pub fn item_commits(root: &Path, id: &str) -> Result<Vec<String>> {
+    let commits = item_log(root, id)?;
+    Ok(commits.into_iter().map(|(sha, _)| sha).collect())
+}
+
+/// Item `id`'s commits, as `item_commits` finds them, each with its
+/// header: the first line of its message.
+pub fn item_log(root: &Path, id: &str) -> Result<Vec<(String, String)>> {
     if head(root)?.is_none() {
         return Ok(Vec::new());
     }
@@ -219,10 +226,46 @@ pub fn item_commits(root: &Path, id: &str) -> Result<Vec<String>> {
             let mut lines = record.trim_start_matches('\n').lines();
             let sha = lines.next()?;
             let header = lines.next().unwrap_or_default();
-            is_item_header(header, id).then(|| sha.to_string())
+            is_item_header(header, id).then(|| (sha.to_string(), header.to_string()))
         })
         .collect();
     Ok(commits)
+}
+
+/// Each commit in `shas` with its patch, in the order given, as `git show`
+/// prints them, for `show --diff`. Every file a commit touched is shown,
+/// inside the project's root or not (§2.1). Bytes that aren't UTF-8, as in
+/// a file in another encoding, are shown as `�` rather than refused, since
+/// this is only for reading.
+pub fn patches(root: &Path, shas: &[String]) -> Result<String> {
+    if shas.is_empty() {
+        return Ok(String::new());
+    }
+    let output = Command::new("git")
+        .current_dir(root)
+        .args([
+            "-c",
+            "log.showSignature=false",
+            "-c",
+            "core.quotePath=false",
+            "show",
+            "--no-color",
+            "--no-ext-diff",
+            "--patch",
+            "--format=commit %H%n%s",
+        ])
+        .args(shas)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| Error::store(format!("Can't run git in {}: {e}.", root.display())))?;
+    if !output.status.success() {
+        return Err(Error::store(format!(
+            "`git show` failed in {}: {}",
+            root.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// The ref that keeps item `id`'s verified commit (§2.7).
