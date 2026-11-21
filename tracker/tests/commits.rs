@@ -196,7 +196,10 @@ fn g5_fails_for_a_file_marked_skip_worktree() {
         "{messages:?}"
     );
 
-    // A skipped file that isn't on disk, as in a sparse checkout, passes.
+    // TR-25, criterion 2: a skipped file that isn't on disk in a sparse
+    // checkout passes. (TR-21 asserted this in an ordinary repository,
+    // where TR-25 makes a deleted skipped file fail.)
+    git(&repo, &["config", "core.sparseCheckout", "true"]);
     fs::remove_file(root.join("a.txt")).unwrap();
     g5_passes(&env);
 }
@@ -219,6 +222,88 @@ fn g5_fails_for_a_file_marked_assume_unchanged() {
     git(&root, &["update-index", "--no-assume-unchanged", "a.txt"]);
     git_commit_all(&root, "feat(XX-1): change a");
     g5_passes(&env);
+}
+
+// TR-25, criterion 1: a file under the root marked `--assume-unchanged` or
+// `--skip-worktree` and then deleted fails G5, naming the file, since
+// `git status` doesn't report the deletion either.
+
+/// Marks XX-1's committed `a.txt` with `flag`, deletes it, and returns G5's
+/// failures.
+fn g5_failures_for_a_deleted_file_marked(flag: &str) -> Vec<String> {
+    let (env, repo, root) = env_with_item();
+    git_commit_all(&root, "feat(XX-1): add a");
+    git(&root, &["update-index", flag, "a.txt"]);
+    fs::remove_file(root.join("a.txt")).unwrap();
+    assert_eq!(git(&repo, &["status", "--porcelain"]), "");
+    g5_failures(&env)
+}
+
+#[test]
+fn g5_fails_for_a_deleted_file_marked_skip_worktree() {
+    let messages = g5_failures_for_a_deleted_file_marked("--skip-worktree");
+    assert_eq!(messages.len(), 1, "{messages:?}");
+    assert!(
+        messages[0].contains("skip-worktree xx/a.txt"),
+        "{messages:?}"
+    );
+}
+
+#[test]
+fn g5_fails_for_a_deleted_file_marked_assume_unchanged() {
+    let messages = g5_failures_for_a_deleted_file_marked("--assume-unchanged");
+    assert_eq!(messages.len(), 1, "{messages:?}");
+    assert!(
+        messages[0].contains("assume-unchanged xx/a.txt"),
+        "{messages:?}"
+    );
+}
+
+// TR-25, criterion 3: a flagged file outside a subfolder project's root
+// doesn't fail G5, and an in-progress shelve is refused for a flagged file
+// under the root.
+
+#[test]
+fn g5_ignores_a_flagged_file_outside_a_subfolder_projects_root() {
+    let (env, repo, root) = env_with_item();
+    git_commit_all(&root, "feat(XX-1): add a");
+    git(
+        &repo,
+        &["update-index", "--skip-worktree", "other/notes.txt"],
+    );
+    fs::write(repo.join("other/notes.txt"), "changed\n").unwrap();
+    assert_eq!(git(&repo, &["status", "--porcelain"]), "");
+    g5_passes(&env);
+}
+
+#[test]
+fn an_in_progress_shelve_is_refused_for_a_flagged_file_under_the_root() {
+    let (env, _, root) = env_with_item();
+    env.json(&["start", "XX-1"]);
+    git_commit_all(&root, "feat(XX-1): add a");
+    git(&root, &["update-index", "--assume-unchanged", "a.txt"]);
+    fs::write(root.join("a.txt"), "done\n").unwrap();
+    let before = fs::read_to_string(env.item_path("XX-1")).unwrap();
+
+    let error = refused(&env, &["shelve", "XX-1", "--reason", "later"]);
+    assert_eq!(error["result"], "refused", "{error}");
+    assert!(
+        error["error"]
+            .as_str()
+            .unwrap()
+            .contains("can't be shelved"),
+        "{error}"
+    );
+    assert_eq!(gate_ok(&error["gates"], "G5"), Some(false), "{error}");
+    let g5 = failures_from(&error, "G5");
+    assert!(
+        g5[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("assume-unchanged xx/a.txt"),
+        "{error}"
+    );
+    assert_eq!(fs::read_to_string(env.item_path("XX-1")).unwrap(), before);
 }
 
 // Criterion 3: `feat(XX-1): …` and `fix(XX-1)!: …` count as XX-1's
