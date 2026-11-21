@@ -177,6 +177,47 @@ fn g5_ignores_a_dirty_file_outside_a_subfolder_projects_root() {
     assert!(!messages[0].contains("top.txt"), "{messages:?}");
 }
 
+// TR-21, criterion 1: a file under the root that git is told not to look
+// at, with `--skip-worktree` or `--assume-unchanged`, fails G5, naming the
+// file, since `git status` can't see a change to it.
+
+#[test]
+fn g5_fails_for_a_file_marked_skip_worktree() {
+    let (env, repo, root) = env_with_item();
+    git_commit_all(&root, "feat(XX-1): add a");
+    git(&root, &["update-index", "--skip-worktree", "a.txt"]);
+    fs::write(root.join("a.txt"), "done\n").unwrap();
+    assert_eq!(git(&repo, &["status", "--porcelain"]), "");
+
+    let messages = g5_failures(&env);
+    assert_eq!(messages.len(), 1, "{messages:?}");
+    assert!(messages[0].contains("skip-worktree xx/a.txt"), "{messages:?}");
+
+    // A skipped file that isn't on disk, as in a sparse checkout, passes.
+    fs::remove_file(root.join("a.txt")).unwrap();
+    g5_passes(&env);
+}
+
+#[test]
+fn g5_fails_for_a_file_marked_assume_unchanged() {
+    let (env, repo, root) = env_with_item();
+    git_commit_all(&root, "feat(XX-1): add a");
+    git(&root, &["update-index", "--assume-unchanged", "a.txt"]);
+    fs::write(root.join("a.txt"), "done\n").unwrap();
+    assert_eq!(git(&repo, &["status", "--porcelain"]), "");
+
+    let messages = g5_failures(&env);
+    assert_eq!(messages.len(), 1, "{messages:?}");
+    assert!(
+        messages[0].contains("assume-unchanged xx/a.txt"),
+        "{messages:?}"
+    );
+
+    git(&root, &["update-index", "--no-assume-unchanged", "a.txt"]);
+    git_commit_all(&root, "feat(XX-1): change a");
+    g5_passes(&env);
+}
+
 // Criterion 3: `feat(XX-1): …` and `fix(XX-1)!: …` count as XX-1's
 // commits.
 
