@@ -666,3 +666,42 @@ fn a_background_process_a_timed_out_check_started_is_stopped() {
         "the project check's subshell ran on"
     );
 }
+
+#[test]
+fn a_passing_check_with_an_escaped_process_finishes_soon_and_passes() {
+    // TR-20: TR-13's fix waits only briefly for the output once the check's
+    // shell has ended, too. A test runner that exits 0 and leaves a
+    // detached server holding the output open is the common case.
+    let (env, root) = env_with_project();
+    env.create_bare("XX", "a");
+    let check = "perl -e 'use POSIX; POSIX::setsid(); open(F, \">escaped.pid\"); print F $$; \
+                 close F; sleep 30' & echo ok";
+    add_check(&env, "XX-1", "it works", check);
+
+    let began = Instant::now();
+    let output = env
+        .cmd()
+        .args(["gates", "XX-1", "--json"])
+        .output()
+        .unwrap();
+    let took = began.elapsed();
+
+    // The escaped process is stopped here, so it doesn't outlive the test.
+    if let Ok(pid) = fs::read_to_string(root.join("escaped.pid")) {
+        let _ = std::process::Command::new("kill")
+            .args(["-KILL", pid.trim()])
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+    assert!(took < Duration::from_secs(10), "took {took:?}");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let passed = common::parse(&output.stdout);
+    common::check_schema("gates", &passed);
+    assert_eq!(passed["result"], "passed", "{passed}");
+    assert_eq!(gate_ok(&passed["gates"], "G3"), Some(true), "{passed}");
+}

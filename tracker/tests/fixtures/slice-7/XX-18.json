@@ -1,0 +1,79 @@
+{
+  "id": "XX-18",
+  "title": "Checks name their criterion",
+  "project": "XX",
+  "kind": "change",
+  "status": "done",
+  "priority": "medium",
+  "created": "2026-11-21T13:55:01Z",
+  "updated": "2026-11-21T13:55:07Z",
+  "criteria": [
+    {
+      "text": "The parser is built",
+      "check": "test -f built"
+    },
+    {
+      "text": "The README says how to run it",
+      "evidence": "README.md, Usage"
+    },
+    {
+      "text": "The parser prints its result",
+      "check": "test -f built && echo parsed 3 lines"
+    }
+  ],
+  "started": {
+    "at": "2026-11-21T13:55:07Z",
+    "checks": [
+      {
+        "criterion": 1,
+        "passed": false
+      },
+      {
+        "criterion": 3,
+        "passed": false
+      }
+    ]
+  },
+  "verification": {
+    "by": "unchecked",
+    "at": "2026-11-21T13:55:07Z",
+    "checks": [
+      {
+        "criterion": 1,
+        "cmd": "test -f built",
+        "ok": true,
+        "secs": 0
+      },
+      {
+        "criterion": 3,
+        "cmd": "test -f built && echo parsed 3 lines",
+        "ok": true,
+        "secs": 0,
+        "output": "parsed 3 lines"
+      },
+      {
+        "cmd": "echo all 3 tests passed",
+        "ok": true,
+        "secs": 0,
+        "output": "all 3 tests passed"
+      }
+    ],
+    "note": "Submitted before tracker ran checks against a recorded commit. Gates G2, G6, G3 and G4 passed, but no commit ties the checks to the work."
+  },
+  "history": [
+    {
+      "at": "2026-11-21T13:55:07Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-21T13:55:07Z",
+      "from": "in-progress",
+      "to": "done",
+      "via": "submit",
+      "interactive": false
+    }
+  ]
+}
