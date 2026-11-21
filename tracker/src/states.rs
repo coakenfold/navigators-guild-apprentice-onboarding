@@ -32,15 +32,6 @@ pub const MOVES: [Move; 6] = [
     step(Via::Reopen, Status::Shelved, Status::Open),
 ];
 
-/// What the verification record says about a submit before commits are
-/// recorded (slice 8). It's in the past tense, since it stays in the file
-/// after later versions record them. Records written before slice 6 say
-/// "No gates ran", slice 6's first ones "No checks ran", and slice 6's
-/// last ones that gates G2 and G6 passed but nothing tested the work.
-pub const UNCHECKED_NOTE: &str = "Submitted before tracker ran checks against a recorded \
-                                  commit. Gates G2, G6, G3 and G4 passed, but no commit ties the \
-                                  checks to the work.";
-
 /// The move `via` makes from `from`, if the diagram draws one.
 pub fn find(via: Via, from: Status) -> Option<Move> {
     MOVES
