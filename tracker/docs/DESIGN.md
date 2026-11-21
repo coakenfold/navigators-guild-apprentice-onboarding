@@ -619,6 +619,7 @@ Each item is one JSON file, and serde maps it to Rust structs and back. The tool
     "ref": "refs/tracker/BM-12",
     "checks": [
       {
+        "criterion": 1,
         "cmd": "npx playwright test -g 'filters by tag'",
         "ok": true,
         "secs": 6,
@@ -678,6 +679,7 @@ Each item is one JSON file, and serde maps it to Rust structs and back. The tool
 
 - `written` holds each criterion's text as it was written at `create` (T5).
 - `started.head` is `HEAD` at start (T14). `started.checks` is the run at start, where failing is expected (T13).
+- `verification.checks` has one entry per check the submit ran: the criteria's checks first, each naming its `criterion`, numbered from 1, then the project's checks, which name none.
 - `verification.judges` has one entry per judge question: its ref, the model, the request hash, the answer and the reason.
 - `verification.note` explains a record that its other fields don't, such as an `unchecked` one: "Submitted before tracker ran checks. Gates G2 and G6 passed, but nothing tested the work." It's in the past tense, since it stays in the file after later versions run checks.
 - A history entry's `reason` is the one given to `shelve`, `reopen` or `reject`, and it's left out for other moves. In the example, the agent shelved the item while it waited for BM-11, and I reopened it.
