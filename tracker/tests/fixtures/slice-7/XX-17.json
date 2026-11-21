@@ -1,0 +1,60 @@
+{
+  "id": "XX-17",
+  "title": "Checks run at submit",
+  "project": "XX",
+  "kind": "change",
+  "status": "done",
+  "priority": "medium",
+  "created": "2026-11-21T05:29:23Z",
+  "updated": "2026-11-21T05:29:23Z",
+  "criteria": [
+    {
+      "text": "Prints its lines",
+      "check": "test -f done || { for i in $(seq 1 25); do echo \"line $i\"; done; touch done; exit 1; }; for i in $(seq 1 25); do echo \"line $i\"; done"
+    }
+  ],
+  "started": {
+    "at": "2026-11-21T05:29:23Z",
+    "checks": [
+      {
+        "criterion": 1,
+        "passed": false
+      }
+    ]
+  },
+  "verification": {
+    "by": "unchecked",
+    "at": "2026-11-21T05:29:23Z",
+    "checks": [
+      {
+        "cmd": "test -f done || { for i in $(seq 1 25); do echo \"line $i\"; done; touch done; exit 1; }; for i in $(seq 1 25); do echo \"line $i\"; done",
+        "ok": true,
+        "secs": 0,
+        "output": "line 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20\nline 21\nline 22\nline 23\nline 24\nline 25"
+      },
+      {
+        "cmd": "echo all 3 tests passed",
+        "ok": true,
+        "secs": 0,
+        "output": "all 3 tests passed"
+      }
+    ],
+    "note": "Submitted before tracker ran checks against a recorded commit. Gates G2, G6, G3 and G4 passed, but no commit ties the checks to the work."
+  },
+  "history": [
+    {
+      "at": "2026-11-21T05:29:23Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-21T05:29:23Z",
+      "from": "in-progress",
+      "to": "done",
+      "via": "submit",
+      "interactive": false
+    }
+  ]
+}
