@@ -73,6 +73,12 @@
       "description": "The item's last verification record, from before it was last reopened. Each reopen from done replaces it. Left out until the item is first reopened from done.",
       "$ref": "#/$defs/verification"
     },
+    "holds": {
+      "description": "The triggers that fired at the item's last submit, each with the message saying why, while it waits in review for a human to approve or reject it (DESIGN.md §2.5). Present only while the item is in review, and left out otherwise.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/hold" }
+    },
     "history": {
       "description": "One entry per move between states or edit, oldest first. Left out while there are none.",
       "type": "array",
@@ -104,6 +110,16 @@
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
     },
     "state": { "enum": ["open", "in-progress", "review", "done", "shelved"] },
+    "hold": {
+      "description": "One trigger that fired (DESIGN.md §2.5): its name, such as T6, and the message saying why it holds the item.",
+      "type": "object",
+      "required": ["trigger", "message"],
+      "properties": {
+        "trigger": { "type": "string", "pattern": "^T[0-9]+$" },
+        "message": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
     "criterion": {
       "description": "One criterion (DESIGN.md §2.3): what must be true, and how it's verified. With check, a script criterion. With neither a check nor (from slice 12) a judge, a manual one, which alone takes evidence.",
       "type": "object",
@@ -175,6 +191,12 @@
             "additionalProperties": false
           }
         },
+        "triggers": {
+          "description": "For a human record, the triggers that held the item in review, which approve accepted (DESIGN.md §2.7). Left out when none fired, as for an auto record.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/hold" }
+        },
         "note": {
           "description": "Why the record says what it does, such as that no gates ran.",
           "type": "string",
@@ -220,14 +242,14 @@
         "to": { "$ref": "#/$defs/state" },
         "via": {
           "description": "The command that made the move. `status <id> <state>` records the command it maps onto. unknown appears only in --json output, never in a file: it stands for a command this version doesn't know, read from a file a newer tracker wrote. Such a file is listed, but this version never writes it back.",
-          "enum": ["start", "submit", "shelve", "reopen", "edit", "criterion-accept", "unknown"]
+          "enum": ["start", "submit", "approve", "reject", "shelve", "reopen", "edit", "criterion-accept", "unknown"]
         },
         "interactive": {
           "description": "Whether stdin was a terminal: true for my own moves, false for an agent's (DESIGN.md §2.6).",
           "type": "boolean"
         },
         "reason": {
-          "description": "Why. Present for shelve and reopen, which need one, and left out otherwise. One line of at most 500 characters.",
+          "description": "Why. Present for shelve, reopen and reject, which need one, and left out otherwise. One line of at most 500 characters.",
           "type": "string",
           "minLength": 1,
           "maxLength": 500,

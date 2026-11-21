@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracker.invalid/schemas/review.schema.json",
+  "title": "tracker review --json",
+  "description": "The inbox (DESIGN.md §3): every item in review, from every project, with the triggers that hold it. Empty when nothing needs a human.",
+  "type": "object",
+  "required": ["held", "skipped"],
+  "properties": {
+    "held": {
+      "description": "Every item in review, sorted by project, then by priority from high to low, then by number.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "project", "title", "holds", "diff"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Z][A-Z0-9]{0,9}-[1-9][0-9]*$" },
+          "project": { "$ref": "item.schema.json#/$defs/key" },
+          "title": { "type": "string", "minLength": 1 },
+          "holds": {
+            "description": "The triggers that fired at its last submit, each with why. Empty only for an item put in review by hand.",
+            "type": "array",
+            "items": { "$ref": "item.schema.json#/$defs/hold" }
+          },
+          "diff": {
+            "description": "The command that shows the item's commits and their diff, for reviewing it: tracker show <ID> --diff.",
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "skipped": { "$ref": "list.schema.json#/$defs/skipped" }
+  },
+  "additionalProperties": false
+}

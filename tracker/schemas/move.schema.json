@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tracker.invalid/schemas/move.schema.json",
-  "title": "tracker start, shelve, reopen and status --json",
-  "description": "A move between states (DESIGN.md §2.2). The item's last history entry is the move just made. submit, and status <id> done, which runs it, print submit.schema.json instead.",
+  "title": "tracker start, shelve, reopen, reject and status --json",
+  "description": "A move between states (DESIGN.md §2.2). The item's last history entry is the move just made. reject runs only from an interactive terminal. submit, and status <id> done, which runs it, print submit.schema.json instead.",
   "type": "object",
   "required": ["item"],
   "properties": {

@@ -353,8 +353,9 @@ fn lost_on_rewrite_tells_unknown_fields_from_values_written_differently() {
     item["updated"] = serde_json::json!(at);
     item["history"][0]["reason"] = serde_json::Value::Null;
     // Unknown: a field inside a record, and one at the top level.
-    // (`commit` was the record's unknown field until slice 8 wrote it.)
-    item["verification"]["triggers"] = serde_json::json!(["T3"]);
+    // (`commit` was the record's unknown field until slice 8 wrote it,
+    // and `triggers` until slice 9 did. Slice 12 adds `judges`.)
+    item["verification"]["judges"] = serde_json::json!(["c1:q1"]);
     item["criteria"] = serde_json::json!([]);
     item["owner"] = serde_json::json!("me");
     let text = serde_json::to_string_pretty(&item).unwrap();
@@ -378,9 +379,11 @@ fn lost_on_rewrite_tells_unknown_fields_from_values_written_differently() {
         ]
     );
 
-    // A history entry made by a command this version doesn't know.
+    // A history entry made by a command this version doesn't know. It was
+    // `approve` until slice 9 made that known, so it's `archive`, as in
+    // `add_newer_entry`.
     let mut item = env.item("XX-1");
-    item["history"][0]["via"] = serde_json::json!("approve");
+    item["history"][0]["via"] = serde_json::json!("archive");
     let text = serde_json::to_string_pretty(&item).unwrap();
     let lost = tracker::item::lost_on_rewrite(&text).unwrap();
     assert_eq!(lost.unknown, ["history"]);
