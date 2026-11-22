@@ -289,6 +289,8 @@ pub fn prefix(root: &Path) -> Result<String> {
 /// One file one commit touched, for the triggers (§2.1, §2.5).
 #[derive(Debug, Clone, PartialEq)]
 pub struct FileChange {
+    /// The commit that touched it, as a full SHA.
+    pub sha: String,
     /// The file's path from the top of the repository.
     pub path: String,
     /// Git's status letter: `A` added, `D` deleted, `M` modified, `T` its
@@ -327,11 +329,13 @@ pub fn changes(root: &Path, shas: &[String]) -> Result<Vec<FileChange>> {
     // where `-` counts mean a binary file.
     let mut all = Vec::new();
     let mut commit: Vec<FileChange> = Vec::new();
+    let mut sha = String::new();
     let mut tokens = text.split('\0');
     while let Some(token) = tokens.next() {
         let token = token.trim_start_matches('\n');
         if token.starts_with('\x01') {
             all.append(&mut commit);
+            sha = token.trim_start_matches('\x01').to_string();
         } else if token.starts_with(':') {
             let status = token
                 .split_whitespace()
@@ -340,6 +344,7 @@ pub fn changes(root: &Path, shas: &[String]) -> Result<Vec<FileChange>> {
                 .unwrap_or('M');
             let path = tokens.next().unwrap_or_default().to_string();
             commit.push(FileChange {
+                sha: sha.clone(),
                 path,
                 status,
                 lines: None,
@@ -353,6 +358,21 @@ pub fn changes(root: &Path, shas: &[String]) -> Result<Vec<FileChange>> {
     }
     all.append(&mut commit);
     Ok(all)
+}
+
+/// The commits `HEAD` reaches that `base` doesn't, as full SHAs.
+pub fn since(root: &Path, base: &str) -> Result<Vec<String>> {
+    let range = format!("{base}..HEAD");
+    Ok(git(root, &["rev-list", &range])?
+        .lines()
+        .map(str::to_string)
+        .collect())
+}
+
+/// Whether `path`, from the top of the repository, is a file at commit
+/// `sha`.
+pub fn exists_at(root: &Path, sha: &str, path: &str) -> bool {
+    git(root, &["cat-file", "-e", &format!("{sha}:{path}")]).is_ok()
 }
 
 /// The ref that keeps item `id`'s verified commit (§2.7).

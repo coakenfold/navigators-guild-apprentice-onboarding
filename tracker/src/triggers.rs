@@ -51,10 +51,16 @@ pub struct Changes {
 /// Works out item's changed files from its commits in the repository
 /// that holds `root` (§2.1). Paths are made relative to the root, and a
 /// file outside it counts only toward `lines`.
-pub fn changes(root: &Path, id: &str) -> Result<Changes> {
+pub fn changes(root: &Path, id: &str, started: Option<&str>) -> Result<Changes> {
     let prefix = git::prefix(root)?;
     let mut shas = git::item_commits(root, id)?;
     shas.reverse();
+    // The commits made after `start`. A test file counts as existing for
+    // one of them if it exists where the item started, whoever added it.
+    let after = match started {
+        Some(head) => git::since(root, head)?,
+        None => Vec::new(),
+    };
     let mut changes = Changes::default();
     for change in git::changes(root, &shas)? {
         if let Some((added, removed)) = change.lines {
@@ -64,7 +70,10 @@ pub fn changes(root: &Path, id: &str) -> Result<Changes> {
             continue;
         };
         let path = path.to_string();
-        let existed = !changes.added.contains(&path);
+        let existed = match started {
+            Some(head) if after.contains(&change.sha) => git::exists_at(root, head, &change.path),
+            _ => !changes.added.contains(&path),
+        };
         match change.status {
             'A' => {
                 changes.added.insert(path.clone());
@@ -89,7 +98,11 @@ pub fn run(item: &Item, config: &Config) -> Result<Vec<Ran>> {
     let review = project.map(|project| project.review()).unwrap_or_default();
     let design = project.and_then(|project| project.design.clone());
     let changes = match crate::gates::root(item, config) {
-        Ok(root) => changes(&root, &item.id)?,
+        Ok(root) => changes(
+            &root,
+            &item.id,
+            item.started.as_ref().and_then(|s| s.head.as_deref()),
+        )?,
         Err(why) => {
             return Err(Error::store(format!(
                 "Can't work out {}'s changed files: {why}.",
