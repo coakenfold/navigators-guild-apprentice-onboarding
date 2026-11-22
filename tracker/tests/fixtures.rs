@@ -463,3 +463,29 @@ fn slice_10s_held_fixture_names_the_files_that_fired_each_hold() {
     assert!(lost.is_empty(), "{lost:?}");
     check_schema("item", &file);
 }
+
+/// TR-7: XX-23 was written by slice 11's binary, whose `start` records the
+/// criteria's fingerprint in `started.criteria_hash`, before `head`. It's
+/// held in review by T5, T13 and T14, the triggers slice 11 adds.
+#[test]
+fn slice_11s_fixture_has_a_criteria_fingerprint_and_the_new_holds() {
+    assert_eq!(names_in("slice-11"), ["XX-23.json"]);
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/slice-11/XX-23.json");
+    let text = fs::read_to_string(&path).unwrap();
+    let file: Value = serde_json::from_str(&text).unwrap();
+    let started: Vec<&String> = file["started"].as_object().unwrap().keys().collect();
+    assert_eq!(started, ["at", "criteria_hash", "head", "checks"]);
+    let triggers: Vec<&str> = file["holds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|hold| hold["trigger"].as_str().unwrap())
+        .collect();
+    assert_eq!(triggers, ["T5", "T13", "T14"]);
+
+    let item = tracker::item::from_json(&text).unwrap();
+    assert_eq!(tracker::item::to_json(&item), text);
+    let lost = tracker::item::lost_on_rewrite(&text).unwrap();
+    assert!(lost.is_empty(), "{lost:?}");
+    check_schema("item", &file);
+}

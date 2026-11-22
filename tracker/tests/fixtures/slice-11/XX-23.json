@@ -1,0 +1,61 @@
+{
+  "id": "XX-23",
+  "title": "Search finds near misses",
+  "project": "XX",
+  "kind": "change",
+  "status": "review",
+  "priority": "medium",
+  "created": "2026-11-22T21:20:23Z",
+  "updated": "2026-11-22T21:20:24Z",
+  "written": [
+    "search finds near misses",
+    "search is fast"
+  ],
+  "criteria": [
+    {
+      "text": "search finds near misses",
+      "check": "true"
+    }
+  ],
+  "started": {
+    "at": "2026-11-22T21:20:24Z",
+    "criteria_hash": "ed3c8e84e7b07c3926fe287d9a874c0492b91ced9cedb550860561cb9ce3e1da",
+    "head": "62ad9cf1c1ea3dcd531835e3f005b14d6cdbc082",
+    "checks": [
+      {
+        "criterion": 1,
+        "passed": true
+      }
+    ]
+  },
+  "holds": [
+    {
+      "trigger": "T5",
+      "message": "a written criterion is no longer any criterion's text: \"search is fast\""
+    },
+    {
+      "trigger": "T13",
+      "message": "criterion 1's check already passed before the work, so it can't be proving it"
+    },
+    {
+      "trigger": "T14",
+      "message": "an unscoped commit since start, which no item's scope covers: ae95328 \"tidy the notes\""
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-11-22T21:20:24Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-22T21:20:24Z",
+      "from": "in-progress",
+      "to": "review",
+      "via": "submit",
+      "interactive": false
+    }
+  ]
+}
