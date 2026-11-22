@@ -445,7 +445,13 @@ fn a_script_criterion_needs_no_evidence() {
             ],
             // TR-29: once every gate passes, the triggers run too.
             "triggers": [
+                { "trigger": "T1", "fired": false },
+                { "trigger": "T2", "fired": false },
+                { "trigger": "T3", "fired": false },
+                { "trigger": "T4", "fired": false },
                 { "trigger": "T6", "fired": false },
+                { "trigger": "T7", "fired": false },
+                { "trigger": "T8", "fired": false },
                 { "trigger": "T9", "fired": false }
             ],
             "holds": [],

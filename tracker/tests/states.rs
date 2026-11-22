@@ -236,7 +236,13 @@ fn submit_prints_the_shape_section_3_gives_it() {
                 ],
                 // Both of slice 9's triggers ran, and neither fired.
                 "triggers": [
+                    { "trigger": "T1", "fired": false },
+                    { "trigger": "T2", "fired": false },
+                    { "trigger": "T3", "fired": false },
+                    { "trigger": "T4", "fired": false },
                     { "trigger": "T6", "fired": false },
+                    { "trigger": "T7", "fired": false },
+                    { "trigger": "T8", "fired": false },
                     { "trigger": "T9", "fired": false }
                 ],
                 "holds": [],
