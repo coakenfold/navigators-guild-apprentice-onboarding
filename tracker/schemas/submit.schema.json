@@ -52,15 +52,7 @@
     "holds": {
       "description": "Every trigger that fired, with the message saying why, which is why the item is in review. Each one is also in triggers, with fired true.",
       "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["trigger", "message"],
-        "properties": {
-          "trigger": { "type": "string", "pattern": "^T[0-9]+$" },
-          "message": { "type": "string", "minLength": 1 }
-        },
-        "additionalProperties": false
-      }
+      "items": { "$ref": "item.schema.json#/$defs/hold" }
     },
     "item": {
       "description": "The item after the submit, exactly as its file holds it.",

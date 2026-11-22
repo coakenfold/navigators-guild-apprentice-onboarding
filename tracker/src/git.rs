@@ -278,6 +278,83 @@ pub fn patches(root: &Path, shas: &[String]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// The project root's path from the top of its repository, with a
+/// trailing `/`, such as `tracker/`, or empty when the root is the top.
+pub fn prefix(root: &Path) -> Result<String> {
+    Ok(git(root, &["rev-parse", "--show-prefix"])?
+        .trim_end()
+        .to_string())
+}
+
+/// One file one commit touched, for the triggers (§2.1, §2.5).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FileChange {
+    /// The file's path from the top of the repository.
+    pub path: String,
+    /// Git's status letter: `A` added, `D` deleted, `M` modified, `T` its
+    /// type changed. Renames show as a delete and an add.
+    pub status: char,
+    /// Lines added and removed, or `None` for a binary file.
+    pub lines: Option<(u64, u64)>,
+}
+
+/// Every file each commit in `shas` touched, inside the project's root or
+/// not, in the order given, as git names them from the top of the
+/// repository. A merge is compared with its first parent, and a root
+/// commit with nothing.
+pub fn changes(root: &Path, shas: &[String]) -> Result<Vec<FileChange>> {
+    if shas.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut args = vec![
+        "-c",
+        "log.showRoot=true",
+        "show",
+        "-z",
+        "--no-renames",
+        "--diff-merges=first-parent",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--format=%x01%H",
+        "--raw",
+        "--numstat",
+    ];
+    args.extend(shas.iter().map(|sha| sha.as_str()));
+    let text = git(root, &args)?;
+    // With `-z`, each commit starts with `\x01<sha>`, then each file's raw
+    // line, such as `:100644 100644 <old> <new> M`, is followed by its
+    // path, and then each file's numstat entry is `<added>\t<removed>\t<path>`,
+    // where `-` counts mean a binary file.
+    let mut all = Vec::new();
+    let mut commit: Vec<FileChange> = Vec::new();
+    let mut tokens = text.split('\0');
+    while let Some(token) = tokens.next() {
+        let token = token.trim_start_matches('\n');
+        if token.starts_with('\x01') {
+            all.append(&mut commit);
+        } else if token.starts_with(':') {
+            let status = token
+                .split_whitespace()
+                .last()
+                .and_then(|field| field.chars().next())
+                .unwrap_or('M');
+            let path = tokens.next().unwrap_or_default().to_string();
+            commit.push(FileChange {
+                path,
+                status,
+                lines: None,
+            });
+        } else if let [added, removed, path] = token.splitn(3, '\t').collect::<Vec<_>>()[..] {
+            let lines = added.parse().ok().zip(removed.parse().ok());
+            if let Some(change) = commit.iter_mut().find(|change| change.path == path) {
+                change.lines = lines;
+            }
+        }
+    }
+    all.append(&mut commit);
+    Ok(all)
+}
+
 /// The ref that keeps item `id`'s verified commit (§2.7).
 pub fn ref_name(id: &str) -> String {
     format!("refs/tracker/{id}")
