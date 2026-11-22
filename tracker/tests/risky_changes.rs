@@ -730,3 +730,40 @@ mod tr_31_c2 {
         assert_not_held(&submit(&env));
     }
 }
+
+/// TR-32, criterion 1: `diff.relative` in the repository's own config
+/// doesn't hide changes from the triggers or from `show --diff`.
+mod tr_32_c1 {
+    use super::*;
+
+    fn set_relative(env: &Env) {
+        assert!(git_ok(
+            env.work.path(),
+            &["config", "diff.relative", "true"]
+        ));
+    }
+
+    #[test]
+    fn the_file_triggers_still_fire_with_diff_relative_set() {
+        let env = started_with(&[("src/lib.rs", "pub fn a() {}\n")]);
+        set_relative(&env);
+        write(&env, "xx/src/search.rs", "pub fn search() {}\n");
+        commit(&env);
+        let output = submit(&env);
+        assert_held_by(&output, &["T1"]);
+        assert_eq!(hold(&output, "T1")["files"], json!(["src/search.rs"]));
+    }
+
+    #[test]
+    fn show_diff_still_lists_files_outside_the_root_with_diff_relative_set() {
+        let env = started_with(&[]);
+        set_relative(&env);
+        write(&env, "xx/inside.txt", "inside the root\n");
+        write(&env, "other/outside.txt", "outside the root\n");
+        commit(&env);
+        let output = env.json(&["show", "XX-1", "--diff"]);
+        let diff = output["diff"].as_str().unwrap();
+        assert!(diff.contains("inside.txt"), "{diff}");
+        assert!(diff.contains("other/outside.txt"), "{diff}");
+    }
+}
