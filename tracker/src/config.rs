@@ -44,6 +44,7 @@ pub struct Project {
 /// changed file's path relative to the project's root, and `*` doesn't
 /// match `/`, so `*.js` names only files at the top of the root.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Review {
     /// Files whose change holds an item (T2). None by default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -64,6 +65,10 @@ pub struct Review {
     /// and T12 stay on whatever it says.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub disabled: Vec<String>,
+    /// How often the digest is due, such as `{"every_days": 7}` (§4.2).
+    /// Slice 16 reads it, and it's kept as written until then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest: Option<serde_json::Value>,
 }
 
 /// `source_paths` when the project doesn't set it (§4.2).
