@@ -98,9 +98,11 @@ enum Command {
     /// the item, such as `feat(BM-12): …`, G3 runs each criterion's check,
     /// and G4 the project's checks. If any fails, submit is refused with
     /// exit 2 and every reason, and nothing changes. Then the triggers run:
-    /// T6 holds an item with a manual criterion, and T9 one labelled
-    /// needs-review. A held item waits in review for a human to approve or
-    /// reject it. Otherwise it goes to done, verified automatically against
+    /// T1 holds a capability or a new source file, T2 a risky path, T3 a
+    /// dependency manifest, T4 an existing test changed, T6 a manual
+    /// criterion, T7 a large change, T8 the design doc, and T9 the label
+    /// needs-review. The project's review settings in config.json tune them.
+    /// A held item waits in review for a human to approve or reject it. Otherwise it goes to done, verified automatically against
     /// HEAD, with each check's last lines of output, and the git ref
     /// refs/tracker/<ID> keeps that commit
     Submit {
@@ -196,10 +198,12 @@ enum Command {
     Review,
     /// Approve a held item: review → done. Only from an interactive terminal
     ///
-    /// Says what holds it, then asks for the ID to be typed back. Then the
-    /// gates submit runs run again. If they pass, the item is done,
-    /// verified by a human against HEAD, and refs/tracker/<ID> keeps that
-    /// commit. If one fails, it stays in review, with exit 2
+    /// Runs the triggers again at HEAD and says what holds it there, marking
+    /// holds that are new since the submit, then asks for the ID to be typed
+    /// back. Then the gates submit runs run again. If they pass, the item is
+    /// done, verified by a human against that HEAD, and refs/tracker/<ID>
+    /// keeps that commit. If one fails, it stays in review, with exit 2, and
+    /// if HEAD moved while it asked, nothing changes, with exit 1
     Approve {
         /// The item's ID, such as BM-12
         id: String,
@@ -3118,11 +3122,14 @@ fn diff_command(id: &str) -> String {
 }
 
 /// `approve`: moves a held item to done, from an interactive terminal only,
-/// after saying what holds it and asking for the ID (§2.7). It re-runs the
-/// gates submit runs, with the same second look at the tree after the
-/// checks. If one fails, the item stays in review, with exit 2. Otherwise
-/// it's verified by a human against the `HEAD` G5 saw now, not at the
-/// submit, and its git ref is set there.
+/// after saying what holds it and asking for the ID (§2.7). The holds it
+/// shows are the triggers run again at the `HEAD` it names, with the ones
+/// that are new since the submit marked, and the record keeps them. It
+/// re-runs the gates submit runs, with the same second look at the tree
+/// after the checks. If one fails, the item stays in review, with exit 2,
+/// and if G5's `HEAD` isn't the one named, nothing is written, with exit 1.
+/// Otherwise it's verified by a human against that `HEAD`, not the
+/// submit's, and its git ref is set there.
 ///
 /// The store isn't locked while I decide, or while the checks run, so the
 /// item is read again under the lock after each, and nothing is written,
