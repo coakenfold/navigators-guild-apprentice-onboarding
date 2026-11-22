@@ -25,7 +25,7 @@ pub struct Item {
     pub updated: Timestamp,
     /// The text of each criterion as it was written at `create` (§2.1), in
     /// no particular order. Only a `criterion` command run from an
-    /// interactive terminal changes it afterwards, so slice 11's T5 can
+    /// interactive terminal changes it afterwards, so T5 can
     /// tell when an agent reworded or dropped a criterion it was given. It
     /// keeps the text, not a hash, so `criterion accept` and T5 can say
     /// which.
