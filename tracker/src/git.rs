@@ -245,7 +245,7 @@ pub fn item_log(root: &Path, id: &str) -> Result<Vec<(String, String)>> {
 /// a file in another encoding, are shown as `�` rather than refused, since
 /// this is only for reading. External diff drivers and textconv filters,
 /// which `.git/config` can set without any commit showing it, are turned
-/// off, so the diff is what the commits hold.
+/// off, and so is `diff.relative`, so the diff is what the commits hold.
 pub fn patches(root: &Path, shas: &[String]) -> Result<String> {
     if shas.is_empty() {
         return Ok(String::new());
@@ -261,6 +261,7 @@ pub fn patches(root: &Path, shas: &[String]) -> Result<String> {
             "--no-color",
             "--no-ext-diff",
             "--no-textconv",
+            "--no-relative",
             "--patch",
             "--format=commit %H%n%s",
         ])
@@ -317,6 +318,7 @@ pub fn changes(root: &Path, shas: &[String]) -> Result<Vec<FileChange>> {
         "--diff-merges=first-parent",
         "--no-ext-diff",
         "--no-textconv",
+        "--no-relative",
         "--format=%x01%H",
         "--raw",
         "--numstat",
