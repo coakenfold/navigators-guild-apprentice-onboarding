@@ -409,19 +409,69 @@ mod commits_scoped_elsewhere {
 
     #[test]
     fn t14_tells_another_project_from_another_item() {
-        // A commit scoped to another project's key doesn't fire it.
+        // A commit scoped to another registered project's key doesn't fire
+        // it.
         let env = started();
+        env.add_project("YY", "yy");
         write(&env, "xx/notes.md", "notes\n");
         git_commit_all(env.work.path(), "docs(YY-2): the notes");
         do_the_work(&env);
         assert_quiet(&submit(&env), "T14");
 
-        // And one scoped to another item of this project does.
+        // One scoped to another item of this project does.
         let env = started();
         write(&env, "xx/notes.md", "notes\n");
         git_commit_all(env.work.path(), "docs(XX-2): the notes");
         do_the_work(&env);
         assert_held_by(&submit(&env), &["T14"]);
+
+        // And so does one scoped to a key that isn't a project.
+        let env = started();
+        env.add_project("YY", "yy");
+        write(&env, "xx/notes.md", "notes\n");
+        git_commit_all(env.work.path(), "docs(ZZ-2): the notes");
+        do_the_work(&env);
+        assert_held_by(&submit(&env), &["T14"]);
+    }
+
+    #[test]
+    fn t14_tells_another_project_from_another_item_before_start() {
+        // A commit scoped to another item of the project, made before
+        // start, isn't work since start.
+        let env = env_with_project();
+        create(&env, &[]);
+        env.json(&["criterion", "add", "XX-1", "it is done", "--check", DONE]);
+        write(&env, "xx/notes.md", "notes\n");
+        git_commit_all(env.work.path(), "docs(XX-2): the notes");
+        env.json(&["start", "XX-1"]);
+        do_the_work(&env);
+        assert_quiet(&submit(&env), "T14");
+    }
+
+    #[test]
+    fn t14_counts_a_scope_that_isnt_a_project() {
+        let env = started();
+        write(&env, "xx/notes.md", "notes\n");
+        let sha = git_commit_all(env.work.path(), "fix(T-41): the typo");
+        do_the_work(&env);
+
+        let output = submit(&env);
+        assert_held_by(&output, &["T14"]);
+        let message = hold(&output, "T14");
+        assert!(message.contains(&sha[..7]), "{message}");
+        assert!(message.contains("fix(T-41): the typo"), "{message}");
+    }
+
+    #[test]
+    fn t14_says_a_commit_isnt_scoped_to_the_item() {
+        let env = started();
+        write(&env, "xx/notes.md", "notes\n");
+        git_commit_all(env.work.path(), "docs(XX-2): the notes");
+        do_the_work(&env);
+
+        let message = hold(&submit(&env), "T14");
+        assert!(message.contains("not scoped to XX-1"), "{message}");
+        assert!(!message.contains("scope covers"), "{message}");
     }
 }
 
