@@ -24,6 +24,8 @@ The findings are both low, and both are process notes:
 
 Review 1's design 1 and process 1 are still open, as its Outcome decided ([Still open](#still-open-carried-forward)). The point that matters most for slice 10 is in [Slice 10 must decide](#slice-10-must-decide). With slice 10's binary installed, nearly every TR item from slice 11 on will be held, so the user's terminal becomes a step in every item.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -67,3 +69,26 @@ The readme also carries slice 7 review 1's finding 6 (`Env::add_criterion`'s `--
 - **From slice 11 on, slice 10's binary will hold nearly every TR item.** TR-7 to TR-12 are all `capability`, so T1 holds each one. Slice items usually change DESIGN.md, as `10e519a` and `fae0005` did, which fires T8. Fixes that change a pinned test fire T4 (process 1). §2.5 lets a project switch off T1, T4 and T8, but not T6. Slice 10 should decide whether TR's `review` config switches any of them off, or accept that the user approves every slice item from slice 11 on. Slice 11's T13 adds test-only fixes like TR-30, whose checks pass at start.
 - **Design 1:** whether `approve` runs the triggers at the `HEAD` it names, once T1 to T8 read commits. `gates_dry_run` already calls `triggers::run` ([main.rs:1842](../../src/main.rs#L1842)), so it needs the same inputs as `submit`'s call when the new triggers read git and the config.
 - **`review.disabled` must never switch off T6**, and `holds`' `{trigger, message}` shape has to stay loadable for fixture XX-20 when `show --diff` lists the files that fired a trigger first.
+
+## Outcome
+
+Added after the review. The findings above are left as written, so their line links point at `ca40144`, not at later code. This round changed no code, tests or tracker items: both findings are process advice, and each took option (a), as the review chose. The readme's [Fixes after review 2](../slice-9-readme.md#fixes-after-review-2) lists them too.
+
+Both findings are settled by the builders' instructions, with no commit. The carried-forward items and the points in "Slice 10 must decide" are left as below. The only commits after this review (`f173ae6`) are docs: the readme's update and the commit that adds this Outcome.
+
+| Finding | Resolved by |
+| --- | --- |
+| Process 1: TR-29 changed two existing tests after `start` | Option (a), no code change. The agents' standing instructions now say to update the tests that a change foreseeably breaks in the item's test commit, before `start`, so they're seen failing first, and to expect T4 to hold such items from slice 11 on |
+| Process 2: TR-29's criterion 3 check passes when DESIGN.md can't be read | Option (a), for new items. Future absence checks are written as `test -f FILE && ! grep -qF …`. TR-29's check is left as it is: it's done, its file exists, and changing it would change a verified item's criteria |
+| Still open, design 1 (review 1): `approve` verifies at whatever `HEAD` it finds and doesn't run the triggers again | Left for slice 10 (TR-6) |
+| Still open, process 1 (review 1): typing the ID into `approve` and `reject` in a real terminal | Still the user's to do |
+| Still open, test gap 2 in part (review 1): `review`'s line for a held item with no `holds`, and `show --diff`'s text for an item with no commits | Stays open. Both paths only print, so the risk is low |
+| Still open, test gap 1's second mutant (review 1): `approve`'s first re-read as a plain `store.lock()` | Stays open. Review 1 found it almost harmless, since the second re-read compares the same bytes |
+| Still open, outside this slice: slice 7 review 1's finding 6 and the third case of slice 8 review 2's test gap 1 | Not part of this slice. Left as the readme's Still open has them |
+| Slice 10 must decide: TR-6's five criteria are all manual | Left for slice 10 |
+| Slice 10 must decide: if TR-6 is held, keep the tree under `tracker/` clean until it's approved | Left for slice 10 |
+| Slice 10 must decide: from slice 11 on, slice 10's binary will hold nearly every TR item | Left for slice 10. Which of T1, T4 and T8 to switch off for TR is the user's to decide, because it weakens what holds TR's own items |
+| Slice 10 must decide: design 1, whether `approve` runs the triggers | Left for slice 10, as design 1 |
+| Slice 10 must decide: `review.disabled` must never switch off T6, and `holds`' shape | Left for slice 10 |
+
+The review's carried-forward list says "all six points" for the section, which is review 1's count. The section itself has the five points above, and each is covered.
