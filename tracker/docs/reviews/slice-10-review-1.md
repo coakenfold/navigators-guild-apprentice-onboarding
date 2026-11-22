@@ -25,6 +25,8 @@ The findings that matter most:
 - **Design 2:** T4's hold doesn't say which commit changed a test, so the expected-value updates slice 11 must make before `start` look the same as an edit after it.
 - **Bug 1:** a misspelled key in `review`, such as `risky_path`, is ignored without a word. It matters as soon as the user writes TR's `review` settings by hand.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -93,3 +95,44 @@ The findings that matter most:
 - **T14 and the orchestrator's own commits.** Once slice 11's binary is installed, an unscoped commit that touches `tracker/` while a TR item is in progress fires T14 at its submit, and one made while it waits in review fires T14 at `approve`, marked new, since `approve` now runs the triggers again. Readme and review commits such as `bdd3e71` and `ed6d12a` are unscoped. Make them only when no TR item is in progress or in review, or scope them to the item.
 - **Design 1's boundary.** If design 1 isn't fixed before this binary is installed, slice 11 is where T4 can learn which item commits came after `started.head`, since T14 reads that range too.
 - **TR's `review` settings** are still the user's to write. §4.2's example `risky_paths` names `src/store.rs` and `src/gates.rs`. `schemas/**` is a candidate too, since the tests check every output against the schemas, so loosening one loosens them. The unit tests inside `src/*.rs` aren't `test_paths`, so editing one fires no T4. Fix bug 1 first, so a misspelled key can't quietly leave a setting off.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `bdd3e71`, not at the fixed code. Each fix was built as a tracker item of its own, TR-31 to TR-36, with its tests committed before `tracker start` where it has tests, and the readme's [Fixes after review 1](../slice-10-readme.md#fixes-after-review-1) lists them too.
+
+This round fixed bugs 1 and 2, security 1 and 2, designs 1 to 3 and test gap 1. Option (a) was taken wherever the review chose it: bug 1, security 1's `-diff` attribute and security 2, and designs 1 to 3. Bug 3, design 4 and test gap 2 won't be fixed, for the reasons in the table. Of the two process notes, process 1 is still the user's, and process 2 is done in the readme. The five points in "Slice 11 must decide" are left for slice 11 (TR-7), apart from design 1's boundary, which TR-31 settled. The commits after this review (`c473b57`), in order:
+
+- **Fixes:** `3363871` and `35d05ec` (TR-31, design 1 and test gap 1), `0a299c1` and `5b866cd` (TR-32, security 1's code), `50ae411` and `f9ff0c7` (TR-33, design 2), `ccabaf9` and `c147e5c` (TR-34, bug 1), `e08023c` and `aa6c781` (TR-35, bug 2) and `89069f3` (TR-36, security 1's `-diff` attribute, security 2 and design 3, in DESIGN.md).
+- **Docs:** the readme's update and the commit that adds this Outcome, which belong to no item.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: a misspelled key in a project's `review` settings is ignored without a word | TR-34, `c147e5c`, option (a): `#[serde(deny_unknown_fields)]` on `config::Review`, and a `digest: Option<serde_json::Value>` field with a serde default and `skip_serializing_if`, since §4.2 lists it. A misspelled key exits 3 for every command, naming it. Tests: `tr_34_c1::a_misspelled_review_key_exits_3_naming_it`, and `tr_34_c2::a_review_with_every_key_in_4_2_loads`, which has every key §4.2 lists, `digest` included |
+| Bug 2: when a submit's hold no longer fires at `approve`, the question says "no trigger recorded" and doesn't say what went away | TR-35, `aa6c781`: `decision_warning` lists each hold of the submit's whose trigger no longer fires, as "(no longer fires)", and the empty case reads "and nothing holds it now." The review's "at <HEAD>" wording isn't used, since the criterion doesn't need it. Test: `tr_35_c1::approve_lists_a_submit_hold_that_no_longer_fires`, under `script`, with T3 switched off in `disabled` after the submit |
+| Bug 3: T1 names source files that the item added and then renamed or deleted | Won't fix. The hold is right, since T1 fires anyway, and only its file list is off. It's unlikely in TR, where a slice seldom adds a file and then moves it. The readme's Still open says so |
+| Security 1: `diff.relative` and a `-diff` attribute can hide changes from the triggers | The code half is TR-32, `5b866cd`: `--no-relative` on `git::changes` and `git::patches`. Tests: `tr_32_c1::the_file_triggers_still_fire_with_diff_relative_set` and `tr_32_c1::show_diff_still_lists_files_outside_the_root_with_diff_relative_set`. The attribute half is TR-36, `89069f3`, option (a): a §7 bullet says a `-diff` attribute in `.git/info/attributes` hides a file's lines from T7, and that T4 still fires for a test file. Its check is a `grep -qF` on DESIGN.md |
+| Security 2: an unscoped commit before `start` can delete an existing test so that the item re-adds it weakened | TR-36, `89069f3`, option (a): the same §7 bullet says an unscoped commit before `start` can delete an existing test so that the item re-adds it as a new file, out of T4's reach. Its check is a `grep -qF` on DESIGN.md |
+| Design 1: an item can weaken a test it added itself after `start` without firing T4 | TR-31, `35d05ec`, option (a): for a commit after `started.head`, a test file counts as existing if it exists at `started.head`. `git::FileChange` carries the commit's SHA, and `git::since` and `git::exists_at` are new. §2.5's sentence is rewritten in `89069f3`. Tests: `tr_31_c1::changing_a_line_of_a_test_committed_before_start_fires_t4` and `removing_a_test_committed_before_start_fires_t4`. The test the review pointed at, `changing_a_test_file_the_item_added_doesnt_fire_t4`, is unchanged and still right, since it adds the file after `start` |
+| Design 2: T4's hold doesn't say which commit changed the test | TR-33, `f9ff0c7`, option (a): the message names each file's commits by 7-character SHA, marked before or after `start`, such as `tests/old.rs (b7ba4ee before start, 1a2b3c4 after start)`. `files` stay plain paths. No existing test pinned the message's shape. Tests: the three in `tr_33_c1`, for the JSON, the text and a deleted file |
+| Design 3: T3's message doesn't name the dependency, as §2.5's and §3's examples do | TR-36, `89069f3`, option (a): both examples read `dependency manifest changed: package.json`. Its check has a `test -f docs/DESIGN.md` guard |
+| Design 4: T7 counts every commit's lines, summed, and §7 doesn't say so | Won't fix, as the review would leave it. §2.5 already states the rule, and it only over-holds. The readme's Still open lists it |
+| Test gap 1: no test covers an item whose tests are committed before `start` and changed after it | TR-31, `3363871`: `started_after_tests` commits the item's tests before `start`, and `tr_31_c1`, `tr_31_c2` and `tr_33_c1` use it |
+| Test gap 2: the readme's untested cases are still untested | Won't fix. The remaining cases are `approve`'s exit 3 for a root outside a git work tree, a binary test file, a merge commit and a design path with `./`. They're unlikely in TR, and the binary case fails safe. Security 1's fix brought its own tests, as the review asked |
+| Process 1: `approve`'s new question hasn't been seen in a real terminal | Still the user's. The first held TR item, from slice 11 on, will show it. TR-35 has changed the question again, so a check now sees both changes |
+| Process 2: the readme gives two counts for `b7ba4ee`'s older tests | Done in the readme's update: the Branch row says six, and "held for both,." reads "held for both." |
+| Slice 11 must decide: TR-7 is judged by a binary with no T5, T13 or T14 | Left for slice 11. The readme's Limits carries it: TR-7's record is read by hand |
+| Slice 11 must decide: TR-7's test commit will fire T4 | Left for slice 11. TR-33 helps: T4's hold now marks each commit "before start" or "after start", so the sanctioned edits to the six pinned lists read as expected. The readme's Limits says to make them in the test commit before `start` |
+| Slice 11 must decide: T14 and the orchestrator's own commits | Left for slice 11. The readme's Limits carries it, with `c473b57` among the unscoped commits to make only when no TR item is in progress |
+| Slice 11 must decide: design 1's boundary | Done by TR-31, whose `git::since` lists the commits after `started.head`. T14 can use it |
+| Slice 11 must decide: TR's `review` settings, and fixing bug 1 first | Bug 1 is fixed (TR-34), so a misspelled key can't quietly leave a setting off. The settings, such as `risky_paths` and `schemas/**`, are the user's to write, and the user chose to keep every trigger on |
+
+Seen failing:
+
+- **Design 1:** `tr_31_c1` auto-verified before the fix. `tr_31_c2` passed at `start`, as it had to, since adding lines never fired T4, and was seen failing by temporarily counting every change to an existing file.
+- **Security 1:** both `tr_32_c1` tests failed before the fix. The `-diff` attribute's `grep` check failed at `start`.
+- **Design 2:** the three `tr_33_c1` tests failed before the change.
+- **Bug 1:** `tr_34_c1` failed before the fix. `tr_34_c2` passed before the work, then failed on `digest` once `deny_unknown_fields` alone was added.
+- **Bug 2:** `tr_35_c1` failed before the fix.
+- **Security 2 and design 3** are docs only: TR-36's three `grep` checks failed at `start`.
+
+The installed slice 9 binary verified each of TR-31 to TR-36 `auto`, with a commit and `refs/tracker/<ID>`: `35d05ec`, `5b866cd`, `f9ff0c7`, `c147e5c`, `aa6c781` and `89069f3`. It has only T6 and T9, and none of the six has a manual criterion, so nothing could hold them, and `gates` showed no hold before each submit. After all six, `cargo fmt --check`, `cargo clippy -- -D warnings` and all 382 tests pass, 11 more than at `bdd3e71`: 3, 2, 3, 2 and 1 in `tests/risky_changes.rs`. No existing test changed. The readme's Try it output changed in three places, T4's line in `gates` and in `submit`, and its `message` in the hold's JSON, apart from the SHAs and times that differ on every run.
