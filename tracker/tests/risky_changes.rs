@@ -767,3 +767,75 @@ mod tr_32_c1 {
         assert!(diff.contains("other/outside.txt"), "{diff}");
     }
 }
+
+/// TR-33, criterion 1: T4's hold names each file's commits that changed or
+/// removed its lines, each marked as before or after `start`.
+mod tr_33_c1 {
+    use super::*;
+
+    const BASE: &str = "#[test]\nfn one() {\n    assert_eq!(1 + 1, 2);\n}\n";
+
+    /// XX-1 with `tests/old.rs` from an unscoped commit, a sanctioned edit
+    /// of it in a `test(XX-1)` commit before `start`, and then a weakening
+    /// in a `feat(XX-1)` commit after it. Returns the env and the short
+    /// SHAs of the commit before and the commit after.
+    fn edited_before_and_after_start() -> (Env, String, String) {
+        let env = Env::new();
+        env.add_project("XX", "xx");
+        write(&env, "xx/tests/old.rs", BASE);
+        git_commit_all(env.work.path(), "chore: the code before XX-1");
+        env.create("XX", "a");
+        write(
+            &env,
+            "xx/tests/old.rs",
+            &BASE.replace("1 + 1, 2", "1 + 2, 3"),
+        );
+        let before = git_commit_all(env.work.path(), "test(XX-1): update the expected value");
+        env.json(&["start", "XX-1"]);
+        write(&env, "xx/tests/old.rs", "#[test]\nfn one() {}\n");
+        let after = commit(&env);
+        (env, before[..7].to_string(), after[..7].to_string())
+    }
+
+    #[test]
+    fn the_hold_names_each_commit_marked_before_or_after_start() {
+        let (env, before, after) = edited_before_and_after_start();
+        let output = submit(&env);
+        assert_held_by(&output, &["T4"]);
+        let hold = hold(&output, "T4");
+        let message = hold["message"].as_str().unwrap();
+        assert!(message.contains("tests/old.rs"), "{message}");
+        assert!(
+            message.contains(&format!("{before} before start")),
+            "{message}"
+        );
+        assert!(
+            message.contains(&format!("{after} after start")),
+            "{message}"
+        );
+        assert_eq!(hold["files"], json!(["tests/old.rs"]));
+    }
+
+    #[test]
+    fn the_text_output_names_them_too() {
+        let (env, before, after) = edited_before_and_after_start();
+        let output = env.cmd().args(["submit", "XX-1"]).output().unwrap();
+        let text = String::from_utf8_lossy(&output.stdout).into_owned()
+            + &String::from_utf8_lossy(&output.stderr);
+        assert!(text.contains(&format!("{before} before start")), "{text}");
+        assert!(text.contains(&format!("{after} after start")), "{text}");
+    }
+
+    #[test]
+    fn a_deleted_file_names_its_commit_too() {
+        let env = started_with(&[("tests/old.rs", BASE)]);
+        remove(&env, "xx/tests/old.rs");
+        let sha = commit(&env);
+        let message = hold(&submit(&env), "T4")["message"].clone();
+        let message = message.as_str().unwrap();
+        assert!(
+            message.contains(&format!("{} after start", &sha[..7])),
+            "{message}"
+        );
+    }
+}
