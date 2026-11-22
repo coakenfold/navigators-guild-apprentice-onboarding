@@ -387,18 +387,41 @@ mod criterion_5 {
 }
 
 mod commits_scoped_elsewhere {
-    //! A commit scoped to another item isn't unscoped, so T14 leaves it to
-    //! that item's triggers (§2.1).
+    //! A commit scoped to another item in the same project counts as
+    //! unscoped, since it gets past every trigger that reads changed files
+    //! for this item. One scoped to another project's key isn't this
+    //! project's work, so T14 leaves it alone (§2.5).
     use super::*;
 
     #[test]
-    fn t14_doesnt_fire_for_a_commit_scoped_to_another_item() {
+    fn t14_fires_for_a_commit_scoped_to_another_item_in_the_project() {
+        let env = started();
+        write(&env, "xx/notes.md", "notes\n");
+        let sha = git_commit_all(env.work.path(), "docs(XX-2): the notes");
+        do_the_work(&env);
+
+        let output = submit(&env);
+        assert_held_by(&output, &["T14"]);
+        let message = hold(&output, "T14");
+        assert!(message.contains(&sha[..7]), "{message}");
+        assert!(message.contains("docs(XX-2): the notes"), "{message}");
+    }
+
+    #[test]
+    fn t14_tells_another_project_from_another_item() {
+        // A commit scoped to another project's key doesn't fire it.
+        let env = started();
+        write(&env, "xx/notes.md", "notes\n");
+        git_commit_all(env.work.path(), "docs(YY-2): the notes");
+        do_the_work(&env);
+        assert_quiet(&submit(&env), "T14");
+
+        // And one scoped to another item of this project does.
         let env = started();
         write(&env, "xx/notes.md", "notes\n");
         git_commit_all(env.work.path(), "docs(XX-2): the notes");
         do_the_work(&env);
-
-        assert_quiet(&submit(&env), "T14");
+        assert_held_by(&submit(&env), &["T14"]);
     }
 }
 
