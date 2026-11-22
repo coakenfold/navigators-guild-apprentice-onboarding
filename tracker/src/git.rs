@@ -398,12 +398,25 @@ pub fn is_scoped_header(header: &str) -> bool {
         && is_item_header(header, scope)
 }
 
+/// Whether `header`, which is scoped to an item, is scoped to another item
+/// in the same project as item `id`.
+fn scoped_to_a_sibling(header: &str, id: &str) -> bool {
+    let scope = header
+        .split_once('(')
+        .and_then(|(_, rest)| rest.split_once(')'))
+        .map_or("", |(scope, _)| scope);
+    let key = |text: &str| text.split_once('-').map_or("", |(key, _)| key).to_string();
+    scope != id && key(scope) == key(id)
+}
+
 /// The unscoped commits made since `base` that touch `root` (T14), each as
 /// its full SHA and header, newest first. With no `base`, as for an item
 /// started in a repository with no commits yet, every commit `HEAD`
 /// reaches counts. A commit that only touches files outside the root
-/// doesn't, and neither does a commit scoped to any item.
-pub fn unscoped(root: &Path, base: Option<&str>) -> Result<Vec<(String, String)>> {
+/// doesn't, and neither does a commit scoped to item `id` or to another
+/// project's key. One scoped to another item of `id`'s project counts, since
+/// it gets past every trigger that reads this item's changed files.
+pub fn unscoped(root: &Path, id: &str, base: Option<&str>) -> Result<Vec<(String, String)>> {
     if head(root)?.is_none() {
         return Ok(Vec::new());
     }
@@ -430,7 +443,8 @@ pub fn unscoped(root: &Path, base: Option<&str>) -> Result<Vec<(String, String)>
             let mut lines = record.trim_start_matches('\n').lines();
             let sha = lines.next()?;
             let header = lines.next().unwrap_or_default();
-            (!is_scoped_header(header)).then(|| (sha.to_string(), header.to_string()))
+            (!is_scoped_header(header) || scoped_to_a_sibling(header, id))
+                .then(|| (sha.to_string(), header.to_string()))
         })
         .collect();
     Ok(commits)

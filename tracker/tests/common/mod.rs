@@ -15,7 +15,7 @@ use tempfile::TempDir;
 
 /// `Env::add_criterion`'s check. `$PPID` is the tracker that runs it.
 pub const BEFORE_THE_WORK_FAILS: &str =
-    "! ps -o args= -p $PPID | grep -qwE 'start|in-progress|criterion'";
+    "! ps -ww -o args= -p $PPID | grep -qwE 'start|in-progress|criterion'";
 
 pub struct Env {
     /// The store, which `TRACKER_HOME` points to.

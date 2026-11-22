@@ -129,7 +129,7 @@ pub fn run(item: &Item, config: &Config) -> Result<Vec<Ran>> {
     // An item with no `started`, written before slice 7, has no start to
     // count commits from.
     let unscoped = match &item.started {
-        Some(_) => git::unscoped(&root, head)?,
+        Some(_) => git::unscoped(&root, &item.id, head)?,
         None => Vec::new(),
     };
     let globs = Globs::new(&review)?;
@@ -485,7 +485,7 @@ fn t13(item: &Item) -> Option<String> {
 }
 
 /// T14: commits made since start that touch the project's root aren't
-/// scoped to any item, so the other triggers can't see them as the item's
+/// scoped to this item, so the other triggers can't see them as the item's
 /// (§2.5). `unscoped` holds each one's SHA and header, newest first, and
 /// the hold names them oldest first.
 fn t14(unscoped: &[(String, String)]) -> Option<String> {
