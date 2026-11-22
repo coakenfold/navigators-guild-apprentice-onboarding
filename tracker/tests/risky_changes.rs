@@ -878,3 +878,32 @@ mod tr_34_c2 {
         env.json(&["list"]);
     }
 }
+
+/// TR-35, criterion 1: `approve`'s question lists a hold from the submit
+/// that no longer fires.
+mod tr_35_c1 {
+    use super::*;
+
+    #[test]
+    fn approve_lists_a_submit_hold_that_no_longer_fires() {
+        let env = started_with(&[("Cargo.toml", "[package]\n")]);
+        write(&env, "xx/Cargo.toml", "[package]\nname = \"xx\"\n");
+        commit(&env);
+        assert_held_by(&submit(&env), &["T3"]);
+        // T3 is switched off while the item waits, so it won't fire again.
+        set_review(&env, json!({ "disabled": ["T3"] }));
+
+        let Some((output, ok)) =
+            env.in_terminal_typing(&["approve", "XX-1"], PROMPT, "XX-1", || {})
+        else {
+            return;
+        };
+        assert!(ok, "{output}");
+        let t3 = output
+            .lines()
+            .find(|line| line.contains("T3"))
+            .unwrap_or_else(|| panic!("no T3 line: {output}"));
+        assert!(t3.contains("no longer fires"), "{t3}");
+        assert!(!output.contains("no trigger recorded"), "{output}");
+    }
+}
