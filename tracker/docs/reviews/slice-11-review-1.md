@@ -24,6 +24,8 @@ The findings that matter most:
 - **Design 1:** `criterion accept` doesn't clear the user's own edit after `start`, though the plan's prompt, §2.5 and §2.7 say it does. It's happened once in TR, on TR-1.
 - **Test gap 1:** nothing pins the fingerprint, so slice 12's change to `Criterion` could move it unseen.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -79,3 +81,40 @@ The findings that matter most:
 - **Judges and T13.** Slice 12 doesn't run judges at `start`, so a judge criterion has no `started.checks` entry and T13 reads it as not passed, which is right until slice 14. `BEFORE_THE_WORK_FAILS` must still fail for any new command that runs a check before the work.
 - **TR-8 in review.** It's a `capability`, so T1 holds it, and while it waits no unscoped commit should touch `tracker/` (process 2).
 - **A lost `started.head`.** Slice 10 review 2's bug 3 is still undecided, and T14 now meets it with T4: `gates`, `submit` and `approve` exit 3 with git's error.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `c327e25`, not at the fixed code. Each fix was built as a tracker item of its own, TR-40 to TR-42, with its tests committed before `tracker start`, and the readme's [Fixes after review 1](../slice-11-readme.md#fixes-after-review-1) lists them too.
+
+This round fixed bug 1, security 1 and 2, design 1 and test gaps 1, 2, 3 and 5. The review's pick was taken every time: option (a) for security 1, design 1 and test gap 5, and (b) for security 2. Test gap 4 won't be fixed, for the reason in the table. Of the three process notes, process 1 and 2 are now rules in the agents' standing brief, and process 3 is done in the readme's update. The five points in "Slice 12 must decide" are left for slice 12 (TR-8). The commits after this review (`b27db5e`), in order:
+
+- **Fixes:** `2ad7ae6` and `8ce27d8` (TR-40, bug 1), `3d0c755`, `a2aa5c8`, `d11274a` and `9012097` (TR-41, security 1 and 2, design 1 and test gap 5, grouped into one item so the user approves once) and `f2c796b` (TR-42, test gaps 1 to 3, tests only).
+- **Docs:** the readme's update and the commit that adds this Outcome, which belong to no item.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: `submit`'s help names only T1 to T4 and T6 to T9, and a doc comment says "slice 11's T5" | TR-40, `8ce27d8`: `Submit`'s doc comment names T5, T13 and T14, and `written`'s doc comment drops "slice 11's". Test: `submit_help::submit_help_names_every_trigger`, which looks for all 11 triggers in `submit --help` and failed at `start`. The comment edit has no test |
+| Security 1: `BEFORE_THE_WORK_FAILS` is a recipe for getting past T13 | TR-41, `d11274a`, option (a): a §7 bullet, "A check that reads how it was run gets past T13", beside the `script` recipe. Option (b), refusing checks that mention `PPID` or `ps`, wasn't taken, since the list never ends. Its check is a `grep -qF` on DESIGN.md, which failed at `start` |
+| Security 2: a commit scoped to another item's ID gets past T14 and every file trigger | TR-41, `a2aa5c8`, option (b): `git::unscoped` takes the item's ID, and `scoped_to_a_sibling` counts a commit scoped to another item of the same project as unscoped. Another project's key stays scoped. §2.5's T14 row says so (`d11274a`). Tests: `commits_scoped_elsewhere::t14_fires_for_a_commit_scoped_to_another_item_in_the_project` and `t14_tells_another_project_from_another_item`. The test that asserted the old rule, `t14_doesnt_fire_for_a_commit_scoped_to_another_item`, was wrong from then on, and `3d0c755` replaced it before `start` |
+| Design 1: `criterion accept` doesn't clear the user's own edit after `start` | TR-41, `d11274a`, option (a): §2.5's T5 row and §2.7's `criterion accept` bullet now say, as §4.3 did, that an accept records the new text in `written` but doesn't take the fingerprint again, so T5 still fires for the edit after `start`. The code is unchanged. Its check counts the phrase in DESIGN.md, expecting it twice. `9012097` fixes "above" to "below" in the sentence that points to §7's script recipe |
+| Test gap 1: nothing pins the fingerprint | TR-42, `f2c796b`: `criterion_1::the_fingerprint_of_fixture_xx_23_is_the_one_slice_11_recorded` has XX-23's `ed3c8e84…` in the test and requires `triggers::fingerprint` to give it. The second fixture the review suggested, with evidence, a design and a capability, wasn't added |
+| Test gap 2: a check changed or given after `start`, and `edit --design`, aren't tested for T5 | TR-42, `f2c796b`: `criterion_2::a_check_changed_after_start_fires_t5`, `a_check_given_after_start_fires_t5` and `edit_design_after_start_fires_t5` |
+| Test gap 3: nothing runs `criterion accept`, or a check given in review | TR-42, `f2c796b`, under `script`: `criterion_3::criterion_accept_after_start_still_leaves_t5_firing_for_the_edit` (an accept clears the `written` half and leaves the hash half) and `t13_reads_a_check_given_in_review_as_one_that_didnt_pass` |
+| Test gap 4: T14's rewritten commits, missing `started.head` and merge commits are untested | Won't fix. Agents in TR don't merge or rewrite commits, so it's unlikely. The readme's Still open lists it |
+| Test gap 5: `BEFORE_THE_WORK_FAILS` can break with a narrow `COLUMNS`, or where `ps` has no `-p` | TR-41, `a2aa5c8`, option (a): the check reads `ps -ww -o args= -p $PPID`, and the readme says it needs a `ps` with `-p`. The edit is in the fix commit, after `start`, on purpose: in the test commit, its own test would already pass at `start`. Test: `harness_check::before_the_work_fails_reads_the_parents_arguments_with_ps_ww`, which checks the constant's text and doesn't run `ps` with a narrow `COLUMNS` |
+| Process 1: T13 will hold about a third of TR's review fixes | Option (a), in the agents' standing brief: each criterion's check should include a test that fails before the work, and a review's test-only fixes are grouped into one item. TR-42 is such an item, and its three checks still passed at `start`, since there's no code to change. Slice 11's binary will hold items like that under T13. The installed binary that tracked it has no T13 |
+| Process 2: the orchestrator's unscoped commits are safe only by its ordering | The rule is in the agents' standing brief: no unscoped commit or branch move under `tracker/` while a TR item is in progress or in review. The orchestrator follows it, and the readme's Limits states it |
+| Process 3: the readme's two slips | Done in the readme's update: the stale comment is on `written`, not `Started`, and the `ps` claim now says procps has `-p` and BusyBox doesn't, and that `-ww` lifts a narrow `COLUMNS` |
+| Slice 12 must decide: judge fields and the fingerprint | Left for slice 12. The golden test from test gap 1 is in place, so a change to `Criterion` that moves the fingerprint fails it. The readme's Limits carries the rest |
+| Slice 12 must decide: the pinned trigger lists | Left for slice 12. Adding T10 changes the six pinned lists, and the edits in the test commit before `start` fire T4 on TR-8, as `e7406d8` did on TR-7 |
+| Slice 12 must decide: judges and T13 | Left for slice 12. A judge criterion has no `started.checks` entry, which T13 reads as not passed until slice 14. `BEFORE_THE_WORK_FAILS` must still fail for any new command that runs a check before the work |
+| Slice 12 must decide: TR-8 in review | Left for slice 12. TR-8 is a `capability`, so T1 holds it, and the standing-brief rule from process 2 applies while it waits. Since TR-41, a commit scoped to another TR item holds it too |
+| Slice 12 must decide: a lost `started.head` | Left for slice 12 (TR-8). Slice 10 review 2's bug 3 is still undecided, and `gates`, `submit` and `approve` still exit 3 with git's error |
+
+Seen failing:
+
+- **Bug 1:** `submit_help_names_every_trigger` failed at `start`.
+- **Security 1, security 2 and design 1:** TR-41's six checks failed at `start`: the two T14 tests, the `ps -ww` test, and the three `grep` checks on DESIGN.md. The `ps -ww` edit is in the fix commit, so its test could fail first.
+- **Test gaps 1 to 3:** TR-42's three checks passed at `start`, as tests of working code do. The builder saw each test fail by breaking the code temporarily. The item doesn't record that.
+
+TR-40 and TR-42 were verified `auto`, at `8ce27d8` and `f2c796b`, each with `refs/tracker/<ID>`. TR-41 was held under T4 and T8, and the user read its diff and approved it from a terminal: `human` at `9012097`, with `refs/tracker/TR-41`. The installed slice 10 binary tracked all three, so none had T5, T13 or T14 run on it. The orchestrator checked by hand that TR-41's 5 written criteria were unchanged. The builder had added criterion 6 before `start`, and removed a redundant one before `start` too. After all three, `cargo fmt --check`, `cargo clippy -- -D warnings` and all 412 tests pass, 9 more than at `c327e25`: 1 in `tests/submit_help.rs`, 1 in `tests/harness_check.rs`, 1 net in `tests/tampered_proof.rs` and 6 in `tests/t5_and_fingerprint.rs`.
