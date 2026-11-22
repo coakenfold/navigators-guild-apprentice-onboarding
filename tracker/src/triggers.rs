@@ -30,6 +30,18 @@ pub struct Ran {
     pub files: Vec<String>,
 }
 
+/// One commit's change to a file that existed before the item's work.
+#[derive(Debug, Clone)]
+pub struct Edit {
+    pub path: String,
+    /// Whether the commit deleted the file.
+    pub gone: bool,
+    /// The commit's short SHA.
+    pub sha: String,
+    /// Whether the commit was made after `start`.
+    pub after: bool,
+}
+
 /// What the triggers read from git: the item's changed files (§2.1), as
 /// the item's commits left them.
 #[derive(Debug, Default)]
@@ -41,8 +53,8 @@ pub struct Changes {
     pub added: BTreeSet<String>,
     /// The files under the root that existed before the item's commits
     /// and that one of them changed a line of, or removed a line from,
-    /// or deleted: each with `true` if it was deleted.
-    pub existing_changed: Vec<(String, bool)>,
+    /// or deleted: one entry for each commit that did.
+    pub existing_changed: Vec<Edit>,
     /// Lines added and removed by every item commit, inside the root or
     /// not (T7).
     pub lines: u64,
@@ -74,14 +86,20 @@ pub fn changes(root: &Path, id: &str, started: Option<&str>) -> Result<Changes> 
             Some(head) if after.contains(&change.sha) => git::exists_at(root, head, &change.path),
             _ => !changes.added.contains(&path),
         };
+        let edit = |gone| Edit {
+            path: path.clone(),
+            gone,
+            sha: change.sha.chars().take(7).collect(),
+            after: after.contains(&change.sha),
+        };
         match change.status {
             'A' => {
                 changes.added.insert(path.clone());
             }
-            'D' if existed => changes.existing_changed.push((path.clone(), true)),
+            'D' if existed => changes.existing_changed.push(edit(true)),
             // A binary file has no line counts, so any change to one counts.
             _ if existed && change.lines.is_none_or(|(_, removed)| removed > 0) => {
-                changes.existing_changed.push((path.clone(), false))
+                changes.existing_changed.push(edit(false))
             }
             _ => {}
         }
@@ -262,31 +280,54 @@ fn t3(changes: &Changes, globs: &Globs) -> (Option<String>, Vec<String>) {
 /// T4: an existing test file had lines changed or removed, or was
 /// deleted. Adding a test file, or only adding lines to one, doesn't count.
 fn t4(changes: &Changes, globs: &Globs) -> (Option<String>, Vec<String>) {
-    let mut modified = Vec::new();
-    let mut deleted = Vec::new();
-    for (path, gone) in &changes.existing_changed {
-        if !globs.test.is_match(path) {
+    let mut modified: Vec<String> = Vec::new();
+    let mut deleted: Vec<String> = Vec::new();
+    for edit in &changes.existing_changed {
+        if !globs.test.is_match(&edit.path) {
             continue;
         }
-        let list = if *gone { &mut deleted } else { &mut modified };
-        if !list.contains(path) {
-            list.push(path.clone());
+        let list = if edit.gone {
+            &mut deleted
+        } else {
+            &mut modified
+        };
+        if !list.contains(&edit.path) {
+            list.push(edit.path.clone());
         }
     }
     modified.retain(|path| !deleted.contains(path));
+    // A file with the commits that changed it, each marked before or after
+    // `start`, such as `tests/a.rs (b7ba4ee before start, 1a2b3c4 after start)`.
+    let named = |files: &[String]| -> Vec<String> {
+        files
+            .iter()
+            .map(|path| {
+                let commits: Vec<String> = changes
+                    .existing_changed
+                    .iter()
+                    .filter(|edit| edit.path == *path)
+                    .map(|edit| {
+                        let when = if edit.after { "after" } else { "before" };
+                        format!("{} {when} start", edit.sha)
+                    })
+                    .collect();
+                format!("{path} ({})", commits.join(", "))
+            })
+            .collect()
+    };
     let mut parts = Vec::new();
     if !modified.is_empty() {
         parts.push(format!(
             "existing test {} modified: {}",
             files_word(modified.len()),
-            file_list(&modified)
+            file_list(&named(&modified))
         ));
     }
     if !deleted.is_empty() {
         parts.push(format!(
             "existing test {} deleted: {}",
             files_word(deleted.len()),
-            file_list(&deleted)
+            file_list(&named(&deleted))
         ));
     }
     let files: Vec<String> = modified.into_iter().chain(deleted).collect();
