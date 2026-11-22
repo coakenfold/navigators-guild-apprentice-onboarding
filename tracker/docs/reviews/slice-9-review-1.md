@@ -23,6 +23,8 @@ The findings that matter most:
 - **Design 2:** the `gates` dry run lists no triggers or holds, though §3 says it does, so an agent can't learn from a dry run that its submit will be held.
 - **Process 1:** typing the ID into `approve` and `reject` in a real terminal hasn't been tried. Slice 10 is the first slice whose item can be held, so this should be checked before it starts.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -92,3 +94,41 @@ The findings that matter most:
 - **The triggers and `holds` in `gates`** (design 2), which slice 10's six triggers make more useful.
 - **`review.disabled` must never switch off T6**, and T9 can be. `holds`' `{trigger, message}` shape has to stay as fixture XX-20 and the schemas have it, or gain a field with a serde default, when `show --diff` lists the files that fired a trigger first.
 - **T4 and `c660f3b`.** Slice 10's T4 fires for an existing test with lines changed after `start`, as process 2 describes. If TR-5 is ever reopened and resubmitted, T4 holds it for `c660f3b`.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `657559b`, not at the fixed code. Each fix was built as a tracker item of its own, TR-27 to TR-30, with its tests committed before `tracker start`, and the readme's [Fixes after review 1](../slice-9-readme.md#fixes-after-review-1) lists them too.
+
+This round fixed bugs 1 and 2, security 1, design 2 and 3 and all three test gaps. Option (a) was taken for bug 2, as the review chose, and for design 2. Design 1 is left for slice 10, as the review suggested. Of the two process notes, process 1 is still the user's to do before slice 10 starts, and process 2 needs no action. The six points in "Slice 10 must decide" are left for slice 10. The commits after this review (`236bc39`), in order:
+
+- **Fixes:** `a63c850` and `eafbb1d` (TR-27, bugs 1 and 2), `4d419ea` and `0311da0` (TR-28, security 1), `2a84ff8`, `f4fd771` and `fae0005` (TR-29, designs 2 and 3) and `58e0afb` (TR-30, test gaps 1 to 3).
+- **Docs:** `e2d3c3d` and `f4ffaa9`, which belong to no item, the readme's update and the commit that adds this Outcome.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: the inbox's heading says "it" for any number of items | TR-27, `eafbb1d`: the heading ends "…, waiting for you to approve or reject each one:", as the review suggested. Test: `tr_27::the_inbox_heading_doesnt_call_two_items_it`, with two held items |
+| Bug 2: `show --diff` outside a git work tree says tracker can't "record or prove" the work | TR-27, `eafbb1d`, option (a): `git::is_work_tree` is split out of `require_work_tree`, and `commits_and_patches` exits 3 with "Can't show XX-1's commits: …". `require_work_tree`'s message is unchanged for `start` and `submit`. Test: `tr_27::show_diff_outside_a_git_work_tree_says_it_cant_show_the_commits` |
+| Security 1: `show --diff` applies textconv filters, so the diff can hide lines the commit holds | TR-28, `0311da0`: `--no-textconv` in `git::patches`, beside `--no-ext-diff`. Test: `tr_28::show_diff_ignores_a_textconv_filter`, with `diff.quiet.textconv "grep -v hidden"` set in `.git/config` |
+| Design 1: `approve` verifies at whatever `HEAD` it finds and doesn't run the triggers again | Left for slice 10 (TR-6), as the review suggested. It only matters once slice 10's triggers read commits, since T6 and T9 read only the item. Slice 10 decides between the review's options (a) and (b), or a §7 line only |
+| Design 2: the `gates` dry run lists no triggers or holds, though §3 says it does | TR-29, `f4fd771`, option (a): once every gate passes, `gates_dry_run` runs `triggers::run` and adds `triggers` and `holds` to the JSON, and "A submit would be held for review:" with each hold to the text. `gates.schema.json` requires both. `fae0005` adds a sentence to DESIGN.md §2.4. Tests: `tr_29::gates_lists_the_holds_a_submit_would_get` and `tr_29::gates_says_no_holds_when_no_trigger_fires`. Two older tests that pinned the dry run's shape exactly, `tests/gates.rs`'s `a_script_criterion_needs_no_evidence` and the sample in `tests/schemas.rs`, gained the two fields in the feat commit, and the schemas sample gained bad cases |
+| Design 3: §4.3's example `auto` record has `"triggers": []` | TR-29, `fae0005`: the line is gone. Criterion 3's check is `! grep -qF '"triggers": []' docs/DESIGN.md` |
+| Test gap 1: nothing tests `approve`'s second look at the tree | TR-30, `58e0afb`, as suggested: `tr_30::approve_fails_g5_for_a_file_its_checks_leave`, under `script`. The second mutant, `approve`'s first re-read as a plain `store.lock()`, has no test, since the review found it almost harmless |
+| Test gap 2: the cases the readme lists as untested are untested, and `reject`'s re-read guards a worse failure than it suggests | TR-30, `58e0afb`, for the two cases the review asked for: `tr_30::reject_writes_nothing_when_the_item_changes_while_deciding` and `tr_30::reject_typed_with_another_id_cancels_and_changes_nothing`, both under `script`. The exit 3 of `show --diff` is tested by TR-27's test. `review`'s line for a held item with no `holds` and `show --diff`'s text for an item with no commits are still untested, and the readme's Still open says so |
+| Test gap 3: no test checks a passing `approve --json`, or its exit 2 refusal, against a schema | TR-30, `58e0afb`, as suggested, through `Env::in_terminal_typing_sh` with stdout redirected to a file: `tr_30::a_successful_approve_json_matches_its_schema` and `tr_30::an_approve_json_refused_by_a_gate_matches_the_refusal_shape`. The refusal is checked against `error.schema.json`, not the approve schema as TR-30's criterion 3 says, because `approve.schema.json` covers only success and points to the error shape. The criterion's text is left as written |
+| Process 1: typing the ID into `approve` and `reject` in a real terminal hasn't been tried | Still the user's to do, before slice 10 starts. The readme's [Checks done by hand](../slice-9-readme.md#checks-done-by-hand) still says it wasn't done |
+| Process 2: `c660f3b` changed four existing tests after `start` | No action. It's advice the builders now follow: tests that a change foreseeably breaks are updated before `start` |
+| Slice 10 must decide: TR-6 is tracked by this slice's binary | Left for slice 10. It's carried into the readme's Limits |
+| Slice 10 must decide: if TR-6 is held, its tree has to stay clean | Left for slice 10 |
+| Slice 10 must decide: whether `approve` runs the triggers | Left for slice 10, as design 1 |
+| Slice 10 must decide: the triggers and `holds` in `gates` | Done by TR-29, as design 2. Slice 10's six triggers go into `gates_dry_run` through `triggers::run`, which it already calls |
+| Slice 10 must decide: `review.disabled` must never switch off T6, and `holds`' shape | Left for slice 10 |
+| Slice 10 must decide: T4 and `c660f3b` | Left for slice 10 |
+
+Seen failing:
+
+- **Bugs 1 and 2:** both tests were seen failing on the old wording.
+- **Security 1:** with `diff.quiet.textconv "grep -v hidden"` set, the hidden line was missing from the diff before the fix.
+- **Design 2:** both new tests were seen failing before the fix. **Design 3** is docs only: its check failed at start, on the example's `"triggers": []` line.
+- **Test gaps 1 to 3:** these cover code that already worked, so each test was run against code broken on purpose, then the code was restored. Test gap 1: `tree_after_checks` removed from `approve`. Test gap 2: `lock_unchanged` replaced with `store.lock()` in `reject`, and `reject` ignoring `tty::confirm`. Test gap 3: an extra `"by"` field in `approve`'s JSON, and a bare error for `approve`'s refusal. TR-30's three checks passed at start, as they had to.
+
+The installed slice 8 binary verified each of TR-27 to TR-30 `auto`, with a commit and `refs/tracker/<ID>`: `eafbb1d`, `0311da0`, `fae0005` and `58e0afb`. It has no triggers, and none of the four has a manual criterion, so nothing could hold them. After all four, `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo clippy --all-targets -- -D warnings` and all 337 tests pass, 10 more than at `657559b`: 2, 1, 2 and 5 in `tests/review.rs`. The readme's Try it output changed in two places, the inbox's heading and the message of `show --diff` outside a git work tree, apart from the SHAs and times that differ on every run. `58e0afb` also picked up two `.claude/agents/` files by mistake.
