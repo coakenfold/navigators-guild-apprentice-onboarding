@@ -242,6 +242,8 @@ fn start_records_a_check_that_fails_and_warns_about_one_that_already_passes() {
 fn a_passing_checks_last_20_lines_are_kept() {
     let (env, _) = env_with_project();
     set_project(&env, "XX", "checks", json!(["echo project check"]));
+    // The check passes at start too, so T13 would hold the item (slice 11).
+    set_project(&env, "XX", "review", json!({ "disabled": ["T13"] }));
     env.create_bare("XX", "a");
     add_check(&env, "XX-1", "it works", THIRTY_LINES);
     env.json(&["start", "XX-1"]);
@@ -468,17 +470,18 @@ fn a_timed_out_check_with_an_escaped_process_fails_soon_after_its_timeout() {
 
 #[test]
 fn criterion_add_and_set_refuse_a_newer_trackers_file_before_running_a_check() {
-    // TR-14: `started.criteria_hash`, as slice 11 will write it, is a
-    // field this version doesn't know, so it can't rewrite the file, and
+    // TR-14: a field in `started` that this version doesn't know, as a
+    // later slice might write one, means it can't rewrite the file, and
     // mustn't run a check for a change it will then refuse. (Until slice 8
-    // wrote it, the unknown field here was `started.head`.)
+    // wrote it, the unknown field here was `started.head`, and until slice
+    // 11 wrote it, `started.criteria_hash`.)
     let (env, root) = env_with_project();
     env.create_bare("XX", "a");
     add_check(&env, "XX-1", "first", "false");
     env.json(&["criterion", "add", "XX-1", "second"]);
     env.json(&["start", "XX-1"]);
     let mut item = env.item("XX-1");
-    item["started"]["criteria_hash"] = json!("9f2c41");
+    item["started"]["later_field"] = json!("9f2c41");
     let newer = serde_json::to_string_pretty(&item).unwrap() + "\n";
     fs::write(env.item_path("XX-1"), &newer).unwrap();
 
@@ -498,6 +501,8 @@ fn a_kept_line_longer_than_the_limit_is_cut_and_marked() {
     // TR-15: one long line, such as minified test output, mustn't make the
     // item file hundreds of kilobytes long.
     let (env, _) = env_with_project();
+    // The check passes at start too, so T13 would hold the item (slice 11).
+    set_project(&env, "XX", "review", json!({ "disabled": ["T13"] }));
     env.create_bare("XX", "a");
     let check = "printf '%2000s\\n' '' | tr ' ' x; echo short";
     add_check(&env, "XX-1", "it works", check);

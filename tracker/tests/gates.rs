@@ -449,10 +449,13 @@ fn a_script_criterion_needs_no_evidence() {
                 { "trigger": "T2", "fired": false },
                 { "trigger": "T3", "fired": false },
                 { "trigger": "T4", "fired": false },
+                { "trigger": "T5", "fired": false },
                 { "trigger": "T6", "fired": false },
                 { "trigger": "T7", "fired": false },
                 { "trigger": "T8", "fired": false },
-                { "trigger": "T9", "fired": false }
+                { "trigger": "T9", "fired": false },
+                { "trigger": "T13", "fired": false },
+                { "trigger": "T14", "fired": false }
             ],
             "holds": [],
         })

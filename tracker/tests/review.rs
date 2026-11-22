@@ -204,10 +204,13 @@ mod criterion_1 {
                 { "trigger": "T2", "fired": false },
                 { "trigger": "T3", "fired": false },
                 { "trigger": "T4", "fired": false },
+                { "trigger": "T5", "fired": false },
                 { "trigger": "T6", "fired": false },
                 { "trigger": "T7", "fired": false },
                 { "trigger": "T8", "fired": false },
-                { "trigger": "T9", "fired": false }
+                { "trigger": "T9", "fired": false },
+                { "trigger": "T13", "fired": false },
+                { "trigger": "T14", "fired": false }
             ])
         );
         assert_eq!(output["holds"], json!([]));
@@ -252,10 +255,13 @@ mod criterion_2 {
                         { "trigger": "T2", "fired": false },
                         { "trigger": "T3", "fired": false },
                         { "trigger": "T4", "fired": false },
+                        { "trigger": "T5", "fired": false },
                         { "trigger": "T6", "fired": true },
                         { "trigger": "T7", "fired": false },
                         { "trigger": "T8", "fired": false },
-                        { "trigger": "T9", "fired": true }
+                        { "trigger": "T9", "fired": true },
+                        { "trigger": "T13", "fired": false },
+                        { "trigger": "T14", "fired": false }
                     ],
                     "holds": holds,
                     "item": item,
@@ -809,10 +815,13 @@ mod tr_29 {
                 { "trigger": "T2", "fired": false },
                 { "trigger": "T3", "fired": false },
                 { "trigger": "T4", "fired": false },
+                { "trigger": "T5", "fired": false },
                 { "trigger": "T6", "fired": true },
                 { "trigger": "T7", "fired": false },
                 { "trigger": "T8", "fired": false },
-                { "trigger": "T9", "fired": false }
+                { "trigger": "T9", "fired": false },
+                { "trigger": "T13", "fired": false },
+                { "trigger": "T14", "fired": false }
             ]),
             "{output}"
         );
@@ -857,10 +866,13 @@ mod tr_29 {
                 { "trigger": "T2", "fired": false },
                 { "trigger": "T3", "fired": false },
                 { "trigger": "T4", "fired": false },
+                { "trigger": "T5", "fired": false },
                 { "trigger": "T6", "fired": false },
                 { "trigger": "T7", "fired": false },
                 { "trigger": "T8", "fired": false },
-                { "trigger": "T9", "fired": false }
+                { "trigger": "T9", "fired": false },
+                { "trigger": "T13", "fired": false },
+                { "trigger": "T14", "fired": false }
             ]),
             "{output}"
         );
