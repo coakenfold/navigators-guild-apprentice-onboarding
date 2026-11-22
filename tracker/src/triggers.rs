@@ -128,8 +128,9 @@ pub fn run(item: &Item, config: &Config) -> Result<Vec<Ran>> {
     let changes = changes(&root, &item.id, head)?;
     // An item with no `started`, written before slice 7, has no start to
     // count commits from.
+    let projects: Vec<String> = config.projects.keys().cloned().collect();
     let unscoped = match &item.started {
-        Some(_) => git::unscoped(&root, &item.id, head)?,
+        Some(_) => git::unscoped(&root, &item.id, head, &projects)?,
         None => Vec::new(),
     };
     let globs = Globs::new(&review)?;
@@ -153,7 +154,7 @@ pub fn run(item: &Item, config: &Config) -> Result<Vec<Ran>> {
     add("T8", t8(&changes, design.as_deref()));
     add("T9", (t9(item), Vec::new()));
     add("T13", (t13(item), Vec::new()));
-    add("T14", (t14(&unscoped), Vec::new()));
+    add("T14", (t14(&item.id, &unscoped), Vec::new()));
     Ok(ran)
 }
 
@@ -485,10 +486,10 @@ fn t13(item: &Item) -> Option<String> {
 }
 
 /// T14: commits made since start that touch the project's root aren't
-/// scoped to this item, so the other triggers can't see them as the item's
+/// scoped to item `id`, so the other triggers can't see them as the item's
 /// (§2.5). `unscoped` holds each one's SHA and header, newest first, and
 /// the hold names them oldest first.
-fn t14(unscoped: &[(String, String)]) -> Option<String> {
+fn t14(id: &str, unscoped: &[(String, String)]) -> Option<String> {
     if unscoped.is_empty() {
         return None;
     }
@@ -498,7 +499,7 @@ fn t14(unscoped: &[(String, String)]) -> Option<String> {
         .map(|(sha, header)| format!("{} \"{header}\"", crate::gates::short(sha)))
         .collect();
     Some(format!(
-        "{} since start, which no item's scope covers: {}",
+        "{} since start, not scoped to {id}: {}",
         if named.len() == 1 {
             "an unscoped commit".to_string()
         } else {
