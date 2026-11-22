@@ -664,3 +664,69 @@ fn an_invalid_review_glob_exits_3_naming_it() {
     let message = env.error(&["list"], 3);
     assert!(message.contains("src/[store.rs"), "{message}");
 }
+
+/// A store with project XX whose item XX-1 is created, has each of `tests`
+/// (a path from the root and its text) added by a `test(XX-1)` commit, as
+/// every TR item's tests are, and is then started.
+fn started_after_tests(tests: &[(&str, &str)]) -> Env {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    env.create("XX", "a");
+    for (path, text) in tests {
+        write(&env, &format!("xx/{path}"), text);
+    }
+    git_commit_all(env.work.path(), "test(XX-1): add the tests");
+    env.json(&["start", "XX-1"]);
+    env
+}
+
+const OWN_TEST: &str = "#[test]\nfn one() {\n    assert_eq!(1 + 1, 2);\n}\n";
+
+/// TR-31, criterion 1: a test the item committed before `start`, and then
+/// changed or removed a line of after it, fires T4.
+mod tr_31_c1 {
+    use super::*;
+
+    #[test]
+    fn changing_a_line_of_a_test_committed_before_start_fires_t4() {
+        let env = started_after_tests(&[("tests/own.rs", OWN_TEST)]);
+        write(
+            &env,
+            "xx/tests/own.rs",
+            &OWN_TEST.replace("assert_eq!(1 + 1, 2)", "assert!(true)"),
+        );
+        commit(&env);
+        let output = submit(&env);
+        assert_held_by(&output, &["T4"]);
+        let hold = hold(&output, "T4");
+        assert_eq!(hold["files"], json!(["tests/own.rs"]));
+        assert!(
+            hold["message"].as_str().unwrap().contains("tests/own.rs"),
+            "{hold}"
+        );
+    }
+
+    #[test]
+    fn removing_a_test_committed_before_start_fires_t4() {
+        let env = started_after_tests(&[("tests/own.rs", OWN_TEST)]);
+        remove(&env, "xx/tests/own.rs");
+        commit(&env);
+        let output = submit(&env);
+        assert_held_by(&output, &["T4"]);
+        assert_eq!(hold(&output, "T4")["files"], json!(["tests/own.rs"]));
+    }
+}
+
+/// TR-31, criterion 2: adding lines to such a test after `start` doesn't.
+mod tr_31_c2 {
+    use super::*;
+
+    #[test]
+    fn adding_lines_to_a_test_committed_before_start_doesnt_fire_t4() {
+        let env = started_after_tests(&[("tests/own.rs", OWN_TEST)]);
+        let more = format!("{OWN_TEST}\n#[test]\nfn two() {{\n    assert_eq!(2 + 2, 4);\n}}\n");
+        write(&env, "xx/tests/own.rs", &more);
+        commit(&env);
+        assert_not_held(&submit(&env));
+    }
+}
