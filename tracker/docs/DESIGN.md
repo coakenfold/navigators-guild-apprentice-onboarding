@@ -331,7 +331,7 @@ The triggers are applied only after every gate has passed. Each one inspects the
 | **T13 Passed before the work** | A criterion's script check already passed when it was run at `start`, or every answer of a criterion judge did (§2.4).                                                                                                                                                                                                                                                                                                                                                          | A check or judge that passes before the work is done isn't proving the work. It holds rather than refuses, because a refactor's "nothing changes" check passes at start on purpose.                                                                                                                              |
 | **T14 Unscoped work**          | A commit made since `start` (between `started.head` and `HEAD`) that touches the project root is unscoped: its header isn't `<type>(<ID>): …` for any item (§2.1), such as one headed `BM-12: …` or one with no ID at all. Commits that only touch files outside the root don't count. The hold lists those commits.                                                                                                                                                            | With one item at a time per project, an unscoped commit since start is almost certainly this item's work, hidden from the other triggers. It holds rather than refuses, because I may commit an unrelated fix myself.                                                                                            |
 
-**How T1, T2, T3, T4, T7 and T8 read the changes.** They read every file the item's commits touched (§2.1), each commit compared with its first parent, with a rename counted as a delete and an add. A changed file is **existing** for a commit made before `start` if none of the item's commits added it, and for a commit made after `start` if it exists at the commit `HEAD` pointed to at start, whoever added it. So T1's new source file is one an item commit added, and a new top-level module counts as one, while T4 ignores a test file that an item commit added after `start`, however later commits change it. An item's test commit is made before `start`, so editing a test after `start` fires T4. T4's hold names each file's commits that changed it, each marked before or after `start`. T4 fires for an existing test file that one of the item's commits removed a line from (a changed line is a removed line and an added one) or deleted, or for any change to a binary one. T7 counts the lines each commit added and removed, summed over the item's commits, tests and files outside the root included. T8 compares the project's `design` file, relative to its root, with the changed files. Each hold about files names them in its `files`, relative to the root, and `show --diff` lists them before the commits (§4.3).
+**How T1, T2, T3, T4, T7 and T8 read the changes.** They read every file the item's commits touched (§2.1), each commit compared with its first parent, with a rename counted as a delete and an add. A changed file is **existing** for a commit made before `start` if none of the item's commits added it, and for a commit made after `start` if it exists at the commit `HEAD` pointed to at start, whoever added it. So T1's new source file is one an item commit added, and a new top-level module counts as one, while T4 ignores a test file that an item commit added after `start`, however later commits change it. An item's test commit is made before `start`, so editing a test after `start` fires T4. T4's hold names each file's commits that changed it, each marked before or after `start`. A commit counts as after start when `started.head` can't reach it, so rewriting an item's commits after `start` (a rebase or an amend) marks them all as after start. The mark says when the edit was made, not that it was right, so an edit marked before start is still worth reading in `show --diff`. T4 fires for an existing test file that one of the item's commits removed a line from (a changed line is a removed line and an added one) or deleted, or for any change to a binary one. T7 counts the lines each commit added and removed, summed over the item's commits, tests and files outside the root included. T8 compares the project's `design` file, relative to its root, with the changed files. Each hold about files names them in its `files`, relative to the root, and `show --diff` lists them before the commits (§4.3).
 
 **Triggers are worked out fresh on every submit.** They look at all of the item's commits, not just the ones since the last submit. So after I reject an item, the resubmit is held again for every trigger that still applies, including ones I accepted last time. That's deliberate: the work has changed since I looked, and the hold reasons tell me what to look at again. None of my earlier decisions carry over (§2.3.2).
 
@@ -342,7 +342,7 @@ $ tracker submit BM-14
 ✓ All gates passed (5 checks, 41s)
 ⏸ BM-14 held for review:
   T3  dependency manifest changed: package.json
-  T4  existing test modified: tests/bookmarks.spec.js
+  T4  existing test file modified: tests/bookmarks.spec.js (1a2b3c4 after start)
 ```
 
 ### 2.6 Digest: auditing the auto-verifications
@@ -491,11 +491,13 @@ The `criterion` commands and `evidence` work in any state but done, since a done
   "holds": [
     {
       "trigger": "T3",
-      "message": "dependency manifest changed: package.json"
+      "message": "dependency manifest changed: package.json",
+      "files": ["package.json"]
     },
     {
       "trigger": "T4",
-      "message": "existing test modified: tests/bookmarks.spec.js"
+      "message": "existing test file modified: tests/bookmarks.spec.js (1a2b3c4 after start)",
+      "files": ["tests/bookmarks.spec.js"]
     }
   ],
   "item": { "id": "BM-14", "…": "…" }
