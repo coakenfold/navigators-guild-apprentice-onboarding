@@ -81,11 +81,15 @@ impl Criterion {
     }
 }
 
-/// What `start` recorded (§2.4, §4.3). Slice 11 adds the criteria's
-/// fingerprint, before `head`.
+/// What `start` recorded (§2.4, §4.3).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Started {
     pub at: Timestamp,
+    /// A SHA-256 fingerprint, in hex, of the criteria, kind and design at
+    /// start (T5), as `triggers::fingerprint` takes it. Left out by
+    /// trackers before slice 11.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub criteria_hash: Option<String>,
     /// The commit `HEAD` pointed to at start, as a full SHA (T14). Left out
     /// for a repository with no commits yet, and by trackers before slice 8.
     #[serde(default, skip_serializing_if = "Option::is_none")]

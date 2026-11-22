@@ -2304,6 +2304,7 @@ fn apply(
         warnings = already_passing(&item, &started);
         item.started = Some(Started {
             at: now,
+            criteria_hash: Some(triggers::fingerprint(&item)),
             head,
             checks: started
                 .iter()
@@ -2810,6 +2811,11 @@ fn refuse_newer_file(store: &Store, id: &str, file: &str) -> Result<()> {
 /// each criterion's check passed, when failing was expected (§2.4).
 fn started_text(started: &Started) -> Styled {
     let mut rows = vec![vec!["  at".to_string(), started.at.to_string()]];
+    // The criteria's fingerprint (T5), under a label no wider than the
+    // others, so the rows line up as before.
+    if let Some(hash) = &started.criteria_hash {
+        rows.push(vec!["  hash".to_string(), text::for_terminal(hash, false)]);
+    }
     if let Some(head) = &started.head {
         rows.push(vec!["  head".to_string(), text::for_terminal(head, false)]);
     }

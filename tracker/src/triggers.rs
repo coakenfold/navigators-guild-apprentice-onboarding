@@ -3,11 +3,13 @@
 //! for a human. A trigger never refuses: it only holds.
 //!
 //! This version has T1 (a new capability), T2 (risky paths), T3 (a
-//! dependency manifest), T4 (an existing test changed), T6 (a manual
-//! criterion), T7 (a large change), T8 (the design doc changed) and T9 (the
-//! `needs-review` label). All but T6 and T9 read the item's changed files
-//! (§2.1). A trigger in the project's `review.disabled` doesn't run, except
-//! T6, which always does. Slice 11 adds T5, T13 and T14.
+//! dependency manifest), T4 (an existing test changed), T5 (the goalposts
+//! moved), T6 (a manual criterion), T7 (a large change), T8 (the design doc
+//! changed), T9 (the `needs-review` label), T13 (a check passed before the
+//! work) and T14 (unscoped commits since start). T1 to T4, T7 and T8 read
+//! the item's changed files (§2.1), and T14 reads the commits made since
+//! start. A trigger in the project's `review.disabled` doesn't run, except
+//! T6, which always does.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -15,8 +17,9 @@ use std::path::Path;
 use crate::config::{self, Config, Review};
 use crate::error::{Error, Result};
 use crate::git;
-use crate::item::{Hold, Item, Kind};
+use crate::item::{Criterion, Hold, Item, Kind};
 use crate::states;
+use sha2::{Digest, Sha256};
 
 /// The label that asks for a human's review (T9).
 pub const NEEDS_REVIEW: &str = "needs-review";
@@ -115,18 +118,19 @@ pub fn run(item: &Item, config: &Config) -> Result<Vec<Ran>> {
     let project = config.projects.get(&item.project);
     let review = project.map(|project| project.review()).unwrap_or_default();
     let design = project.and_then(|project| project.design.clone());
-    let changes = match crate::gates::root(item, config) {
-        Ok(root) => changes(
-            &root,
-            &item.id,
-            item.started.as_ref().and_then(|s| s.head.as_deref()),
-        )?,
-        Err(why) => {
-            return Err(Error::store(format!(
-                "Can't work out {}'s changed files: {why}.",
-                item.id
-            )));
-        }
+    let root = crate::gates::root(item, config).map_err(|why| {
+        Error::store(format!(
+            "Can't work out {}'s changed files: {why}.",
+            item.id
+        ))
+    })?;
+    let head = item.started.as_ref().and_then(|s| s.head.as_deref());
+    let changes = changes(&root, &item.id, head)?;
+    // An item with no `started`, written before slice 7, has no start to
+    // count commits from.
+    let unscoped = match &item.started {
+        Some(_) => git::unscoped(&root, head)?,
+        None => Vec::new(),
     };
     let globs = Globs::new(&review)?;
     let mut ran = Vec::new();
@@ -143,11 +147,41 @@ pub fn run(item: &Item, config: &Config) -> Result<Vec<Ran>> {
     add("T2", t2(&changes, &globs));
     add("T3", t3(&changes, &globs));
     add("T4", t4(&changes, &globs));
+    add("T5", (t5(item), Vec::new()));
     add("T6", (t6(item), Vec::new()));
     add("T7", (t7(&changes, review.max_diff_lines()), Vec::new()));
     add("T8", t8(&changes, design.as_deref()));
     add("T9", (t9(item), Vec::new()));
+    add("T13", (t13(item), Vec::new()));
+    add("T14", (t14(&unscoped), Vec::new()));
     Ok(ran)
+}
+
+/// The fingerprint `start` records in `started.criteria_hash` (T5): a
+/// SHA-256, in lower-case hex, of the criteria, kind and design. Each
+/// criterion is serialized without its evidence, which can only be written
+/// once the work exists, so recording it doesn't move the goalposts. Fields
+/// a later slice adds to a criterion, such as a judge's, are covered as
+/// they're serialized, and leave the fingerprint of a criterion without
+/// them unchanged.
+pub fn fingerprint(item: &Item) -> String {
+    let criteria: Vec<Criterion> = item
+        .criteria
+        .iter()
+        .map(|criterion| Criterion {
+            evidence: None,
+            ..criterion.clone()
+        })
+        .collect();
+    let value = serde_json::json!({
+        "criteria": criteria,
+        "kind": item.kind,
+        "design": item.design,
+    });
+    Sha256::digest(value.to_string().as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// The holds among `ran`: the triggers that fired, with why.
@@ -334,6 +368,39 @@ fn t4(changes: &Changes, globs: &Globs) -> (Option<String>, Vec<String>) {
     ((!parts.is_empty()).then(|| parts.join("; ")), files)
 }
 
+/// T5: the criteria, kind or design changed after start, so the
+/// fingerprint `start` took no longer matches. Or, at any time, a text in
+/// `written` is no longer any criterion's text, which names it (§2.1): a
+/// criterion I wrote was reworded or removed. An item started before
+/// slice 11 has no fingerprint, so only `written` is compared.
+fn t5(item: &Item) -> Option<String> {
+    let mut parts = Vec::new();
+    let taken = item.started.as_ref().and_then(|s| s.criteria_hash.as_ref());
+    if taken.is_some_and(|hash| *hash != fingerprint(item)) {
+        parts.push(
+            "the criteria, their checks, the kind or the design changed after start".to_string(),
+        );
+    }
+    let gone: Vec<String> = item
+        .written
+        .iter()
+        .filter(|text| !item.criteria.iter().any(|c| c.text == **text))
+        .map(|text| format!("\"{text}\""))
+        .collect();
+    match gone.len() {
+        0 => {}
+        1 => parts.push(format!(
+            "a written criterion is no longer any criterion's text: {}",
+            gone[0]
+        )),
+        _ => parts.push(format!(
+            "written criteria are no longer any criterion's text: {}",
+            states::join(&gone, "and")
+        )),
+    }
+    (!parts.is_empty()).then(|| parts.join("; "))
+}
+
 /// T6: a criterion has neither a script check nor a judge, so only a
 /// human can check its evidence.
 fn t6(item: &Item) -> Option<String> {
@@ -388,4 +455,55 @@ fn t9(item: &Item) -> Option<String> {
         .iter()
         .any(|label| label == NEEDS_REVIEW)
         .then(|| format!("it has the label {NEEDS_REVIEW}, which asks for a human's review"))
+}
+
+/// T13: a criterion's script check already passed when it ran before the
+/// work, at `start` or when it was given after start (§2.4), so it can't be
+/// proving the work. A criterion with no entry in `started.checks`, such as
+/// one given a check while the item was in review, which isn't run then,
+/// counts as one whose check didn't pass. The change that gave it the
+/// check fired T5, which holds the item anyway.
+fn t13(item: &Item) -> Option<String> {
+    let started = item.started.as_ref()?;
+    let passed: Vec<String> = started
+        .checks
+        .iter()
+        .filter(|check| check.passed)
+        .map(|check| check.criterion.to_string())
+        .collect();
+    match passed.len() {
+        0 => None,
+        1 => Some(format!(
+            "criterion {}'s check already passed before the work, so it can't be proving it",
+            passed[0]
+        )),
+        _ => Some(format!(
+            "criteria {}'s checks already passed before the work, so they can't be proving it",
+            states::join(&passed, "and")
+        )),
+    }
+}
+
+/// T14: commits made since start that touch the project's root aren't
+/// scoped to any item, so the other triggers can't see them as the item's
+/// (§2.5). `unscoped` holds each one's SHA and header, newest first, and
+/// the hold names them oldest first.
+fn t14(unscoped: &[(String, String)]) -> Option<String> {
+    if unscoped.is_empty() {
+        return None;
+    }
+    let named: Vec<String> = unscoped
+        .iter()
+        .rev()
+        .map(|(sha, header)| format!("{} \"{header}\"", crate::gates::short(sha)))
+        .collect();
+    Some(format!(
+        "{} since start, which no item's scope covers: {}",
+        if named.len() == 1 {
+            "an unscoped commit".to_string()
+        } else {
+            format!("{} unscoped commits", named.len())
+        },
+        file_list(&named)
+    ))
 }
