@@ -3281,12 +3281,20 @@ fn reject(store: &Store, id: &str, reason: Option<String>) -> Result<Output> {
 /// What `approve` and `reject` say before asking for the ID: the item,
 /// the `holds` on it, and `what` the command will do. A hold that isn't
 /// among the submit's, in `item.holds`, is marked new. `tty::confirm`
-/// escapes it, so the title and messages go in as they are.
+/// escapes it, so the title and messages go in as they are. A hold of the
+/// submit's that no longer fires is listed as such.
 fn decision_warning(item: &Item, holds: &[item::Hold], what: &str) -> String {
     let id = &item.id;
     let mut warning = format!("{id} \"{}\" is in review", item.title);
+    // Holds from the submit that nothing fires now, such as one whose
+    // trigger was switched off while it waited.
+    let gone: Vec<&item::Hold> = item
+        .holds
+        .iter()
+        .filter(|old| !holds.iter().any(|hold| hold.trigger == old.trigger))
+        .collect();
     if holds.is_empty() {
-        warning.push_str(", with no trigger recorded.\n");
+        warning.push_str(", and nothing holds it now.\n");
     } else {
         warning.push_str(", held by:\n");
         for hold in holds {
@@ -3297,6 +3305,12 @@ fn decision_warning(item: &Item, holds: &[item::Hold], what: &str) -> String {
             };
             warning.push_str(&format!("  {}  {}{new}\n", hold.trigger, hold.message));
         }
+    }
+    for hold in gone {
+        warning.push_str(&format!(
+            "  {}  {} (no longer fires)\n",
+            hold.trigger, hold.message
+        ));
     }
     warning.push_str(&format!("{what}\n`{}` shows its work.\n", diff_command(id)));
     warning
