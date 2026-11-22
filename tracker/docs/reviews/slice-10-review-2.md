@@ -24,6 +24,8 @@ The findings that matter most:
 - **Security 1 and 2:** two ways past T4 remain for TR-7, which this binary judges without T14: an unscoped commit after `start` that deletes a test for the item to re-add, and lines added to switch a test off. Both need intent, and the readme claims more than the code gives.
 - **Bug 1:** review 1's bug 1 is fixed one level down only. A misspelled `review` key, or a `review` setting put directly under the project, is still ignored without a word.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -85,3 +87,41 @@ The findings that matter most:
 - **T14 closes security 1.** If security 1's (b) is taken, slice 11's tests should include the unscoped delete after `start` and the item's re-add, held by T14.
 - **T5 and the kind.** Once T5 is in, `edit --kind` after `start` fires it, so a review fix's kind must be right before `start` (process 1).
 - **TR-7's expected holds.** By the simulation, T1, T8 and T4 with "before start" for the pinned lists, and T7 once its code is in. Read its before-start test lines in `show --diff` as well (design 1), and its record by hand, as the bootstrap rule says.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `55c6064`, not at the fixed code. Bug 1 and, in DESIGN.md, bug 2 and designs 1 and 2 were built as tracker items of their own, TR-37 and TR-38, with TR-37's tests committed before `tracker start`. The readme's [Fixes after review 2](../slice-10-readme.md#fixes-after-review-2) lists them too.
+
+This round fixed bug 1, bug 2, security 2, design 1 and design 2. Option (a) was taken wherever the review chose it: bug 1, bug 2, security 2, design 1 and design 2. Bugs 3 and 4 and test gap 1 won't be fixed, for the reasons in the table. Security 1 is left to slice 11's T14, and process 1 is the user's. The five items carried forward from review 1 and the four points in "Slice 11 must decide" are left as they were, and the last are for slice 11 (TR-7). The commits after this review (`3a63ca8`), in order:
+
+- **Fixes:** `d6dfc5a` and `469f8bb` (TR-37, bug 1) and `daa5047` (TR-38, bug 2, design 1's DESIGN.md half and design 2).
+- **Docs:** the readme's update, which fixes security 2 and design 1's readme half, and the commit that adds this Outcome, which belong to no item.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: a misspelled `review`, or a `review` setting put directly under the project, is still ignored without a word | TR-37, `469f8bb`, option (a): `#[serde(deny_unknown_fields)]` on `config::Project`, and `judge: Option<serde_json::Value>`, kept as written, with a serde default and `skip_serializing_if`, as `Review::digest` is. A key under a project that §4.2 doesn't list exits 3 for every command, naming it. The user's real config was checked, read only, before the change: it holds only known keys, so no test config needed changing. Tests: `tr_37_c1::a_misplaced_project_key_exits_3_naming_it`, seen failing before the fix, and `tr_37_c2::a_project_with_every_key_in_4_2_loads`, which passed at `start`, as it had to, and was seen failing with `deny_unknown_fields` but no `judge` field |
+| Bug 2: "after start" means "not reachable from `started.head`", so rewriting the item's commits after `start` marks them all "after start" | TR-38, `daa5047`, option (a): §2.5 says a commit counts as after start when `started.head` can't reach it, so rewriting an item's commits after `start` marks them all as after start. Its check is three `grep -qF` on DESIGN.md, which failed at `start`. No test rewrites commits (test gap 1) |
+| Bug 3: if `started.head` is gone from the repository, `gates`, `submit` and `approve` exit 3 with a raw git error | Won't fix. It's very unlikely, since it needs a `started.head` that git has lost, and it fails closed, with exit 3 and nothing written. The readme's Still open says so, and slice 11's T14 will meet the same error |
+| Bug 4: T4 names at most 10 files, oldest commit first, so an after-start edit is the first to be cut to "N more" | Won't fix. It's unlikely, since it needs a test commit that changes more than 10 existing test files, and the hold still fires, with `files` and `show --diff` listing every file. The readme's Still open says so |
+| Security 1: after `start`, an unscoped commit can delete an existing test so that the item re-adds it weakened | Left to slice 11's T14, which is the review's option (b). TR-7's commits, this binary's only exposure, get read by hand at its `approve`, as the bootstrap rule asks. No code change |
+| Security 2: lines that switch an existing test off are added lines, and the readme says the tests "can't be weakened" after `start` | Fixed in the readme's update, option (a). Its [What's in this slice](../slice-10-readme.md#whats-in-this-slice) and [Decisions worth knowing](../slice-10-readme.md#decisions-worth-knowing) now say that changing or removing a line of a test committed before `start`, or deleting it, fires T4, and that lines added to switch a test off, such as `#[ignore]` or `return;`, don't, as §2.5 already says. The code is unchanged. Option (b), teaching T4 a list of markers, wasn't taken |
+| Design 1: "before start" says when a test was edited, not that the edit was sanctioned, and the readme teaches the user to read it as expected | Fixed in two places, option (a). TR-38, `daa5047`: §2.5 says the mark says when the edit was made, not that it was right, so an edit marked before start is still worth reading in `show --diff`. The readme's update: it no longer says the message "tells that sanctioned edit from one made after it", and its Limits now say to read TR-7's before-start lines in `show --diff` as well as the hold. Option (b), a removed-line count in the mark, wasn't taken, since a one-line weakening reads the same |
+| Design 2: §2.5's and §3's T4 examples don't match the message the code prints | TR-38, `daa5047`: both examples read `existing test file modified: tests/bookmarks.spec.js (1a2b3c4 after start)`, and §3's two holds have `files`. Its check counts both examples with `test $(grep -cF …) -ge 2` and finds the two `files` lines, and failed at `start` |
+| Test gap 1: nothing tests rewritten commits or a missing `started.head` | Won't fix. It covers bugs 2 to 4: bugs 3 and 4 aren't fixed, and bug 2 is now documented in §2.5. The readme's Still open lists it |
+| Process 1: in TR's real config a review fix that changes the triggers' own code auto-verifies | `review.risky_paths` for TR is the user's to write in `~/.tracker/config.json`, and the review's suggested list has been put to them. Bug 1's fix, which the review wanted first, is in. From now on, a review fix that adds behaviour or a field is created as `capability`, as CLAUDE.md says, as TR-37 was |
+| Carried forward, review 1's bug 3: T1 lists a source file the item added and then renamed or deleted | Still won't fix, and the hold is right |
+| Carried forward, review 1's design 4: §7 doesn't say T7 sums every commit's lines | Still won't fix, and §2.5 says it |
+| Carried forward, review 1's test gap 2: untested cases | Still won't fix |
+| Carried forward, review 1's process 1: `approve`'s question hasn't been seen in a real terminal | Still the user's. The first held TR item will show it |
+| Carried forward, review 1's "Slice 11 must decide" | Left for TR-7, as the readme's Limits says |
+| Slice 11 must decide: T14 reads the same range as TR-31 | Left for TR-7. T14 should use `git::since`, and decide bug 3's missing `started.head` and bug 2's rewritten commits once, for T4 and T14 together. The readme's Limits carries it |
+| Slice 11 must decide: T14 closes security 1 | Left for TR-7. Security 1 is left to T14, so its tests should include the unscoped delete after `start` and the item's re-add, held by T14 |
+| Slice 11 must decide: T5 and the kind | Left for TR-7. A review fix's kind must be right before `start` once T5 is in, and process 1's rule that a fix adding behaviour or a field is a `capability` covers it |
+| Slice 11 must decide: TR-7's expected holds | Left for TR-7. They are T1, T8 and T4 with "before start" for the pinned lists, and T7 once its code is in. Its before-start test lines are read in `show --diff` as well, and its record by hand. The readme's Limits says both |
+
+Seen failing:
+
+- **Bug 1:** `tr_37_c1` failed before the fix. `tr_37_c2` passed at `start`, since every key §4.2 lists loaded before, and was seen failing with `deny_unknown_fields` but no `judge` field.
+- **Bug 2, design 1's DESIGN.md half and design 2** are docs only: TR-38's three checks, each a `grep` on DESIGN.md, failed at `start`.
+
+The installed slice 9 binary verified TR-37 and TR-38 `auto`, with a commit and `refs/tracker/<ID>`: `469f8bb` and `daa5047`. It has only T6 and T9, and neither item has a manual criterion, so nothing could hold them, and no hold was shown. After both, `cargo fmt --check`, `cargo clippy -- -D warnings` and all 384 tests pass, 2 more than at `55c6064`: `tr_37_c1` and `tr_37_c2`, bringing `tests/risky_changes.rs` to 46. No existing test changed. The readme's Try it output didn't change, apart from the commit's SHA, which differs on every run.
