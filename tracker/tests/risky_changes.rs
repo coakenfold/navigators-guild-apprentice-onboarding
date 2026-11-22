@@ -879,6 +879,44 @@ mod tr_34_c2 {
     }
 }
 
+/// TR-37, criterion 1: an unknown key directly under a project, such as
+/// `risky_paths` beside `review`, is refused, naming it.
+mod tr_37_c1 {
+    use super::*;
+
+    #[test]
+    fn a_misplaced_project_key_exits_3_naming_it() {
+        let env = Env::new();
+        env.add_project("XX", "xx");
+        set_review(&env, json!({ "disabled": ["T8"] }));
+        set_project_field(&env, "risky_paths", json!(["src/store.rs"]));
+        let message = env.error(&["list"], 3);
+        assert!(message.contains("risky_paths"), "{message}");
+    }
+}
+
+/// TR-37, criterion 2: a project with every key §4.2 lists, `review` and
+/// `judge` included, still loads.
+mod tr_37_c2 {
+    use super::*;
+
+    #[test]
+    fn a_project_with_every_key_in_4_2_loads() {
+        let env = Env::new();
+        env.add_project("XX", "xx");
+        set_project_field(&env, "design", json!("docs/DESIGN.md"));
+        set_project_field(&env, "checks", json!(["cargo test"]));
+        set_project_field(&env, "check_timeout_secs", json!(300));
+        set_review(&env, json!({ "risky_paths": ["src/store.rs"] }));
+        set_project_field(
+            &env,
+            "judge",
+            json!({ "max_failures": 3, "auto_verify": true, "timeout_secs": 60 }),
+        );
+        env.json(&["list"]);
+    }
+}
+
 /// TR-35, criterion 1: `approve`'s question lists a hold from the submit
 /// that no longer fires.
 mod tr_35_c1 {
