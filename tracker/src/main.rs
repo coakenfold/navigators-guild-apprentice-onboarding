@@ -686,6 +686,7 @@ fn project_add(
         checks: Vec::new(),
         check_timeout_secs: None,
         review: None,
+        judge: None,
     };
     let _lock = store.lock()?;
     // Two projects with one root would leave `create` guessing which one the

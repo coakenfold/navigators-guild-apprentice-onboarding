@@ -1,9 +1,9 @@
 //! `config.json` (§4.2): the registered projects.
 //!
 //! So far the tool reads each project's name, root, design, checks, check
-//! timeout and `review` settings. serde skips the other settings when
-//! reading, and `add_project` edits the file as plain JSON, so settings added
-//! by hand survive.
+//! timeout, `review` and `judge` settings. A key under a project that isn't
+//! one of these is refused, and `add_project` edits the file as plain JSON,
+//! so settings added by hand survive.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -21,6 +21,7 @@ pub struct Config {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Project {
     pub name: String,
     pub root: String,
@@ -38,6 +39,10 @@ pub struct Project {
     /// `config.json`; each setting left out takes its default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review: Option<Review>,
+    /// The project's judge settings (§4.2). Slice 12 reads them, and
+    /// they're kept as written until then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub judge: Option<serde_json::Value>,
 }
 
 /// A project's `review` settings (§4.2). Each glob is matched against a
