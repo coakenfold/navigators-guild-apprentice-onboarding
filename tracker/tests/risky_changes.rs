@@ -839,3 +839,42 @@ mod tr_33_c1 {
         );
     }
 }
+
+/// TR-34, criterion 1: an unknown key in a project's `review` settings is
+/// refused, naming it.
+mod tr_34_c1 {
+    use super::*;
+
+    #[test]
+    fn a_misspelled_review_key_exits_3_naming_it() {
+        let env = Env::new();
+        env.add_project("XX", "xx");
+        set_review(&env, json!({ "risky_path": ["src/store.rs"] }));
+        let message = env.error(&["list"], 3);
+        assert!(message.contains("risky_path"), "{message}");
+    }
+}
+
+/// TR-34, criterion 2: a `review` with every key §4.2 lists still loads.
+mod tr_34_c2 {
+    use super::*;
+
+    #[test]
+    fn a_review_with_every_key_in_4_2_loads() {
+        let env = Env::new();
+        env.add_project("XX", "xx");
+        set_review(
+            &env,
+            json!({
+                "risky_paths": ["src/store.rs"],
+                "source_paths": ["src/**"],
+                "test_paths": ["tests/**"],
+                "manifests": ["**/Cargo.toml"],
+                "max_diff_lines": 200,
+                "disabled": ["T8"],
+                "digest": { "every_days": 7 },
+            }),
+        );
+        env.json(&["list"]);
+    }
+}
