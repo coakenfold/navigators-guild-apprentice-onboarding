@@ -16,7 +16,7 @@ mod common;
 use std::fs;
 use std::path::PathBuf;
 
-use common::{Env, git_commit_all};
+use common::{Env, check_schema, git_commit_all};
 use serde_json::{Value, json};
 
 const MODEL: &str = "claude-haiku-5-5";
@@ -346,14 +346,15 @@ mod tr11_c2 {
     }
 
     #[test]
-    fn tr11_c2_a_dispute_refused_with_exit_1_counts_nothing_toward_t11() {
-        // An unsure answer is a failed request for T11, but nothing was
-        // submitted, so the refused run isn't counted.
+    fn tr11_c2_a_dispute_refused_with_exit_1_counts_its_run_toward_t11() {
+        // An unsure answer is a failed request for T11, and the judges
+        // were asked and the agent learnt their answer, so the refused
+        // run counts, as a `gates` run does (TR-53).
         let env = started();
         reply(&env, &[("works", "unsure")]);
         let message = refused(&env);
         assert!(message.contains("unsure"), "{message}");
-        assert_eq!(counted(&env), 0);
+        assert_eq!(counted(&env), 1);
     }
 
     #[test]
@@ -570,5 +571,292 @@ mod tr11_c5 {
         let output = dispute(&env);
         assert_eq!(output["result"], "held", "{output}");
         assert_eq!(fired(&output), ["T12"], "{output}");
+    }
+}
+
+mod tr53_c1 {
+    //! A refused dispute counts its run toward T11, and so does a
+    //! disputed fail.
+    use super::*;
+
+    #[test]
+    fn tr53_c1_a_held_dispute_of_a_new_failing_request_adds_one_run() {
+        let env = started();
+        assert_eq!(counted(&env), 0);
+        dispute(&env);
+        assert_eq!(counted(&env), 1);
+    }
+
+    #[test]
+    fn tr53_c1_a_refused_dispute_of_a_ref_nobody_asked_counts_a_failing_run() {
+        // The agent disputes a ref nobody asked, beside the question it
+        // is working on, which fails: the refusal still counts the run.
+        let env = started();
+        let error = env.error_json_in(
+            &env.outside(),
+            &[
+                "submit",
+                "XX-1",
+                "--dispute",
+                "c1:works",
+                "--reason",
+                AGENT,
+                "--dispute",
+                "c9:nope",
+                "--reason",
+                AGENT,
+            ],
+            1,
+        );
+        assert!(error["error"].as_str().unwrap().contains("c9:nope"));
+        assert_eq!(counted(&env), 1);
+        // The same request again adds nothing.
+        env.error_json_in(
+            &env.outside(),
+            &[
+                "submit",
+                "XX-1",
+                "--dispute",
+                "c1:works",
+                "--reason",
+                AGENT,
+                "--dispute",
+                "c9:nope",
+                "--reason",
+                AGENT,
+            ],
+            1,
+        );
+        assert_eq!(counted(&env), 1);
+        work(&env, 2);
+        env.error_json_in(
+            &env.outside(),
+            &["submit", "XX-1", "--dispute", "c9:nope", "--reason", AGENT],
+            1,
+        );
+        assert_eq!(counted(&env), 2);
+    }
+}
+
+mod tr53_c2 {
+    //! Each held question records its `ask`, and a file without it
+    //! round-trips.
+    use super::*;
+
+    #[test]
+    fn tr53_c2_a_held_question_records_the_question_it_asked() {
+        let env = held();
+        let item = env.item("XX-1");
+        let question = only_question(&item["held_questions"], "T12");
+        assert_eq!(question["ask"], "Is this code works?", "{question}");
+        let fields: Vec<&String> = question.as_object().unwrap().keys().collect();
+        assert_eq!(
+            fields,
+            [
+                "trigger", "ref", "ask", "request", "answer", "reason", "dispute"
+            ]
+        );
+    }
+
+    #[test]
+    fn tr53_c2_a_t10_question_records_its_ask_in_the_decision_too() {
+        let env = started();
+        reply(&env, &[("works", "unsure")]);
+        env.json(&["submit", "XX-1"]);
+        let item = env.item("XX-1");
+        let question = only_question(&item["held_questions"], "T10");
+        assert_eq!(question["ask"], "Is this code works?", "{question}");
+        let Some((output, ok)) = env.in_terminal_typing(
+            &["reject", "XX-1", "--reason", "not yet"],
+            PROMPT,
+            "XX-1",
+            || {},
+        ) else {
+            return;
+        };
+        assert!(ok, "{output}");
+        let item = env.item("XX-1");
+        let last = item["history"].as_array().unwrap().last().unwrap().clone();
+        let question = only_question(&last["held_questions"], "T10");
+        assert_eq!(question["ask"], "Is this code works?", "{question}");
+    }
+
+    #[test]
+    fn tr53_c2_files_written_without_ask_round_trip_byte_for_byte() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let mut seen = 0;
+        for slice in fs::read_dir(&dir).unwrap() {
+            for file in fs::read_dir(slice.unwrap().path()).unwrap() {
+                let path = file.unwrap().path();
+                if path.extension().is_none_or(|e| e != "json") {
+                    continue;
+                }
+                let text = fs::read_to_string(&path).unwrap();
+                let Ok(item) = tracker::item::from_json(&text) else {
+                    continue;
+                };
+                assert_eq!(tracker::item::to_json(&item), text, "{path:?}");
+                seen += 1;
+            }
+        }
+        assert!(seen > 10, "only {seen} fixtures read");
+        let held = dir.join("slice-15/XX-25.json");
+        let text = fs::read_to_string(held).unwrap();
+        assert!(!text.contains("\"ask\": \"Does"), "the fixture has no ask");
+        // With it set, it is written back as it was read.
+        let with = text.replacen(
+            "\"ref\": \"c1:works\",\n",
+            "\"ref\": \"c1:works\",\n      \"ask\": \"Does this code do the work?\",\n",
+            1,
+        );
+        assert_ne!(with, text);
+        let item = tracker::item::from_json(&with).unwrap();
+        assert_eq!(tracker::item::to_json(&item), with);
+        check_schema("item", &serde_json::from_str(&with).unwrap());
+    }
+}
+
+mod tr53_c3 {
+    //! Under `"auto_verify": false`, `approve` and `reject` record every
+    //! judge question asked as a T10 held question.
+    use super::*;
+
+    fn held_by_auto_verify() -> Env {
+        let env = started_with(&["works", "clear"]);
+        edit_config(&env, |config| {
+            config["projects"]["XX"]["judge"] = json!({ "auto_verify": false });
+        });
+        reply(&env, &[("works", "yes"), ("clear", "yes")]);
+        let output = env.json(&["submit", "XX-1"]);
+        assert_eq!(fired(&output), ["T10"], "{output}");
+        env
+    }
+
+    fn both_t10(questions: &Value) {
+        let questions = questions.as_array().unwrap();
+        assert_eq!(questions.len(), 2, "{questions:?}");
+        for (question, id) in questions.iter().zip(["works", "clear"]) {
+            assert_eq!(question["trigger"], "T10");
+            assert_eq!(question["ref"], format!("c1:{id}"));
+            assert_eq!(question["answer"], "yes");
+        }
+    }
+
+    #[test]
+    fn tr53_c3_a_hold_under_auto_verify_false_keeps_every_question() {
+        let env = held_by_auto_verify();
+        both_t10(&env.item("XX-1")["held_questions"]);
+    }
+
+    #[test]
+    fn tr53_c3_reject_records_every_question() {
+        let env = held_by_auto_verify();
+        let Some((output, ok)) = env.in_terminal_typing(
+            &["reject", "XX-1", "--reason", "not yet"],
+            PROMPT,
+            "XX-1",
+            || {},
+        ) else {
+            return;
+        };
+        assert!(ok, "{output}");
+        let item = env.item("XX-1");
+        let last = item["history"].as_array().unwrap().last().unwrap().clone();
+        both_t10(&last["held_questions"]);
+    }
+
+    #[test]
+    fn tr53_c3_approve_records_the_submits_t10_questions() {
+        let env = held_by_auto_verify();
+        let Some((output, ok)) =
+            env.in_terminal_typing(&["approve", "XX-1"], PROMPT, "XX-1", || {})
+        else {
+            return;
+        };
+        assert!(ok, "{output}");
+        let item = env.item("XX-1");
+        both_t10(&item["verification"]["held_questions"]);
+        let last = item["history"].as_array().unwrap().last().unwrap().clone();
+        assert_eq!(last["via"], "approve");
+        both_t10(&last["held_questions"]);
+    }
+}
+
+mod tr53_c4 {
+    //! `--reason`'s help says reasons pair with `--dispute`s by position.
+    use super::*;
+
+    #[test]
+    fn tr53_c4_reason_help_says_reasons_pair_by_position() {
+        let env = Env::without_store();
+        let output = env.cmd().args(["submit", "--help"]).assert().success();
+        let help = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+        let help = help.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            help.contains("the first --reason goes with the first --dispute, and so on"),
+            "{help}"
+        );
+        assert!(!help.contains("for the --dispute before it"), "{help}");
+    }
+
+    #[test]
+    fn tr53_c4_two_disputes_then_two_reasons_pair_in_order() {
+        let env = started_with(&["works", "clear"]);
+        let output = env.json(&[
+            "submit",
+            "XX-1",
+            "--dispute",
+            "c1:works",
+            "--dispute",
+            "c1:clear",
+            "--reason",
+            "about works",
+            "--reason",
+            "about clear",
+        ]);
+        assert_eq!(output["result"], "held", "{output}");
+        let questions = env.item("XX-1")["held_questions"].clone();
+        let questions = questions.as_array().unwrap();
+        assert_eq!(questions.len(), 2, "{questions:?}");
+        assert_eq!(questions[0]["ref"], "c1:works");
+        assert_eq!(questions[0]["dispute"], "about works");
+        assert_eq!(questions[1]["ref"], "c1:clear");
+        assert_eq!(questions[1]["dispute"], "about clear");
+    }
+}
+
+mod tr53_c5 {
+    //! A dispute made while a judge call fails is refused with exit 2 for
+    //! the failed call.
+    use super::*;
+
+    #[test]
+    fn tr53_c5_a_dispute_during_an_outage_is_refused_for_the_failed_call() {
+        use std::os::unix::fs::PermissionsExt;
+        let env = started();
+        let broken = judge_dir(&env).join("broken");
+        fs::write(&broken, "#!/bin/sh\ncat > /dev/null\nexit 1\n").unwrap();
+        fs::set_permissions(&broken, fs::Permissions::from_mode(0o755)).unwrap();
+        let command = broken.to_str().unwrap().to_string();
+        edit_config(&env, |config| {
+            config["judge"] = json!({ "command": command, "model": MODEL });
+        });
+        // A new request, so the cache can't answer it.
+        work(&env, 2);
+        let error = env.error_json_in(
+            &env.outside(),
+            &["submit", "XX-1", "--dispute", "c1:works", "--reason", AGENT],
+            2,
+        );
+        assert_eq!(error["result"], "refused", "{error}");
+        let message = error["error"].as_str().unwrap();
+        assert!(!message.contains("no judge question"), "{message}");
+        let g3 = error["failures"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|failure| failure["gate"] == "G3");
+        assert!(g3, "{error}");
+        assert_eq!(env.item("XX-1")["status"], "in-progress");
     }
 }
