@@ -152,7 +152,7 @@ pub struct Review {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub disabled: Vec<String>,
     /// How often the digest is due, such as `{"every_days": 7}` (§4.2).
-    /// Slice 16 reads it, and it's kept as written until then.
+    /// `Project::digest_every_days` reads it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digest: Option<serde_json::Value>,
 }
@@ -178,6 +178,8 @@ pub const DEFAULT_MANIFESTS: &[&str] = &[
     "**/Gemfile",
     "**/Gemfile.lock",
 ];
+/// `review.digest.every_days` when the project doesn't set it (§4.2).
+pub const DEFAULT_DIGEST_EVERY_DAYS: u64 = 7;
 /// `max_diff_lines` when the project doesn't set it, as in §4.2.
 pub const DEFAULT_MAX_DIFF_LINES: u64 = 300;
 /// The triggers `review.disabled` can't switch off, since each would
@@ -260,6 +262,16 @@ impl Project {
     /// out (§4.2).
     pub fn review(&self) -> Review {
         self.review.clone().unwrap_or_default()
+    }
+
+    /// How many days the project's digest may wait before `review` calls
+    /// it overdue: `review.digest.every_days`, or 7 (§2.6, §4.2).
+    pub fn digest_every_days(&self) -> u64 {
+        self.review
+            .as_ref()
+            .and_then(|review| review.digest.as_ref())
+            .and_then(|digest| digest["every_days"].as_u64())
+            .unwrap_or(DEFAULT_DIGEST_EVERY_DAYS)
     }
 
     /// Whether an item a judge passed can reach done without a human

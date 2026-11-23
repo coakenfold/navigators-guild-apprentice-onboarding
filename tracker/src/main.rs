@@ -10,8 +10,11 @@ use clap::{Args, Parser, Subcommand};
 use serde_json::{Value, json};
 use unicode_width::UnicodeWidthStr;
 
+use tracker::audit;
 use tracker::checks;
 use tracker::config::{self, Project};
+use tracker::decisions;
+use tracker::digest;
 use tracker::error::{Error, Result};
 use tracker::gates::{self, Run};
 use tracker::git;
@@ -253,6 +256,63 @@ enum Command {
     Delete {
         /// The item's ID, such as BM-12
         id: String,
+    },
+    /// What was auto-verified, shelved or done by hand since the last ack
+    ///
+    /// Each project's digest lists every item auto-verified since its digest
+    /// was last acknowledged, the ones a judge passed first, with their
+    /// criteria, checks, commit and judge answers. Then, oldest first, every
+    /// shelve, approve, reject, criterion accept and delete, and every edit
+    /// that removed needs-review or changed kind away from capability, each
+    /// marked by whether it came from an interactive terminal. Inside a
+    /// project root it shows that project's digest, and outside every root,
+    /// every project's. `tracker digest ack` records that you've read one
+    #[command(args_conflicts_with_subcommands = true)]
+    Digest {
+        #[command(subcommand)]
+        command: Option<DigestCommand>,
+        /// Show only this project's digest, such as BM
+        #[arg(long, value_name = "KEY", conflicts_with = "all")]
+        project: Option<String>,
+        /// Show every project's digest, even inside a project root
+        #[arg(long)]
+        all: bool,
+    },
+    /// Check the store for signs of hand edits
+    ///
+    /// Covers every project. Reports a status that doesn't match the item's
+    /// history, a done item with no verification record, a done item whose
+    /// refs/tracker/<ID> is missing or doesn't point at its record's commit,
+    /// holds on an item that isn't in review, an ID used twice, and a
+    /// deleted.json line whose ID is at or above its project's counter.
+    /// Item files that can't be read are listed too. It changes nothing,
+    /// and exits 0 whatever it finds
+    Audit,
+    /// For each judge question, how often you approved and rejected the items it held
+    ///
+    /// Covers every project, and reads every approve and reject in every
+    /// item's history. Each question, grouped by its text within a project,
+    /// has its counts split by what held the item: a disputed fail (T12),
+    /// an unsure answer (T10), or a pass held because the project sets
+    /// auto_verify: false (T10). Approving a disputed fail overrules the
+    /// judge, and approving a pass agrees with it, so they're counted apart.
+    /// A T11 hold records no question, so it isn't counted
+    Judges,
+}
+
+#[derive(Subcommand)]
+enum DigestCommand {
+    /// Record that you've read a project's digest. Only from an interactive terminal
+    ///
+    /// Shows the project's digest, then asks for `ack` to be typed. The next
+    /// digest lists only what happens after this. If the digest changed
+    /// while it asked, such as an item auto-verified meanwhile, nothing is
+    /// recorded, with exit 1, so nothing unseen is marked as seen
+    Ack {
+        /// The project whose digest you've read, such as BM. Needed outside
+        /// every project root
+        #[arg(long, value_name = "KEY")]
+        project: Option<String>,
     },
 }
 
@@ -579,6 +639,17 @@ fn main() -> ExitCode {
         Command::Approve { id } => approve(&store, &id),
         Command::Reject { id, reason } => reject(&store, &id, reason),
         Command::Delete { id } => delete(&store, &id),
+        Command::Digest {
+            command: Some(DigestCommand::Ack { project }),
+            ..
+        } => digest_ack(&store, project),
+        Command::Digest {
+            command: None,
+            project,
+            all,
+        } => digest(&store, project, all),
+        Command::Audit => audit(&store),
+        Command::Judges => judges(&store),
     });
 
     match result {
@@ -3485,6 +3556,15 @@ fn entries(count: usize) -> String {
     }
 }
 
+/// `count` and the noun, such as "1 item" or "3 items".
+fn plural(count: usize, one: &str, many: &str) -> String {
+    if count == 1 {
+        format!("1 {one}")
+    } else {
+        format!("{count} {many}")
+    }
+}
+
 /// `delete`: removes an item for good, from an interactive terminal only,
 /// after saying what will be lost and asking for the ID (§2.8). One line
 /// in `deleted.json` records it, so the digest can list it (§2.6).
@@ -3642,9 +3722,9 @@ fn deletion_warning(item: &Item, has_ref: bool) -> String {
 /// triggers that hold it, and how to see its work and decide it.
 fn review(store: &Store) -> Result<Output> {
     store.require_exists()?;
-    // Like every command, it needs config.json to parse (§3).
-    config::load(store)?;
+    let config = config::load(store)?;
     let (items, skipped) = store.load_items()?;
+    let overdue = overdue_digests(store, &config, &items)?;
     let mut held: Vec<&Item> = items
         .iter()
         .filter(|item| item.status == Status::Review)
@@ -3657,8 +3737,10 @@ fn review(store: &Store) -> Result<Output> {
     });
 
     let mut text = Styled::new();
-    if held.is_empty() {
+    if held.is_empty() && overdue.is_empty() {
         text.push("Nothing needs you.\n");
+    } else if held.is_empty() {
+        text.push("No items are held for review.\n");
     } else {
         let count = if held.len() == 1 {
             "1 item is held for review".to_string()
@@ -3704,6 +3786,21 @@ fn review(store: &Store) -> Result<Output> {
             ));
         }
     }
+    for digest in &overdue {
+        let key = &digest.project;
+        let acknowledged = match digest.acknowledged {
+            Some(at) => format!("last acknowledged at {at}"),
+            None => "never acknowledged".to_string(),
+        };
+        text.push("\n");
+        text.push_styled(&format!("{key}'s digest is overdue"), styled::HEADING);
+        text.push(&format!(
+            ": {}, the oldest from {}, {acknowledged}. Read it with `tracker digest --project \
+             {key}`, then run `tracker digest ack --project {key}`.\n",
+            entries(digest.entries()),
+            digest.oldest().expect("an overdue digest has entries"),
+        ));
+    }
     if !skipped.is_empty() {
         text.push(&format!("\n{}\n", skipped_note(&skipped, "listed")));
     }
@@ -3723,16 +3820,465 @@ fn review(store: &Store) -> Result<Output> {
             held
         })
         .collect();
+    let mut json = json!({ "held": held, "skipped": skipped_json(&skipped) });
+    if !overdue.is_empty() {
+        let overdue: Vec<Value> = overdue
+            .iter()
+            .map(|digest| {
+                json!({
+                    "project": digest.project,
+                    "entries": digest.entries(),
+                    "oldest": digest.oldest(),
+                    "acknowledged": digest.acknowledged,
+                })
+            })
+            .collect();
+        json["overdue_digests"] = json!(overdue);
+    }
     Ok(Output {
         text,
-        json: json!({ "held": held, "skipped": skipped_json(&skipped) }),
+        json,
         warnings: skipped_warnings(&skipped),
     })
+}
+
+/// Every project's digest whose oldest entry is older than its
+/// `review.digest.every_days`, which `review` flags as overdue (§2.6).
+fn overdue_digests(
+    store: &Store,
+    config: &config::Config,
+    items: &[Item],
+) -> Result<Vec<digest::Digest>> {
+    let deleted = digest::deleted_records(store)?;
+    let acks = digest::read_acks(store)?;
+    let now = item::now();
+    Ok(config
+        .projects
+        .iter()
+        .map(|(key, project)| {
+            let one = digest::build(key, items, &deleted, acks.get(key));
+            (one, project.digest_every_days())
+        })
+        .filter(|(one, every_days)| digest::is_overdue(one, *every_days, now))
+        .map(|(one, _)| one)
+        .collect())
 }
 
 /// How to review item `id`'s work: `tracker show <ID> --diff`.
 fn diff_command(id: &str) -> String {
     format!("tracker show {id} --diff")
+}
+
+/// The project `--project` names, which must be registered, as its key.
+fn known_project(config: &config::Config, key: &str) -> Result<String> {
+    let key = key.trim().to_ascii_uppercase();
+    if !config.projects.contains_key(&key) {
+        return Err(Error::input(unknown_project(config, &key)));
+    }
+    Ok(key)
+}
+
+fn current_dir() -> Result<PathBuf> {
+    std::env::current_dir().map_err(|e| Error::input(format!("Can't read the current folder: {e}")))
+}
+
+/// `digest`: each project's digest (§2.6), for the project named, the
+/// current folder's, or every project's outside every root or with
+/// `--all`, as `list` picks (§3).
+fn digest(store: &Store, project: Option<String>, all: bool) -> Result<Output> {
+    store.require_exists()?;
+    let config = config::load(store)?;
+    let covered = if all {
+        None
+    } else if let Some(key) = project {
+        Some(known_project(&config, &key)?)
+    } else {
+        config::project_for_dir(&config, &current_dir()?)
+    };
+    let keys: Vec<String> = match &covered {
+        Some(key) => vec![key.clone()],
+        None => config.projects.keys().cloned().collect(),
+    };
+    let (items, skipped) = store.load_items()?;
+    let deleted = digest::deleted_records(store)?;
+    let acks = digest::read_acks(store)?;
+    let digests: Vec<digest::Digest> = keys
+        .iter()
+        .map(|key| digest::build(key, &items, &deleted, acks.get(key)))
+        .collect();
+
+    let mut text = Styled::new();
+    if digests.is_empty() {
+        text.push(
+            "There are no projects yet, so there's no digest. Register one with `tracker project \
+             add`.\n",
+        );
+    }
+    for (n, one) in digests.iter().enumerate() {
+        if n > 0 {
+            text.push("\n");
+        }
+        text.append(digest_text(one));
+    }
+    if !skipped.is_empty() {
+        text.push(&format!("\n{}\n", skipped_note(&skipped, "listed")));
+    }
+    Ok(Output {
+        text,
+        json: json!({
+            "project": covered,
+            "digests": digests,
+            "skipped": skipped_json(&skipped),
+        }),
+        warnings: skipped_warnings(&skipped),
+    })
+}
+
+/// One project's digest as text: when it was last acknowledged, then the
+/// auto-verified items, judge-passed first, then the actions, oldest first.
+fn digest_text(digest: &digest::Digest) -> Styled {
+    let key = &digest.project;
+    let mut text = Styled::new();
+    if digest.entries() == 0 {
+        text.push(&match digest.acknowledged {
+            Some(at) => format!(
+                "{key}'s digest is empty: nothing was auto-verified, shelved or done by hand \
+                 since it was last acknowledged, at {at}.\n"
+            ),
+            None => format!(
+                "{key}'s digest is empty: nothing has been auto-verified, shelved or done by \
+                 hand yet.\n"
+            ),
+        });
+        return text;
+    }
+    let acknowledged = match digest.acknowledged {
+        Some(at) => format!("last acknowledged at {at}"),
+        None => "never acknowledged".to_string(),
+    };
+    text.push_styled(&format!("{key}'s digest, {acknowledged}"), styled::HEADING);
+    text.push("\n");
+    if !digest.verified.is_empty() {
+        text.push(&format!(
+            "Auto-verified ({}), the ones a judge passed first:\n",
+            digest.verified.len()
+        ));
+        for entry in &digest.verified {
+            text.push(&verified_text(entry));
+        }
+    }
+    if !digest.actions.is_empty() {
+        text.push(&format!(
+            "Shelves, human actions and edits that switch off a trigger ({}), oldest first. \
+             Check that you made each one marked from a terminal:\n",
+            digest.actions.len()
+        ));
+        for action in &digest.actions {
+            text.push(&action_text(action));
+        }
+    }
+    text.push(&format!(
+        "Reopen anything that looks wrong with `tracker reopen <ID> --reason \"…\"`. Once \
+         you've read it all, run `tracker digest ack --project {key}`.\n"
+    ));
+    text
+}
+
+/// An auto-verified item in the digest: its title, commit and time, its
+/// criteria, and each judge answer and check its record holds.
+fn verified_text(entry: &digest::Verified) -> String {
+    let record = &entry.verification;
+    let commit = record
+        .commit
+        .as_deref()
+        .map_or(String::new(), |sha| format!(" at {}", gates::short(sha)));
+    let mut out = format!(
+        "  {}  {}\n    verified{commit} on {}\n",
+        entry.id,
+        text::for_terminal(&entry.title, false),
+        record.at
+    );
+    for (n, criterion) in entry.criteria.iter().enumerate() {
+        out.push_str(&format!(
+            "    {}. {}\n",
+            n + 1,
+            text::for_terminal(criterion, false)
+        ));
+    }
+    for judge in &record.judges {
+        out.push_str(&format!(
+            "    judge {} answered {}: \"{}\"\n",
+            text::for_terminal(&judge.judge_ref, false),
+            judge.answer.as_str(),
+            text::for_terminal(&judge.reason, false)
+        ));
+    }
+    for check in &record.checks {
+        let whose = match check.criterion {
+            Some(n) => format!("criterion {n}'s check"),
+            None => "project check".to_string(),
+        };
+        let result = if check.ok { "passed" } else { "failed" };
+        out.push_str(&format!(
+            "    {whose} {result}: `{}` ({}s)\n",
+            text::for_terminal(&check.cmd, false),
+            check.secs
+        ));
+    }
+    out
+}
+
+/// A shelve, human action or edit in the digest, on one line, with a
+/// judged shelve's warning and an approve's or reject's held questions
+/// below it.
+fn action_text(action: &digest::Action) -> String {
+    let terminal = if action.interactive {
+        "from a terminal"
+    } else {
+        "not from a terminal"
+    };
+    let what = match action.action.as_str() {
+        "delete" => match &action.status {
+            Some(status) => format!("deleted while {status}"),
+            None => "deleted".to_string(),
+        },
+        "edit" => {
+            let mut changes = Vec::new();
+            if action
+                .labels_removed
+                .iter()
+                .any(|label| label == "needs-review")
+            {
+                changes.push("removed needs-review".to_string());
+            }
+            if let Some(kind) = action.kind_before {
+                changes.push(format!("changed kind away from {}", kind.as_str()));
+            }
+            format!("edit {}", states::join(&changes, "and"))
+        }
+        "criterion-accept" => "criterion accept".to_string(),
+        other => other.to_string(),
+    };
+    let mut out = format!(
+        "  {}  {}  {}\n    {what}, {terminal}",
+        action.at,
+        action.id,
+        text::for_terminal(&action.title, false)
+    );
+    if let Some(reason) = &action.reason {
+        out.push_str(&format!(": \"{}\"", text::for_terminal(reason, false)));
+    }
+    out.push('\n');
+    if action.judged == Some(true) {
+        out.push_str(
+            "    It has a judge criterion, and starting it again empties its T11 count, so look \
+             for a reopen and start after this.\n",
+        );
+    }
+    for held in &action.held_questions {
+        let judge_ref = text::for_terminal(&held.judge_ref, false);
+        let reason = text::for_terminal(&held.reason, false);
+        match &held.dispute {
+            Some(dispute) => out.push_str(&format!(
+                "    {} disputed {judge_ref}, answered {}\n      model  \"{reason}\"\n      \
+                 agent  \"{}\"\n",
+                held.trigger,
+                held.answer.as_str(),
+                text::for_terminal(dispute, false)
+            )),
+            None => out.push_str(&format!(
+                "    {} {judge_ref} answered {}: \"{reason}\"\n",
+                held.trigger,
+                held.answer.as_str()
+            )),
+        }
+    }
+    out
+}
+
+/// One project's digest as it is now in the store.
+fn project_digest(store: &Store, key: &str) -> Result<digest::Digest> {
+    let (items, _) = store.load_items()?;
+    let deleted = digest::deleted_records(store)?;
+    let acks = digest::read_acks(store)?;
+    Ok(digest::build(key, &items, &deleted, acks.get(key)))
+}
+
+/// `digest ack`: records that I've read a project's digest, from an
+/// interactive terminal only, once I type `ack` (§2.6, §2.7). It shows the
+/// digest before asking, then, under the lock, builds it again, and
+/// records nothing, with exit 1, if it changed meanwhile, so nothing I
+/// haven't seen is marked as seen.
+fn digest_ack(store: &Store, project: Option<String>) -> Result<Output> {
+    store.require_exists()?;
+    let config = config::load(store)?;
+    // It acts on one project, so outside every root it needs --project, and
+    // one command can't acknowledge every project at once (§3).
+    let key = match project {
+        Some(key) => known_project(&config, &key)?,
+        None => config::project_for_dir(&config, &current_dir()?)
+            .ok_or_else(|| Error::input(no_project_here(&config)))?,
+    };
+    let before = project_digest(store, &key)?;
+    let command = format!("tracker digest ack --project {key}");
+    let warning = format!(
+        "{}\nAcknowledging it records that you've read {key}'s digest, so the next one lists \
+         only what happens after now.\n",
+        digest_text(&before).plain()
+    );
+    tty::confirm(
+        &command,
+        "ack",
+        &warning,
+        &format!(
+            "Only a human acknowledges a digest, after reading it with `tracker digest \
+             --project {key}`."
+        ),
+    )?;
+
+    let _lock = store.lock()?;
+    if project_digest(store, &key)? != before {
+        return Err(Error::input(format!(
+            "{key}'s digest changed while you were reading it, so nothing was recorded. Run \
+             `{command}` again to see what it is now."
+        )));
+    }
+    let at = item::now();
+    let ack = digest::Ack {
+        at,
+        interactive: tty::is_interactive(),
+        verified: before.verified.len(),
+        actions: before.actions.len(),
+    };
+    let mut acks = digest::read_acks(store)?;
+    acks.insert(key.clone(), ack.clone());
+    digest::write_acks(store, &acks)?;
+    // Times are kept to the second, and the next digest lists what's after
+    // `at`. Holding the lock until the clock passes `at` means nothing can be
+    // written in the same second after the ack, and missed.
+    while jiff::Timestamp::now().as_second() <= at.as_second() {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    Ok(Output::plain(
+        format!(
+            "Acknowledged {key}'s digest at {at}: {} auto-verified and {}. The next digest \
+             lists only what happens after this.\n",
+            plural(ack.verified, "item", "items"),
+            plural(ack.actions, "action", "actions"),
+        ),
+        json!({
+            "project": key,
+            "acknowledged": at,
+            "verified": ack.verified,
+            "actions": ack.actions,
+        }),
+    ))
+}
+
+/// `audit`: signs that the store was edited by hand, across every project
+/// (§3). It changes nothing and exits 0 whatever it finds.
+fn audit(store: &Store) -> Result<Output> {
+    store.require_exists()?;
+    let config = config::load(store)?;
+    let (items, skipped) = store.load_items()?;
+    let deleted = store.read_deleted()?;
+    let counters = store.read_counters()?;
+    let problems = audit::run(&items, &deleted, &counters, &config);
+
+    let mut text = Styled::new();
+    let checked = plural(items.len(), "item", "items");
+    if problems.is_empty() {
+        text.push(&format!(
+            "No problems found in {checked}, counters.json and deleted.json.\n"
+        ));
+    } else {
+        let found = plural(problems.len(), "problem", "problems");
+        text.push(&format!(
+            "{found} found in {checked}, counters.json and deleted.json, each a sign that the \
+             store was edited by hand:\n"
+        ));
+        for problem in &problems {
+            text.push(&format!(
+                "  {}  {}\n",
+                problem.id.as_deref().unwrap_or("deleted.json"),
+                text::for_terminal(&problem.message, false)
+            ));
+        }
+    }
+    if !skipped.is_empty() {
+        text.push(&format!("\n{}\n", skipped_note(&skipped, "checked")));
+    }
+    Ok(Output {
+        text,
+        json: json!({
+            "items": items.len(),
+            "problems": problems,
+            "skipped": skipped_json(&skipped),
+        }),
+        warnings: skipped_warnings(&skipped),
+    })
+}
+
+/// `judges`: for each judge question, how often I approved and rejected
+/// the items it held, split by what held them (§2.3.2).
+fn judges(store: &Store) -> Result<Output> {
+    store.require_exists()?;
+    // Like every command, it needs config.json to parse (§3).
+    config::load(store)?;
+    let (items, skipped) = store.load_items()?;
+    let questions = decisions::tally(&items);
+
+    let mut text = Styled::new();
+    if questions.is_empty() {
+        text.push(
+            "No decisions on judge questions yet: no item a judge held under T10 or T12 has \
+             been approved or rejected.\n",
+        );
+    } else {
+        text.push(
+            "Each judge question, with your decisions on the items it held. Only T10 and T12 \
+             holds record their questions, so a T11 hold isn't counted.\n",
+        );
+        for question in &questions {
+            text.push("\n");
+            let what = match &question.ask {
+                Some(ask) => format!("\"{}\"", text::for_terminal(ask, false)),
+                None => format!(
+                    "{} (its text wasn't recorded)",
+                    text::for_terminal(&question.question, false)
+                ),
+            };
+            text.push_styled(&format!("{}  {what}", question.project), styled::HEADING);
+            text.push("\n");
+            for held in &question.held {
+                let how = match held.held_as {
+                    "disputed" => format!(
+                        "disputed fail ({}, answered {})",
+                        held.trigger,
+                        held.answer.as_str()
+                    ),
+                    "unsure" => format!("unsure answer ({})", held.trigger),
+                    _ => format!(
+                        "pass held by auto_verify: false ({}, answered {})",
+                        held.trigger,
+                        held.answer.as_str()
+                    ),
+                };
+                text.push(&format!(
+                    "  {how}: approved {}, rejected {}\n",
+                    held.approved, held.rejected
+                ));
+            }
+        }
+    }
+    if !skipped.is_empty() {
+        text.push(&format!("\n{}\n", skipped_note(&skipped, "counted")));
+    }
+    Ok(Output {
+        text,
+        json: json!({ "questions": questions, "skipped": skipped_json(&skipped) }),
+        warnings: skipped_warnings(&skipped),
+    })
 }
 
 /// `approve`: moves a held item to done, from an interactive terminal only,

@@ -487,6 +487,17 @@ pub fn ref_exists(root: &Path, id: &str) -> Result<bool> {
     Ok(output.success())
 }
 
+/// The commit `refs/tracker/<id>` points to, as a full SHA, or `None` if
+/// the ref doesn't exist. `audit` compares it with the record's `commit`.
+pub fn ref_target(root: &Path, id: &str) -> Result<Option<String>> {
+    if !ref_exists(root, id)? {
+        return Ok(None);
+    }
+    let target = format!("{}^{{commit}}", ref_name(id));
+    let sha = git(root, &["rev-parse", "--verify", "--quiet", &target])?;
+    Ok(Some(sha.trim().to_string()))
+}
+
 /// Removes `refs/tracker/<id>`.
 pub fn delete_ref(root: &Path, id: &str) -> Result<()> {
     git(root, &["update-ref", "-d", &ref_name(id)]).map(|_| ())
