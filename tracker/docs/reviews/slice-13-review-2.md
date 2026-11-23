@@ -23,6 +23,8 @@ No finding blocks the install. What's left is small, apart from what slice 14 ne
 
 Review 1's findings left open by its Outcome are listed under [Still open, carried forward](#still-open-carried-forward) and aren't reported again.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -76,3 +78,29 @@ Review 1's points still stand: what a failed call counts as under T11, what a fa
 - **The test harness guard** (process 1), in TR-10's test commit, before the first test that starts an item with a judge.
 - **§7's command list** (design 2), in TR-10's DESIGN.md change, with `start` now true and `approve` added.
 - **Run judges at `start` outside the lock**, as `start` runs checks: `move_item` drops the lock before `gates::criterion_runs` and takes it again with `lock_unchanged_after_checks` ([main.rs:2420-2440](../../src/main.rs#L2420-L2440)). A judge can take `judge.timeout_secs` (60) for each question, and holding the lock that long would block every other `tracker` command.
+
+## Outcome
+
+Added after the round. The findings above are left as written, so their line links point at `efe8a23`, not at later code. Review 2 got no fix item of its own: each finding was folded into the item it fits, as the review suggested, so no code, test or DESIGN.md line changed after it. The orchestrator created one item, TR-50, and added to two others, TR-48 and TR-10, and the readme's [Fixes after review 2](../slice-13-readme.md#fixes-after-review-2) lists them too. All three items are `open`. The readme's update and the commit that adds this Outcome belong to no item.
+
+Each of the review's picks was taken, and each fix waits for its item:
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: an `is_error` reply with no message gives `claude: ` | TR-50 (`fix`, low priority), new: say claude reported an error and said nothing, with a test beside `an_error_reply_fails_in_one_line`. Option (a), done with the next change to `tracker-judge`, as the review picked. Not fixed yet |
+| Design 1: §2.3.1's Pinned model bullet contradicts TR-49's sentence | Added to TR-48's description, since TR-48 already changes §2.3.1: reword the bullet so the judge fails unless the model asked for took part, and the model asked for is recorded. Not fixed yet |
+| Design 2: §7's list of commands that run checks or judges is wrong | TR-10's new criterion 6: §7's list names `approve` and says which commands run judges. Added by the orchestrator before TR-10 is started. Not fixed yet |
+| Test gap 1: nothing pins §2.3.1 step 1's prompt | TR-50: a test comparing call 1's prompt with step 1's template written out, as the item's first test commit, so the current prompt is pinned before the item changes it. Not added yet |
+| Process 1: once `tracker-judge` is installed, a test that adds a judge without the fake calls the real `claude` | TR-10's new criterion 5, option (a): the harness puts a failing `tracker-judge` and `claude` first on `PATH`, so no test reaches the installed judge or the real `claude`. Added by the orchestrator before TR-10 is started. Not fixed yet |
+| Slice 14 must decide: whether a fail before `start` counts toward T11, where a failed call's fingerprint comes from, the harness guard, §7's command list, and running judges at `start` outside the lock | Left for slice 14 (TR-10). The harness guard and §7's list are now its criteria 5 and 6 |
+
+TR-10's four written criteria are unchanged. TR-50 is to be done together with review 1's security 1, option (a) (escape `</material>` in both adapters and rerun judge-eval), the next time the judge prompt changes.
+
+Carried-forward items:
+
+- **Review 1's process 1 is done.** After this round, with no item in progress, the orchestrator ran `cargo install --path .`, which installed both `tracker` and `tracker-judge` in `~/.cargo/bin`, and `command -v tracker-judge` finds it. It then ran the installed `tracker-judge` with a fake `claude` first on `PATH` and a one-question request. It exited 0 and replied `{"adapter":"tracker-judge 0.1.0","model":"claude-haiku-5-5","answers":{"next_step":{"answer":"yes",…}},"cost_usd":0.0015}`, and the fake recorded `-p`, `--safe-mode` and `--tools` as its first arguments. The real `claude` wasn't called, and no judge-eval run used the installed binary.
+- **Review 1's security 1, option (a)** is now in TR-50, with bug 1 and test gap 1 above.
+- **Review 1's bug 1, option (a), bug 3, design 1, option (a) and the rest of test gap 2** are as the review lists them under [Still open, carried forward](#still-open-carried-forward). Bug 3 is won't fix.
+- **For slice 15:** whether a missing `reason` fails the call.
+
+Slice 13's binary, with `tracker-judge`, is now the installed one, and tracks TR-10 to TR-12. All 474 tests pass, as before.
