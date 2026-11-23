@@ -23,6 +23,8 @@ The findings that matter most:
 - **Bug 1:** `approve` asks the judges before it checks for a terminal, so a piped `tracker approve` calls the judge, and before the script gates.
 - **Bug 2:** in a `diff` input, a `\ No newline at end of file` line ends comment stripping for the rest of that hunk. The `diff` path has no test (test gap 1).
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -83,3 +85,37 @@ The findings that matter most:
 - **Bug 1 with a real judge.** If `approve`'s first pass isn't fixed first, every piped approve can cost real calls.
 
 For slice 14, which runs judges at `start`: bug 3's stale `started.checks` entry must not be read as a judge's start result, so judges need their own start record, as the readme says. A `diff` judge's request holds each commit's SHA, so an amend makes a new fingerprint: T11 counts it as a new failure, which is right, and also gets a fresh answer, which T11 is there to limit.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `b79fc39`, not at the fixed code. The fixes were built as one tracker item, TR-45, with its tests committed before `tracker start`, so the user approves once, and the readme's [Fixes after review 1](../slice-12-readme.md#fixes-after-review-1) lists them too.
+
+This round fixed bug 1, bug 2, bug 3, design 1, design 2, design 4, security 1 and test gaps 1, 2 and 3. The review's pick was taken every time: option (a) for bug 1 and design 2, and (b) for security 1. Bug 1's fix has one deviation, in the table. Bug 4 and design 3 won't be fixed, as unlikely. Security 1's option (a) and the points in "Slice 13 must decide" are left for slice 13 (TR-9). The commits after this review (`6d1c664`), in order: `deb662a` (tests), `5d63075` (the fixes) and `d356d17` (DESIGN.md), all scoped to TR-45. The readme's update and the commit that adds this Outcome belong to no item.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: `approve` asks the judges before it checks for a terminal | TR-45, `5d63075`, option (a) with a deviation: `approve` calls `tty::require_interactive` right after its status check, not at the very top, because two existing `tests/review.rs` tests expect the status error first and editing them would fire T4. It still runs before any judge or gate, so a piped `approve` calls no judge. Option (b), a cache-only first pass, wasn't taken. Test: `tr45_c1::a_piped_approve_is_refused_without_calling_the_judge`, which failed at `start` |
+| Bug 2: a `\ No newline at end of file` line ends comment stripping for the rest of a `diff` hunk | TR-45, `5d63075`: `strip_diff` keeps the line inside the hunk, as it is, and goes on stripping. The shell `$#` loss, which the review said could wait, is left. Tests: `tr45_c2::a_diff_judge_gets_no_comments_even_after_a_missing_newline_line` and the unit test `a_no_newline_marker_stays_in_its_hunk_and_stripping_goes_on`, both failed at `start` |
+| Bug 3: `criterion set --judge` after `start` keeps the old check's `started.checks` entry | TR-45, `5d63075`: `criterion_judge` removes criterion n's entry. Test: `tr45_c3::set_judge_after_start_drops_the_started_check_entry`, which failed at `start` |
+| Bug 4: a huge `context_lines` or `judge.timeout_secs` panics, as `check_timeout_secs` has since slice 7 | Won't fix. Only a hand-written absurd value, so unlikely. The readme's Still open lists it |
+| Security 1: a judge answer forged once is reused by every later run | TR-45, `d356d17`, option (b): a §7 bullet, "A forged judge answer is reused from the cache". Option (a), the resolved program in the fingerprint and `adapter` in `verification.judges`, is left for slice 13, which writes `tracker-judge` and may change the key. Its check is a `grep -qF` on DESIGN.md, which failed at `start` |
+| Design 1: §2.3.1's step 4 still says the `adapter` field goes into the cache key | TR-45, `d356d17`: the sentence is replaced with the review's wording. Its check was part of criterion 6, which failed at `start` |
+| Design 2: an unsure answer is shown without its question or excerpt | TR-45, `5d63075`, option (a): `gates` and `submit` print the question and excerpt under T10's hold (`unsure_text`), and `review` names `tracker gates <ID>` for a T10 hold. Option (b), storing the excerpt, is left for slice 15's T12. Test: `tr45_c4::submit_and_gates_text_show_the_question_and_excerpt_of_an_unsure_answer`, which failed at `start` |
+| Design 3: `item::Question` refuses unknown fields, so a newer tracker's question field makes an unreadable item | Won't fix. It needs a later slice to add a question field and an older binary to read the file, so it's unlikely. The readme's Still open lists it |
+| Design 4: §2.3.1 doesn't say what `each` does over a `diff` input, or that commit subjects reach the judge | TR-45, `d356d17`: one sentence in the comment bullet. Its check is part of criterion 6 |
+| Test gap 1: nothing tests a `diff` input | TR-45, `deb662a`: `tr45_c2`'s test and the unit case, as for bug 2 |
+| Test gap 2: nothing tests `approve` for an item with a judge | TR-45, `deb662a`: `tr45_c1`'s piped approve with the cache removed. A terminal approve stays a check by hand |
+| Test gap 3: the model check and a non-zero exit are untested | TR-45, `deb662a`: `tr45_c5::a_reply_naming_another_model_fails_g3` and `a_judge_command_that_exits_non_zero_fails_g3_with_its_message` |
+| Slice 13 must decide: the cache key and the adapter's version | Left for slice 13. Design 1's sentence is fixed, and security 1's option (a) is the open part |
+| Slice 13 must decide: which model the reply names | Left for slice 13 |
+| Slice 13 must decide: the request it reads | Left for slice 13 |
+| Slice 13 must decide: until it's installed | Left for slice 13. TR-9 shouldn't be given a judge criterion before `tracker-judge` is on `PATH` |
+| Slice 13 must decide: bug 1 with a real judge | Fixed by bug 1's fix, so a piped `approve` can't cost real calls |
+| For slice 14: bug 3's stale entry, and a `diff` judge's SHAs in the fingerprint | Left for slice 14. Bug 3's entry is dropped now, but judges still need a start record of their own |
+
+Seen failing:
+
+- **TR-45's criteria 1 to 4 and 6** failed at `start`: the four new test groups (`tr45_c1` to `tr45_c4`, with the unit test for criterion 2) and the five `grep` checks on DESIGN.md.
+- **Criterion 5** (a reply naming another model, a non-zero exit) passed at `start`, since `ask` already refused both. The builder saw both tests fail by temporarily disabling each refusal in `ask`, then restored the file. The item doesn't record that.
+
+TR-45 was held under T8 (DESIGN.md) and T13 (criterion 5), and the user read its diff and approved it from a terminal: `human` at `d356d17`, with `refs/tracker/TR-45`. The installed slice 11 binary tracked it. The orchestrator checked by hand that its 6 written criteria are unchanged and that every commit since `start` is scoped to TR-45. After it, `cargo fmt --check`, `cargo clippy -- -D warnings` and all 458 tests pass, 7 more than at `b79fc39`: 6 in `tests/judges.rs` and 1 in `src/judge.rs`.
