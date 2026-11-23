@@ -177,7 +177,18 @@ impl Report {
         let message = match run {
             Run::Start => format!("{id} can't be started: {failed} failed. Nothing was changed."),
             Run::Submit => {
-                format!("{id} can't be submitted: {failed} failed. Nothing was changed.")
+                // A judge's fail or unsure answer has counted a run toward
+                // T11, so nothing claims the try was free.
+                let counted = self
+                    .judges
+                    .iter()
+                    .any(|a| a.outcome() != judge::Outcome::Pass);
+                let changed = if counted {
+                    format!("{id} wasn't changed.")
+                } else {
+                    "Nothing was changed.".to_string()
+                };
+                format!("{id} can't be submitted: {failed} failed. {changed}")
             }
             Run::Approve => format!(
                 "{id} can't be approved: {failed} failed when the gates ran again, so it stays in \

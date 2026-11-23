@@ -2729,7 +2729,7 @@ fn check_disputes(
         };
         return Err(Error::input(format!(
             "{id} can't be submitted with that dispute: {why}. Only a judge's fail can be \
-             disputed. Nothing was changed."
+             disputed. {id} wasn't changed."
         )));
     }
     Ok(())
