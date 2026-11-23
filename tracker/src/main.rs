@@ -126,8 +126,9 @@ enum Command {
         /// Repeat it for each question, each with its own --reason
         #[arg(long, value_name = "REF")]
         dispute: Vec<String>,
-        /// Why the judge is wrong, for the --dispute before it: one line of
-        /// at most 500 characters, with evidence such as a file:line
+        /// Why the judge is wrong: one line of at most 500 characters, with
+        /// evidence such as a file:line. Reasons pair with disputes by position:
+        /// the first --reason goes with the first --dispute, and so on
         #[arg(long)]
         reason: Vec<String>,
     },
@@ -2553,12 +2554,19 @@ fn apply(
             let asked = gates.passed();
             ask_judges(store, &item, &config, &mut gates);
             let lock = store.lock_unchanged_after_checks(&item.id, file, &command)?;
-            // A ref the judges didn't fail is refused before anything is
-            // counted, since nothing was submitted (§2.3.2).
-            if asked {
+            // The judges were asked, and a refusal below tells the agent
+            // what they said, so the run counts first, as a `gates` run
+            // does (§2.3.2).
+            count_failures(store, &item, &gates)?;
+            // A dispute can only be checked against answers, so a failed
+            // call refuses the submit for G3, with exit 2.
+            let unasked = gates
+                .failures
+                .iter()
+                .any(|failure| failure.gate == "G3" && failure.judge.is_none());
+            if asked && !unasked {
                 check_disputes(&item.id, disputes, &gates.judges)?;
             }
-            count_failures(store, &item, &gates)?;
             let disputed = take_disputed(&mut gates, disputes);
             if !gates.passed() {
                 return Err(gates.refusal(&item.id, item.status, Run::Submit));
@@ -2570,7 +2578,7 @@ fn apply(
             } else {
                 to = Status::Review;
                 held_questions = disputed;
-                held_questions.extend(unsure_questions(&gates.judges));
+                held_questions.extend(t10_questions(&gates.judges, &config, &item.project));
             }
             report = Some(gates);
             lock
@@ -2748,11 +2756,27 @@ fn take_disputed(report: &mut gates::Report, disputes: &[(String, String)]) -> V
     held
 }
 
-/// Each unsure answer in `judges`, as a question held under T10.
-fn unsure_questions(judges: &[judge::Answered]) -> Vec<HeldQuestion> {
+/// The questions in `judges` held under T10: each unsure answer, and, when
+/// the project's `auto_verify` is false, every answer a judge didn't fail,
+/// since T10 then holds the item for all of them (§2.7).
+fn t10_questions(
+    judges: &[judge::Answered],
+    config: &config::Config,
+    project: &str,
+) -> Vec<HeldQuestion> {
+    let all = config
+        .projects
+        .get(project)
+        .is_some_and(|project| !project.auto_verify());
     judges
         .iter()
-        .filter(|answered| answered.outcome() == judge::Outcome::Unsure)
+        .filter(|answered| {
+            if all {
+                answered.outcome() != judge::Outcome::Fail
+            } else {
+                answered.outcome() == judge::Outcome::Unsure
+            }
+        })
         .map(|answered| held_question(answered, "T10", None))
         .collect()
 }
@@ -2765,6 +2789,7 @@ fn held_question(
     HeldQuestion {
         trigger: trigger.to_string(),
         judge_ref: answered.judge_ref.clone(),
+        ask: answered.question.clone(),
         request: answered.request.clone(),
         answer: answered.answer,
         reason: answered.reason.clone(),
@@ -3817,11 +3842,9 @@ fn approve(store: &Store, id: &str) -> Result<Output> {
     item.status = Status::Done;
     item.updated = now;
     // The record keeps the holds I was shown and approved, and the judge
-    // questions they held: each disputed one, and each answered unsure now.
+    // questions the submit held, as `reject` records them.
     item.holds = holds;
-    let mut questions = disputed;
-    questions.extend(unsure_questions(&report.judges));
-    item.held_questions = questions.clone();
+    let questions = item.held_questions.clone();
     let record = verification_record(VerifiedBy::Human, &item, Some(&report), now);
     let commit = record.commit.clone().unwrap_or_default();
     item.verification = Some(record);

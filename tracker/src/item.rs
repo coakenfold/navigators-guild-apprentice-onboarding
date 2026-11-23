@@ -251,6 +251,10 @@ pub struct HeldQuestion {
     pub trigger: String,
     #[serde(rename = "ref")]
     pub judge_ref: String,
+    /// The question's text, so `judges` can group a question across items.
+    /// Left out in held questions written before TR-53.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub ask: String,
     pub request: String,
     pub answer: Answer,
     pub reason: String,

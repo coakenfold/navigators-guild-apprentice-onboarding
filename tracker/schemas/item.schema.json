@@ -117,7 +117,7 @@
     },
     "state": { "enum": ["open", "in-progress", "review", "done", "shelved"] },
     "held_question": {
-      "description": "One judge question that held an item for a human (DESIGN.md §2.3.2): T12 for a fail the agent disputed, with the agent's reason in dispute, or T10 for an unsure answer.",
+      "description": "One judge question that held an item for a human (DESIGN.md §2.3.2): T12 for a fail the agent disputed, with the agent's reason in dispute, or T10 for an unsure answer, or, when the project's auto_verify is false, for any answer that wasn't a fail.",
       "type": "object",
       "required": ["trigger", "ref", "request", "answer", "reason"],
       "properties": {
@@ -126,6 +126,11 @@
           "description": "The question's ref (DESIGN.md §2.3.2), such as c2:src/import.js:57:suggests_next_step.",
           "type": "string",
           "pattern": "^c[1-9][0-9]*:"
+        },
+        "ask": {
+          "description": "The question's text, as the judge was asked it, so judges can group a question across items. Left out in held questions written before TR-53.",
+          "type": "string",
+          "minLength": 1
         },
         "request": {
           "description": "The fingerprint of the request the answer came from. approve counts a disputed question as passed only for the same answer.",
