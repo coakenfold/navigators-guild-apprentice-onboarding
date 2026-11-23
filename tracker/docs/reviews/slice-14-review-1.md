@@ -119,6 +119,6 @@ Seen failing:
 
 - **TR-51's criteria 1, 2, 4, 5 and 6** failed at `start`.
 - **Criterion 3** passed at `start`, since it pins working code, and the builder saw it fail by temporarily making `count_failures` count items in review. `tr51_c2_a_request_with_two_failing_questions_counts_once` also passes on old code, so criterion 2's check failed through its other tests.
-- **`tr51_c4`'s test of T11's message** was edited after `start`, in `ab22bb7`, to read the text output, since its first version read `--json`, which never holds the message. That is why T4 fired.
+- **`tr51_c4_criterion_add_judge_doesnt_say_the_question_is_asked_only_at_submit`** was edited after `start`, in `ab22bb7`, to read `criterion add`'s text output, since its first version read `--json`, which holds no message. That is why T4 fired.
 
 TR-51 was held under T4, T7 (373 lines), T8 and T13, tracked by the installed slice 13 binary. The user read its diff and approved it from a terminal: `human` at `42f3128`, with `refs/tracker/TR-51`. The orchestrator checked by hand that its 6 written criteria are unchanged and that every commit since `start` is scoped to TR-51. After it, `cargo fmt --check`, `cargo clippy -- -D warnings` and all 503 tests pass, 9 more than at `6ab6d5d`, all in `tests/judges_first.rs`.

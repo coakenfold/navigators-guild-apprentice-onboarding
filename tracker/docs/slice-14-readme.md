@@ -2,14 +2,14 @@
 
 `tracker` is a command-line work tracker, written in Rust, that keeps one central list of work items across many projects and decides when an item is really done. This document covers **slice 14** of the 16 in [PLAN.md](PLAN.md): what it built, how it works, and how to test it. The earlier readmes cover the rest: [slice 1](slice-1-readme.md) the store, `create` and `list`, [slice 2](slice-2-readme.md) the states and `history`, [slice 3](slice-3-readme.md) priority, kind, labels, `edit` and `list`'s filters, [slice 4](slice-4-readme.md) `show` and `delete`, [slice 5](slice-5-readme.md) bad data and polish, [slice 6](slice-6-readme.md) criteria and gates G1, G2 and G6, [slice 7](slice-7-readme.md) running checks, with gates G3 and G4 and `started.checks`, [slice 8](slice-8-readme.md) G5, the `auto` record and `refs/tracker/<ID>`, [slice 9](slice-9-readme.md) the inbox, `approve`, `reject` and triggers T6 and T9, [slice 10](slice-10-readme.md) triggers T1, T2, T3, T4, T7 and T8, [slice 11](slice-11-readme.md) triggers T5, T13 and T14 and the criteria fingerprint, [slice 12](slice-12-readme.md) judge criteria, G3's judge half and trigger T10, with a fake judge command, and [slice 13](slice-13-readme.md) `tracker-judge`, the real judge command.
 
-After slice 14 you can **have judges that pass before the work, or get retried until they pass, held**. The spec is [DESIGN.md](DESIGN.md). This slice implements what [§2.4](DESIGN.md#24-gates-is-it-finished) says about judges at `start` and about `gates` dry runs, trigger T11 and T13's judge half from [§2.5](DESIGN.md#25-review-triggers-does-it-need-a-human), G1's judge half from [§2.3.1](DESIGN.md#231-judges-claude-via-the-claude-cli), `judge/failures.json` from [§4.1](DESIGN.md#41-layout), `judge.max_failures` from [§4.2](DESIGN.md#42-config), and `started.checks` for judges from [§4.3](DESIGN.md#43-item-file). It also fixes the list of commands that run checks or judges in [§7](DESIGN.md#7-honest-limits). The slice is tracked in `tracker` itself as item TR-10, with the binary installed from slice 13 ([Tracking TR-10](#tracking-tr-10)). [Review 1](reviews/slice-14-review-1.md) found T11 counting requests where it should count tries, and its fixes (item TR-51) changed what T11 counts, so this document describes the code after them ([Fixes after review 1](#fixes-after-review-1)). They also brought [§3](DESIGN.md#3-interface)'s `gates` row, [§4.2](DESIGN.md#42-config)'s `max_failures` line, [§6](DESIGN.md#6-what-im-trusting-and-what-checks-it)'s T11 row and §7 up to date.
+After slice 14 you can **have judges that pass before the work, or get retried until they pass, held**. The spec is [DESIGN.md](DESIGN.md). This slice implements what [§2.4](DESIGN.md#24-gates-is-it-finished) says about judges at `start` and about `gates` dry runs, trigger T11 and T13's judge half from [§2.5](DESIGN.md#25-review-triggers-does-it-need-a-human), G1's judge half from [§2.3.1](DESIGN.md#231-judges-claude-via-the-claude-cli), `judge/failures.json` from [§4.1](DESIGN.md#41-layout), `judge.max_failures` from [§4.2](DESIGN.md#42-config), and `started.checks` for judges from [§4.3](DESIGN.md#43-item-file). It also fixes the list of commands that run checks or judges in [§7](DESIGN.md#7-honest-limits). The slice is tracked in `tracker` itself as item TR-10, with the binary installed from slice 13 ([Tracking TR-10](#tracking-tr-10)). [Review 1](reviews/slice-14-review-1.md) found T11 counting requests where it should count tries, and its fixes (item TR-51) changed what T11 counts, so this document describes the code after them ([Fixes after review 1](#fixes-after-review-1)). They also brought [§3](DESIGN.md#3-interface)'s `gates` row, [§4.2](DESIGN.md#42-config)'s `max_failures` line, [§6](DESIGN.md#6-what-im-trusting-and-what-checks-it)'s T11 row and §7 up to date. [Review 2](reviews/slice-14-review-2.md) found nothing that blocks the install. Its two bugs, a message and the names of T11's records, were fixed as item TR-52, and its other findings were folded into TR-11 and TR-12 or left on purpose ([Fixes after review 2](#fixes-after-review-2)).
 
 | | |
 | --- | --- |
-| Status | Every automated _Done when_ check has a test, and every test passes, as does the test command (`cargo fmt --check`, `cargo clippy -- -D warnings` and `cargo test` were run on the finished branch, and again after review 1's fixes at `42f3128`). TR-10 is `done`, but it wasn't auto-verified. It has six criteria: PLAN.md's four _Done when_ bullets, as written, and two the orchestrator added before `start` from [slice 13's review 2](reviews/slice-13-review-2.md): criterion 5, "the test harness puts a failing `tracker-judge` and `claude` first on `PATH`" (process 1), and criterion 6, "§7's list of commands that run checks or judges" (design 2). All six checks failed at `start`. The installed slice 13 binary held the submit under T1 (the new source files), T4 (`tests/judges.rs`, whose existing tests were changed in `3fa1f52`, before `start`), T7 (1161 lines changed) and T8 (DESIGN.md §2.4, §2.5, §4.1, §4.3 and §7). The user read the diff and approved it from a terminal: `verification.by` is `human`, at `fdaa0cb`, with `refs/tracker/TR-10`, and the four holds are recorded in `verification.triggers`. Before the approve, the orchestrator checked by hand that the four written criteria are unchanged, that all six checks failed at `start`, and that every commit since `start` is scoped to TR-10. **One slip:** six trigger lists pinned in `tests/gates.rs`, `tests/review.rs` and `tests/states.rs` needed T11 added, and that was done after `start`, in `d202442`, so those six additions weren't seen failing first ([Testing](#testing)). They are additions only, so T4 stayed quiet. [Review 1](reviews/slice-14-review-1.md)'s fixes are done, as one item, TR-51, with its tests committed before `start`: `8c85448` (tests), `ab22bb7` (the code), `a40e720` (DESIGN.md) and `42f3128` (a test comment). TR-51 is `done`, held under T4, T7, T8 and T13, and the user read the diff and approved it from a terminal: `human` at `42f3128`, with `refs/tracker/TR-51` ([Fixes after review 1](#fixes-after-review-1)). Of its six criteria, criterion 3 passed at `start`, since it pins code that already worked. The review's process 1 and 3 are done too, and process 2 needs no action. Left for later on purpose: TR-47, TR-48 and TR-50 are deferred, and the "Slice 15 must decide" and slice 16 points are left for TR-11 and TR-12 ([Still open](#still-open)). PLAN.md has slice 14 as `in review`. The branch isn't merged into `main`, and neither are slices 7 to 13, which it's stacked on. |
-| Branch | `feat/tracker/slice-14`, stacked on `feat/tracker/slice-13` at `c0e758a`. Slice 13 isn't merged into `main`, so this slice's commits are `git log --oneline --reverse feat/tracker/slice-13..feat/tracker/slice-14`. In order, all scoped to TR-10: `3fa1f52` (the tests, committed before `tracker start TR-10`), `4b76943` (PLAN.md: slice 14 in progress), `d202442` (T11 in the six pinned trigger lists), `519e61d` (the code), `d2ad26c` (DESIGN.md and the schemas) and `fdaa0cb` (PLAN.md: slice 14 in review). That is 6 commits. After them come `6ab6d5d` (this readme, first written) and `d6c851a` (review 1 saved), which belong to no item, then TR-51's four: `8c85448` (tests, committed before `tracker start TR-51`), `ab22bb7` (the code), `a40e720` (DESIGN.md) and `42f3128` (a test comment). That is 12 commits. The update of this readme for review 1 and the commit that adds review 1's Outcome are two more, and belong to no item |
+| Status | Every automated _Done when_ check has a test, and every test passes, as does the test command (`cargo fmt --check`, `cargo clippy -- -D warnings` and `cargo test` were run on the finished branch, and again after review 1's fixes at `42f3128`, and after review 2's at `1d0932c`). TR-10 is `done`, but it wasn't auto-verified. It has six criteria: PLAN.md's four _Done when_ bullets, as written, and two the orchestrator added before `start` from [slice 13's review 2](reviews/slice-13-review-2.md): criterion 5, "the test harness puts a failing `tracker-judge` and `claude` first on `PATH`" (process 1), and criterion 6, "§7's list of commands that run checks or judges" (design 2). All six checks failed at `start`. The installed slice 13 binary held the submit under T1 (the new source files), T4 (`tests/judges.rs`, whose existing tests were changed in `3fa1f52`, before `start`), T7 (1161 lines changed) and T8 (DESIGN.md §2.4, §2.5, §4.1, §4.3 and §7). The user read the diff and approved it from a terminal: `verification.by` is `human`, at `fdaa0cb`, with `refs/tracker/TR-10`, and the four holds are recorded in `verification.triggers`. Before the approve, the orchestrator checked by hand that the four written criteria are unchanged, that all six checks failed at `start`, and that every commit since `start` is scoped to TR-10. **One slip:** six trigger lists pinned in `tests/gates.rs`, `tests/review.rs` and `tests/states.rs` needed T11 added, and that was done after `start`, in `d202442`, so those six additions weren't seen failing first ([Testing](#testing)). They are additions only, so T4 stayed quiet. [Review 1](reviews/slice-14-review-1.md)'s fixes are done, as one item, TR-51, with its tests committed before `start`: `8c85448` (tests), `ab22bb7` (the code), `a40e720` (DESIGN.md) and `42f3128` (a test comment). TR-51 is `done`, held under T4, T7, T8 and T13, and the user read the diff and approved it from a terminal: `human` at `42f3128`, with `refs/tracker/TR-51` ([Fixes after review 1](#fixes-after-review-1)). Of its six criteria, criterion 3 passed at `start`, since it pins code that already worked. The review's process 1 and 3 are done too, and process 2 needs no action. [Review 2](reviews/slice-14-review-2.md)'s fixes are done as one item, TR-52, a `fix` with two criteria, with its test committed before `start`: `32a9256` (the test) and `1d0932c` (the code). Both checks failed at `start`. TR-52 is `done`, held under T4 only, because `1d0932c` updated the existing `tr51_c4_criterion_add_judge_…` assertion, which pinned the old message, after `start`; the builder should have done that before `start` and said so. The user read the diff and approved it from a terminal: `human` at `1d0932c`, with `refs/tracker/TR-52` ([Fixes after review 2](#fixes-after-review-2)). Review 2's process 1 is done in this update. Its security 1 and 2 and design 1 and 2 are folded into criteria 6, 7 and 8 of TR-11, and its missing PLAN.md bullet into criterion 7 of TR-12, none of them started. Test gap 1 won't be fixed. Left for later on purpose: TR-47, TR-48 and TR-50 are deferred, and the rest of the "Slice 15 must decide" and slice 16 points are left for TR-11 and TR-12 ([Still open](#still-open)). PLAN.md has slice 14 as `in review`. The branch isn't merged into `main`, and neither are slices 7 to 13, which it's stacked on. |
+| Branch | `feat/tracker/slice-14`, stacked on `feat/tracker/slice-13` at `c0e758a`. Slice 13 isn't merged into `main`, so this slice's commits are `git log --oneline --reverse feat/tracker/slice-13..feat/tracker/slice-14`. In order, all scoped to TR-10: `3fa1f52` (the tests, committed before `tracker start TR-10`), `4b76943` (PLAN.md: slice 14 in progress), `d202442` (T11 in the six pinned trigger lists), `519e61d` (the code), `d2ad26c` (DESIGN.md and the schemas) and `fdaa0cb` (PLAN.md: slice 14 in review). That is 6 commits. After them come `6ab6d5d` (this readme, first written) and `d6c851a` (review 1 saved), which belong to no item, then TR-51's four: `8c85448` (tests, committed before `tracker start TR-51`), `ab22bb7` (the code), `a40e720` (DESIGN.md) and `42f3128` (a test comment). That is 12 commits. The update of this readme for review 1 (`e1f623a`), the commit that adds review 1's Outcome (`c8f6e19`) and review 2 saved (`cff2d49`) belong to no item. Then TR-52's two: `32a9256` (the test, committed before `tracker start TR-52`) and `1d0932c` (the code). The update of this readme for review 2 and the commit that adds review 2's Outcome are two more, and belong to no item |
 | Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/`. All three pass at `fdaa0cb` and again at `42f3128` |
-| Tests | 503: 46 in `tests/risky_changes.rs`, 42 in `tests/judges.rs`, 39 in `tests/create_and_list.rs`, 36 in `tests/commits.rs`, 34 in `tests/organise.rs`, 29 in `tests/judges_first.rs`, 28 in `tests/review.rs`, 27 in `tests/states.rs`, 25 in `tests/show_and_delete.rs`, 23 in `tests/criteria.rs`, 22 in `tests/gates.rs`, 21 in `tests/tampered_proof.rs`, 18 in `tests/checks.rs`, 15 in `tests/fixtures.rs`, 14 in `tests/item_files.rs`, 13 in `tests/bad_data.rs`, 12 in `tests/tracker_judge.rs`, 11 in `tests/docs_links.rs`, 9 in `tests/polish.rs`, 6 in `tests/output.rs`, 6 in `tests/t5_and_fingerprint.rs`, 5 in `tests/schemas.rs`, 4 in `tests/store_writes.rs`, 2 in `tests/item_ids.rs`, 1 each in `tests/harness_check.rs` and `tests/submit_help.rs`, 12 unit tests in the library (4 in `src/gates.rs`, 4 in `src/judge.rs`, 2 in `src/git.rs`, 1 each in `src/store.rs` and `src/checks.rs`) and 2 in `src/main.rs`. That is 29 more than slice 13's 474, all in the new `tests/judges_first.rs`: 20 from TR-10 and 9 from TR-51 |
+| Tests | 504: 46 in `tests/risky_changes.rs`, 42 in `tests/judges.rs`, 39 in `tests/create_and_list.rs`, 36 in `tests/commits.rs`, 34 in `tests/organise.rs`, 29 in `tests/judges_first.rs`, 28 in `tests/review.rs`, 27 in `tests/states.rs`, 25 in `tests/show_and_delete.rs`, 23 in `tests/criteria.rs`, 22 in `tests/gates.rs`, 21 in `tests/tampered_proof.rs`, 18 in `tests/checks.rs`, 15 in `tests/fixtures.rs`, 14 in `tests/item_files.rs`, 13 in `tests/bad_data.rs`, 12 in `tests/tracker_judge.rs`, 11 in `tests/docs_links.rs`, 9 in `tests/polish.rs`, 6 in `tests/output.rs`, 6 in `tests/t5_and_fingerprint.rs`, 5 in `tests/schemas.rs`, 4 in `tests/store_writes.rs`, 2 in `tests/item_ids.rs`, 1 each in `tests/harness_check.rs`, `tests/judge_add_message.rs` and `tests/submit_help.rs`, 12 unit tests in the library (4 in `src/gates.rs`, 4 in `src/judge.rs`, 2 in `src/git.rs`, 1 each in `src/store.rs` and `src/checks.rs`) and 2 in `src/main.rs`. That is 30 more than slice 13's 474: 29 in the new `tests/judges_first.rs` (20 from TR-10 and 9 from TR-51) and 1 in the new `tests/judge_add_message.rs` (TR-52) |
 
 ## Contents
 
@@ -22,6 +22,7 @@ After slice 14 you can **have judges that pass before the work, or get retried u
 - [Testing](#testing)
 - [Decisions worth knowing](#decisions-worth-knowing)
 - [Fixes after review 1](#fixes-after-review-1)
+- [Fixes after review 2](#fixes-after-review-2)
 - [Still open](#still-open)
 - [Limits, and what later slices change](#limits-and-what-later-slices-change)
 
@@ -38,6 +39,7 @@ After slice 14 you can **have judges that pass before the work, or get retried u
 - **The harness keeps every test off the real judge.** [tests/common/mod.rs](../tests/common/mod.rs) puts a `tracker-judge` and a `claude` that only fail first on `PATH` for every command a test runs ([Testing](#testing)).
 - **DESIGN.md and the schemas say it.** §2.4 describes judges at `start` and `gates`' counting. §2.5's T11 row is rewritten and T13's mentions judges. §4.1, §4.3 and three schema descriptions follow. §7's interrupt bullet lists the commands that run checks and the ones that run judges.
 - **Review 1's fixes (TR-51).** T11 counts runs, not requests, `start` leaves `judge/failures.json` alone for an item with no judge, three messages read right, and DESIGN.md says what the slice does and what it leaves open ([Fixes after review 1](#fixes-after-review-1)).
+- **Review 2's fixes (TR-52).** `criterion add --judge` says its question is asked at `start`, and at submit once every other gate passes. T11's records are `FailedRun` and `failed_runs`, and their doc comments say runs ([Fixes after review 2](#fixes-after-review-2)).
 - **Slice 13's "Slice 14 must decide" points**, from [review 1](reviews/slice-13-review-1.md) and [review 2](reviews/slice-13-review-2.md): see [Decisions](#decisions-worth-knowing).
 
 **Not built yet:**
@@ -143,7 +145,7 @@ $ tracker create "Small change" --project BM
 Created BM-1: Small change
 $ tracker criterion add BM-1 --judge $DEMO/judge/diff.json
 Added criterion 1 to BM-1, a judge: The change is small
-Its question is asked at start and at submit, once every other gate passes.
+Its question is asked at start, and at submit once every other gate passes.
 $ tracker start BM-1      # exit 2: a diff judge has no commit to grade yet
 error: BM-1 can't be started: G1 failed. Nothing was changed.
   G1  Criterion 1's judge reads BM-1's diff, and BM-1 has no commits yet, so it has nothing to grade. Commit what it grades, or a stub it can grade, as `test(BM-1): …` before start, and the judge should fail on it (§2.3.1).
@@ -162,12 +164,12 @@ $ reply yes
 $ tracker submit BM-1
 Asking criterion 1's judge 1 question: `$DEMO/judge/fake`
 BM-1: in-progress → done
-Verified automatically: every gate passed at 2a902fa, and refs/tracker/BM-1 keeps that commit.
+Verified automatically: every gate passed at f9e968f, and refs/tracker/BM-1 keeps that commit.
 $ tracker create "Already passes" --project CM
 Created CM-1: Already passes
 $ tracker criterion add CM-1 --judge $DEMO/judge/lib.json
 Added criterion 1 to CM-1, a judge: The code does the work
-Its question is asked at start and at submit, once every other gate passes.
+Its question is asked at start, and at submit once every other gate passes.
 $ reply yes
 $ tracker start CM-1
 Asking criterion 1's judge 1 question: `$DEMO/judge/fake`
@@ -187,7 +189,7 @@ $ tracker create "Retried" --project DM
 Created DM-1: Retried
 $ tracker criterion add DM-1 --judge $DEMO/judge/lib.json
 Added criterion 1 to DM-1, a judge: The code does the work
-Its question is asked at start and at submit, once every other gate passes.
+Its question is asked at start, and at submit once every other gate passes.
 $ jq '.projects.DM.judge = {max_failures: 2}' $TRACKER_HOME/config.json > $DEMO/config.new && mv $DEMO/config.new $TRACKER_HOME/config.json
 $ reply no
 $ printf 'fn run() {\n    todo!("dm stub")\n}\n' > dm/src/lib.rs
@@ -276,7 +278,7 @@ $ tracker create "No login" --project EM
 Created EM-1: No login
 $ tracker criterion add EM-1 --judge $DEMO/judge/lib.json
 Added criterion 1 to EM-1, a judge: The code does the work
-Its question is asked at start and at submit, once every other gate passes.
+Its question is asked at start, and at submit once every other gate passes.
 $ printf 'Not logged in\n' > $DEMO/judge/reply.json
 $ tracker start EM-1
 Asking criterion 1's judge 1 question: `$DEMO/judge/fake`
@@ -302,7 +304,7 @@ Filters: status in-progress, review or done.
 Notes on the output:
 
 - The commit SHA differs on every run.
-- **The `criterion add --judge` lines** say the question is asked "at start and at submit", since before `start` it's asked at `start` too, and for a `diff` judge that's the moment it needs a commit.
+- **The `criterion add --judge` lines** say the question is asked "at start, and at submit once every other gate passes". `start` grades the judges whatever the checks did, since a check is expected to fail then, and for a `diff` judge that's the moment it needs a commit. Before TR-52 the line read "at start and at submit, once every other gate passes", which suggested a failing test at `start` spared the judge a call.
 - **BM-1** shows G1's refusal for a `diff` judge with no commit, `start` going ahead once `test(BM-1): …` is committed, and `started.checks` recording the judge as `failed`, which is what the line "criterion 1 failed" means: it didn't pass.
 - **DM-1's `gates` before `start`** runs the judge on the stub and fails G3, but `has("DM-1")` is `false`: nothing was counted. `judge/failures.json` exists at that point because BM-1's and CM-1's starts made it ([What judge/failures.json holds](#what-judgefailuresjson-holds)).
 - **The request asked at `start` is cached.** Both `start DM-1` and the next `gates` print "answered from the cache", because the stub didn't change between the open item's `gates` and `start`. `at_start` holds one request, and `failed` is empty after the repeat.
@@ -321,7 +323,7 @@ No command or flag is new, and no `--json` shape changed. Seven commands behave 
 | `gates <ID>` | For an item in progress, a run that fails a request not seen before counts once toward T11 in `judge/failures.json`. For an open item or one in review, nothing is counted. T11 runs with the other triggers once every gate passes |
 | `submit <ID>` | Counts its own run toward T11 if it failed a new request, under the lock, then runs T11 with the other triggers. T13 now reads judges |
 | `approve <ID>` | Runs T11 on the requests already counted. It counts nothing new, since the item is in review |
-| `criterion add --judge`, `criterion set --judge` | The message says the question is asked "at start and at submit" |
+| `criterion add --judge`, `criterion set --judge` | The message says the question is asked "at start, and at submit once every other gate passes" |
 | `show <ID>` | Prints `started.checks` for judges too, as "criterion N passed" or "failed" |
 | `submit --help` | Names T11 and says T13 covers judges |
 
@@ -344,7 +346,7 @@ The file is JSON that `tracker` writes, with the temporary-file-and-rename every
 
 ### G1 for judges
 
-`apply` in [src/main.rs](../src/main.rs) handles `start` (and every other move) and loads the item's items and config first. It extends G1's report with `gates::g1_judges` before it tests whether G1 passed, so one refusal lists the item's missing criteria, a busy project and every judge with nothing to grade. `g1_judges` finds the project root (the whole list fails with one message if it can't) and asks `judge::nothing_at_start` about each judge criterion. That function reads the inputs the way G3 does, a file with `read_file` and `diff` with `read_diff` after `git::item_commits` finds at least one commit, strips comments, and finds the `each` excerpts with the same `excerpts` function. It never calls the judge. A criterion with no `each` has one excerpt per input, so only a missing file or an empty diff can fail it.
+`apply` in [src/main.rs](../src/main.rs) handles `start` (and every other move) and loads the item's items and config first. It extends G1's report with `gates::g1_judges` before it tests whether G1 passed, so one refusal lists the item's missing criteria, a busy project and every judge with nothing to grade. `g1_judges` finds the project root (the whole list fails with one message if it can't) and asks `judge::nothing_at_start` about each judge criterion. That function reads the inputs the way G3 does, a file with `read_file` and `diff` with `read_diff` after `git::item_commits` finds at least one commit, strips comments, and finds the `each` excerpts with the same `excerpts` function. It never calls the judge. A criterion with no `each` gets one excerpt holding every input, so only a missing file or an empty diff can fail it.
 
 ### Running the judges at start
 
@@ -358,7 +360,7 @@ With the lock held, and only if the item has a judge criterion, `judge::record_s
 
 ### T11, and T13 for judges
 
-`triggers::run` takes the item's `failed` runs as a new argument, read by `failed_requests` in [src/main.rs](../src/main.rs) (empty for an item with no judge, without reading the file), and `t11` fires when there are at least `max_failures` of them, with a message that names each question once and, for one that failed in more than one run, how many ("c1:works (2 runs)"), with the project's `max_failures()` (default `DEFAULT_MAX_FAILURES`, 3, in [src/config.rs](../src/config.rs)). T11 runs after T10 and before T13, and every pinned list of triggers gained it, which is why six of the older tests changed. A project can switch T11 off in `review.disabled`, like any trigger except T6, T10 and T12 (`config::ALWAYS_ON`, unchanged) ([Decisions](#decisions-worth-knowing)).
+`triggers::run` takes the item's `failed` runs as a new argument, read by `failed_runs` in [src/main.rs](../src/main.rs) (empty for an item with no judge, without reading the file), and `t11` fires when there are at least `max_failures` of them, with a message that names each question once and, for one that failed in more than one run, how many ("c1:works (2 runs)"), with the project's `max_failures()` (default `DEFAULT_MAX_FAILURES`, 3, in [src/config.rs](../src/config.rs)). T11 runs after T10 and before T13, and every pinned list of triggers gained it, which is why six of the older tests changed. A project can switch T11 off in `review.disabled`, like any trigger except T6, T10 and T12 (`config::ALWAYS_ON`, unchanged) ([Decisions](#decisions-worth-knowing)).
 
 T13 reads `started.checks` as it did, and `t13` says "judge" for an entry whose criterion is a judge and "check" for the rest. A judge given after `start` has no entry, which T13 reads as not passing, and the change that gave it fired T5.
 
@@ -366,13 +368,14 @@ T13 reads `started.checks` as it did, and `t13` says "judge" for an entry whose 
 
 | File | What's new or changed |
 | --- | --- |
-| [src/judge.rs](../src/judge.rs) | `nothing_at_start` (G1's reasons), `ItemFailures` and `FailedRequest` (the file's shape, one run's `requests` and `refs`), `record_start`, `record_failures` (one run, one entry), `failed_requests`, `read_failures` and `write_failures` |
+| [src/judge.rs](../src/judge.rs) | `nothing_at_start` (G1's reasons), `ItemFailures` and `FailedRun` (the file's shape, one run's `requests` and `refs`), `record_start`, `record_failures` (one run, one entry), `failed_runs`, `read_failures` and `write_failures` |
 | [src/gates.rs](../src/gates.rs) | `g1_judges` (G1's judge half), `grade_judges` (one loop for G3 and `start`, which `judges` now calls) and `judge_criteria` |
 | [src/triggers.rs](../src/triggers.rs) | `t11` (counts runs, names each question once), T11 in `run` (a new `failed` argument), and `t13`'s judge wording |
 | [src/config.rs](../src/config.rs) | `DEFAULT_MAX_FAILURES` and `Project::max_failures`. The `max_failures` field was already read and kept, and now it has a reader |
 | [src/store.rs](../src/store.rs) | `judge_failures_path` |
-| [src/main.rs](../src/main.rs) | `apply` (G1 for judges, grading at `start` and recording it only for an item with a judge, counting at `submit`, `started.checks` for judges), `gates_dry_run`, `count_failures`, `failed_requests`, `judge_passed`, `judges_at_start`, `approve` (reads the counted requests), `criterion_judge`'s message, `judges_at_start`'s warning, and the `start` and `submit` help text |
+| [src/main.rs](../src/main.rs) | `apply` (G1 for judges, grading at `start` and recording it only for an item with a judge, counting at `submit`, `started.checks` for judges), `gates_dry_run`, `count_failures`, `failed_runs`, `judge_passed`, `judges_at_start`, `approve` (reads the counted runs), `criterion_judge`'s message, `judges_at_start`'s warning, and the `start` and `submit` help text |
 | [tests/judges_first.rs](../tests/judges_first.rs) | New, 804 lines, 29 tests: 20 in `tr10_c1` to `tr10_c6`, and 9 in `tr51_c1` to `tr51_c4`, added by review 1's fixes, with the helpers `with_each_judge` and `said` |
+| [tests/judge_add_message.rs](../tests/judge_add_message.rs) | New, 40 lines, 1 test, added by review 2's fixes: `tr52_c1_add_judge_says_the_question_is_asked_at_start_and_at_submit_once_other_gates_pass` |
 | [tests/common/mod.rs](../tests/common/mod.rs) | `Env::guard` and `guard_dir`, `guarded_path` and `GUARD_MESSAGE`, and `write_guards`. `Env::cmd` and `Env::std_cmd` put the guard's folder first on `PATH` |
 | [tests/judges.rs](../tests/judges.rs) | The fake judge answers unsure while `at-start` exists, `start_and_work` and `start` start with it and change both messages, two tests start directly, and `tr45_c2` commits a stub first |
 | [tests/gates.rs](../tests/gates.rs), [tests/review.rs](../tests/review.rs) and [tests/states.rs](../tests/states.rs) | T11 in the six pinned trigger lists (one, four and one) |
@@ -384,7 +387,7 @@ To count another kind of failure toward T11, give `record_failures` its answers,
 
 ## Testing
 
-Run the test command in `tracker/`. TR-10's criteria run their own tests by prefix, such as `cargo test --test judges_first tr10_c1_`, and TR-51's by `tr51_c1` to `tr51_c4`. No test calls `tracker-judge` or the real `claude`.
+Run the test command in `tracker/`. TR-10's criteria run their own tests by prefix, such as `cargo test --test judges_first tr10_c1_`, and TR-51's by `tr51_c1` to `tr51_c4`, and TR-52's by `cargo test --test judge_add_message tr52_c1`. No test calls `tracker-judge` or the real `claude`.
 
 **The harness change.** Every `Env` now has a `guard` folder, outside the work folder's repository, with a `tracker-judge` and a `claude` that read stdin, print `a test reached the real judge command: <name> isn't a fake. Set the store's judge.command to one.` on stderr and exit 1. `Env::cmd` and `Env::std_cmd` put that folder first on `PATH`, so a test that leaves the judge command at its default, `tracker-judge`, reaches only the guard, and one that sets a fake reaches the fake. A test that spawns something else by hand must use `guarded_path`.
 
@@ -426,15 +429,26 @@ Not covered by a test: `criterion remove` renumbering a judge's `started.checks`
 | 5: DESIGN.md §2.4, §2.5, §3 and §4.2 say what slice 14 does. | Four `grep -qF` checks in the item's check, each of a phrase the docs commit added |
 | 6: DESIGN.md §7 and §6's T11 row name the free tries before `start`, and §7 names removing `failures.json`. | Three `grep -qF` checks, as for criterion 5 |
 
-**Seen failing first.** Criteria 1, 2, 4, 5 and 6 failed at `start`, at `8c85448`. Criterion 3 passed at `start`, since it pins code that already worked (`count_failures` counts only an item in progress), and the builder saw it fail by temporarily making `count_failures` count items in review. `tr51_c2_a_request_with_two_failing_questions_counts_once` also passes on the old code, so criterion 2's check failed at `start` through its other two tests. `tr51_c4`'s test of T11's message was edited after `start`, in `ab22bb7`: its first version read `--json`, which never holds the message, so it now reads the text output. That edit is why T4 fired.
+**Seen failing first.** Criteria 1, 2, 4, 5 and 6 failed at `start`, at `8c85448`. Criterion 3 passed at `start`, since it pins code that already worked (`count_failures` counts only an item in progress), and the builder saw it fail by temporarily making `count_failures` count items in review. `tr51_c2_a_request_with_two_failing_questions_counts_once` also passes on the old code, so criterion 2's check failed at `start` through its other two tests. `tr51_c4_criterion_add_judge_doesnt_say_the_question_is_asked_only_at_submit` was edited after `start`, in `ab22bb7`: its first version read `criterion add --json`, so it now reads the text output. As review 2 found, the first version couldn't pass on any code, so its failure at `start` proved nothing, and criterion 4's check failed for the right reason through its other three tests, which fail on the code before TR-51. `tr51_c4_t11_names_each_failed_question_once` reads the hold from `--json` and is unchanged since `8c85448`. That edit is why T4 fired.
+
+### Coverage of review 2's fixes (TR-52)
+
+| TR-52 criterion | Tests |
+| --- | --- |
+| 1: `criterion add --judge` says the question is asked at start, and at submit once every other gate passes. | `tr52_c1_add_judge_says_the_question_is_asked_at_start_and_at_submit_once_other_gates_pass` in [tests/judge_add_message.rs](../tests/judge_add_message.rs), and `tr51_c4_criterion_add_judge_doesnt_say_the_question_is_asked_only_at_submit`, whose second assertion now expects the new wording |
+| 2: no source file names `FailedRequest` or `failed_requests`, and T11's records are `FailedRun` and `failed_runs`. | The item's check, `test -f src/judge.rs && ! grep -rqE 'FailedRequest\|failed_requests' src/ && grep -rqF 'FailedRun' src/judge.rs`. The doc comments' wording isn't checked |
+
+**Seen failing first.** Both checks failed at `start`, at `32a9256`. Criterion 2's check failed because the old names were in `src/`. `1d0932c` edited the existing `tr51_c4_…` assertion, which pinned the old message, after `start`, and that is why T4 fired. It should have been edited in the test commit, so it was seen failing first, and the builder should have said so. The other assertion in that test is unchanged.
 
 ### Checks done by hand
 
 | What | How | Result |
 | --- | --- | --- |
-| The demo above | Run line by line with the fake judge, stderr captured, on a temporary `TRACKER_HOME`, with the temporary folder replaced by `$DEMO`, again after review 1's fixes. The real `claude` and `tracker-judge` weren't called | The output above. Every refusal exits as marked. Three outputs changed: the `criterion add --judge` lines, T11's message and the warning for an ungraded judge |
+| The demo above | Run line by line with the fake judge, stderr captured, on a temporary `TRACKER_HOME`, with the temporary folder replaced by `$DEMO`, again after review 1's fixes and again after review 2's. The real `claude` and `tracker-judge` weren't called | The output above. Every refusal exits as marked. After review 1, three outputs changed: the `criterion add --judge` lines, T11's message and the warning for an ungraded judge. After review 2, only the four `criterion add --judge` lines changed, apart from the commit SHA |
 | TR-10's checks, before the approve | The orchestrator checked by hand that the four written criteria are unchanged, that all six checks failed at `start`, and that every commit since `start` is scoped to TR-10 | All three held |
 | TR-51's checks, before the approve | The orchestrator checked by hand that the 6 written criteria are unchanged and that every commit since `start` is scoped to TR-51 | Both held |
+| TR-52's checks, before the approve | The orchestrator checked by hand that the 2 written criteria are unchanged and that every commit since `start` is scoped to TR-52 | Both held |
+| TR-52's approve in a real terminal | The user read the diff and approved it | `by: human` at `1d0932c`, with `refs/tracker/TR-52` |
 | TR-51's approve in a real terminal | The user read the diff and approved it | `by: human` at `42f3128`, with `refs/tracker/TR-51` |
 | TR-10's approve in a real terminal | The user read the diff and typed `TR-10` into `tracker approve TR-10` | `by: human` at `fdaa0cb`, with `refs/tracker/TR-10`, and four holds |
 
@@ -470,6 +484,7 @@ These are the "Slice 14 must decide" points from slice 13's reviews, and what th
 - **The harness guard is on `PATH`, not in the store.** A test sets the store's `judge.command` to a fake, or reaches only the guard. The guard folder is outside the work folder's repository, so it never makes a file in a project's tree, and no test needs the installed `tracker-judge` or the real `claude`.
 - **`judge/failures.json` is outside the item,** so a `gates` dry run can count without writing the item file. [§2.4](DESIGN.md#24-gates-is-it-finished) says so: a dry run can't be used to try out rewordings for free.
 - **T11's message names each question once.** A question that failed in more than one run says how many: "c1:works (2 runs)". It tells a reader which questions failed and how often, not how the requests differ, which `failures.json` keeps by fingerprint.
+- **T11's records are named for runs.** `FailedRun` and `failed_runs` hold and return one entry for each run, not for each request. Review 2 asked for the rename because slices 15 and 16 build on these names, and `failures.json`'s field names didn't change.
 - **`start` leaves `judge/failures.json` alone for an item with no judge.** One damaged file would otherwise stop every project's `start`, TR's included, after its checks had run.
 
 ## Fixes after review 1
@@ -482,13 +497,14 @@ TR-51 is a `fix`, created at 2026-11-23T16:01:54Z and tracked with the installed
 
 | Step | When (UTC) | What |
 | --- | --- | --- |
-| Tests, committed | before 16:04:36Z | `8c85448` |
+| Tests, committed | 16:04:26Z | `8c85448`, 10 seconds before `start` |
 | `tracker start TR-51` | 16:04:36Z | `started.head` `8c85448`. Criterion 3's check passed, and the other five failed |
 | The code and docs | after `start` | `ab22bb7`, `a40e720` and `42f3128` |
+| `tracker submit TR-51` | 16:16:35Z | The gates passed, then the triggers ran. Held under T4, T7, T8 and T13 |
 | `tracker approve TR-51` | 16:30:25Z | From a terminal, verified `human` at `42f3128`, with `refs/tracker/TR-51` |
 
 - **The four holds** are T4, "existing test file modified: tests/judges_first.rs (ab22bb7 after start, 42f3128 after start)", T7, "373 lines changed, more than the project's max_diff_lines of 300", T8 (DESIGN.md) and T13 (criterion 3). The user read the diff and approved them.
-- **Why T4 fired.** `tests/judges_first.rs` changed after `start`: `ab22bb7` made `tr51_c4`'s test of T11's message read the text output, and `42f3128` made a section comment a plain comment. Both edit tests TR-51 added, so no test that existed before the slice was weakened.
+- **Why T4 fired.** `tests/judges_first.rs` changed after `start`: `ab22bb7` made `tr51_c4_criterion_add_judge_doesnt_say_the_question_is_asked_only_at_submit` read `criterion add`'s text output, not its `--json`, and `42f3128` made a section comment a plain comment. Both edit tests TR-51 added, so no test that existed before the slice was weakened.
 - **Criterion 3 passed at `start`**, so `tr51_c3_` pins working code. The builder saw it fail by temporarily making `count_failures` count items in review. The item doesn't record that.
 
 ### Bugs
@@ -535,9 +551,68 @@ Left for TR-11 and TR-12, as the review wrote them: whether a disputed fail coun
 - A `criterion add --judge` message and a `start` warning changed, and T11's message reads differently, so a script that matches the old text breaks.
 - `start` on an item with no judge never reads `judge/failures.json`.
 
+## Fixes after review 2
+
+[Review 2](reviews/slice-14-review-2.md) found that TR-51's fixes are in and do what review 1's Outcome says, and that nothing blocks the install, with two bugs, two security items, two design questions, one test gap, one process item and points for slices 15 and 16. Its main finding was that a run is a weaker unit than a request both ways: fixing an `each` judge's matches one run at a time is still held (design 1), and one run can try several wordings (security 1). The two bugs were fixed as one item, TR-52, with its test committed before `tracker start`: `32a9256` (the test) and `1d0932c` (the code). Everything else was folded into later items, which write it into DESIGN.md before they start, or left on purpose. The review's [Outcome](reviews/slice-14-review-2.md#outcome) gives the reason for each decision.
+
+### Tracking TR-52
+
+TR-52 is a `fix`, created at 2026-11-23T16:54:50Z and tracked with the installed slice 13 binary, so T5, T13 and T14 ran on it. It has 2 criteria, and the orchestrator checked by hand that they're unchanged and that every commit since `start` is scoped to TR-52.
+
+| Step | When (UTC) | What |
+| --- | --- | --- |
+| Test, committed | 16:55:42Z | `32a9256`, 4 seconds before `start` |
+| `tracker start TR-52` | 16:55:46Z | `started.head` `32a9256`. Both checks failed |
+| The code | 17:02:44Z | `1d0932c` |
+| `tracker submit TR-52` | 17:07:36Z | The gates passed, then the triggers ran. Held under T4 |
+| `tracker approve TR-52` | 17:10:25Z | From a terminal, verified `human` at `1d0932c`, with `refs/tracker/TR-52` |
+
+- **The one hold** is T4, "existing test file modified: tests/judges_first.rs (1d0932c after start)". `1d0932c` changed one assertion of `tr51_c4_criterion_add_judge_doesnt_say_the_question_is_asked_only_at_submit` so it expects the new message. The assertion that the text doesn't say "asked at submit" is unchanged, so nothing was weakened, and the user read the diff. The edit belonged in the test commit, before `start`, and the builder should have said it wasn't.
+
+### Bugs
+
+| Finding | Commit | Fix | Tests |
+| --- | --- | --- | --- |
+| Bug 1: `criterion add --judge` says the question waits for every other gate at `start` too | `1d0932c` | The message reads "Its question is asked at start, and at submit once every other gate passes." (and "Its N questions are asked …"), in `criterion_judge` in [src/main.rs](../src/main.rs) | `tr52_c1_add_judge_says_the_question_is_asked_at_start_and_at_submit_once_other_gates_pass`, failed at `start` |
+| Bug 2: six doc comments and a type's name still describe requests, not runs | `1d0932c`, option (a) | `FailedRequest` and `failed_requests` became `FailedRun` and `failed_runs` in [src/judge.rs](../src/judge.rs), [src/main.rs](../src/main.rs) and [src/triggers.rs](../src/triggers.rs), and seven doc comments were reworded to say runs. `failures.json`'s field names are unchanged | Criterion 2's `grep` check, failed at `start` |
+
+### Security items
+
+| Finding | Where it went | Why |
+| --- | --- | --- |
+| Security 1: one run can try several wordings, as separate `each` matches, for the cost of one T11 run | TR-11 criterion 6, option (a): DESIGN.md §7 says so | Unlikely, and the tries are in the item's commits. Option (b), counting a run once for each new question and matched line, is close to counting requests again |
+| Security 2: a shelve, reopen and `start` empties the T11 count | TR-11 criterion 6, option (a): DESIGN.md §7 says so | Unlikely, and the digest lists the shelve. Slice 16's digest marking the pair is left for TR-12, with no criterion yet |
+
+### Design decisions
+
+| Question | Decision | Where it went |
+| --- | --- | --- |
+| Design 1: fixing an `each` judge's matches one run at a time is still held | Option (a): say to fix every failing match before running `gates` again, since a fix changes its neighbours' requests | TR-11 criterion 7: DESIGN.md's T11 row and §5. Option (b), comparing by question and matched line, waits for `judges` to show how often T11 holds are approved |
+| Design 2: two of TR-51's phrases left repeated clauses in DESIGN.md | Drop the repeats from §6's T11 row and §7's forged-cache bullet | TR-11 criterion 8 |
+
+### Test gaps
+
+| Finding | Decision |
+| --- | --- |
+| Test gap 1: no test of a run that repeats a counted request beside a new one | Won't fix: low harm. A change that recorded every failed ref in a counted run would make T11's "(n runs)" overstate, and no test would catch it |
+
+### Process
+
+Process 1 is done in this update and in [review 1's Outcome](reviews/slice-14-review-1.md#outcome): the test edited after `start` in `ab22bb7` was `tr51_c4_criterion_add_judge_…`, not T11's message test, a criterion with no `each` gets one excerpt holding every input, not one per input, and the TR-51 table now gives the test commit at 16:04:26Z and its submit at 16:16:35Z ([Testing](#testing)).
+
+### Slice 15 must decide
+
+Review 2's points are left for TR-11 and TR-12, except where noted: [Limits](#limits-and-what-later-slices-change) has them. TR-12's missing PLAN.md bullet, `audit` reporting a done item whose `refs/tracker/<ID>` is missing or doesn't match its record's `commit`, is now TR-12's criterion 7.
+
+### A few consequences
+
+- `criterion add --judge`'s message changed again, so a script that matches the TR-51 wording breaks.
+- The names `FailedRequest` and `failed_requests` are gone. Nothing outside the crate used them.
+- TR-11 now has 8 criteria and TR-12 has 7. The written ones are unchanged.
+
 ## Still open
 
-From the build, the checks and [review 1](reviews/slice-14-review-1.md). The slice 13 findings it took are done ([What's in this slice](#whats-in-this-slice)), and so are review 1's fixes ([Fixes after review 1](#fixes-after-review-1)).
+From the build, the checks and reviews [1](reviews/slice-14-review-1.md) and [2](reviews/slice-14-review-2.md). The slice 13 findings it took are done ([What's in this slice](#whats-in-this-slice)), and so are review 1's fixes ([Fixes after review 1](#fixes-after-review-1)) and review 2's two bugs ([Fixes after review 2](#fixes-after-review-2)).
 
 **Deferred items:**
 
@@ -556,16 +631,18 @@ From the build, the checks and [review 1](reviews/slice-14-review-1.md). The sli
 - **A judge whose call failed at `start`** (review 1, bug 2) is outside T13 and counts toward T11 from its first answer. §2.4 and §2.5 say so.
 - **Removing `judge/failures.json`** clears every item's T11 count and leaves nothing for `audit` (review 1, security 2). §7 says so, and the error says a human should decide.
 
-**Test gaps** (see [Testing](#testing)): `criterion remove` renumbering a judge's entry, and `approve` reading T11.
+**Folded into later items, not done** ([review 2](reviews/slice-14-review-2.md)): security 1 and 2 (TR-11 criterion 6), design 1 (TR-11 criterion 7) and design 2 (TR-11 criterion 8) are DESIGN.md changes TR-11 makes before it starts. Until then DESIGN.md doesn't say that one run can try several wordings, that a shelve, reopen and `start` empties the count, or that an agent should fix every failing `each` match before running `gates` again. A false hold from design 1 is likely the first time a project uses an `each` judge on matches close together.
 
-**Left for slices 15 and 16** (review 1's "Slice 15 must decide" and slice 16 points, not changed here): [Limits](#limits-and-what-later-slices-change) has them.
+**Test gaps** (see [Testing](#testing)): `criterion remove` renumbering a judge's entry, `approve` reading T11, and, from review 2's test gap 1, a run that repeats a counted request beside a new one (won't fix).
+
+**Left for slices 15 and 16** (the "Slice 15 must decide" and slice 16 points of both reviews, not changed here): [Limits](#limits-and-what-later-slices-change) has them.
 
 **Carried from slice 13** ([its Still open](slice-13-readme.md#still-open)): the empty temporary folder a timed-out `tracker-judge` leaves, the tests needing Node, `judge-eval` not run with the installed binary and `claude-sonnet-5-5` not rerun, and the points slice 13 carried from slice 12 (TR-44, the cache key, the `approve` ordering and the cosmetic help text for `--judge`).
 
 ## Limits, and what later slices change
 
-- **Slice 15** disputes a `no`. A dispute holds the item under T12, and T11 still counts the run that has a disputed fail, since `submit` counts before it decides whether the gates passed. Review 1 would count it, as now, since a dispute is a fail the agent chose to argue. Either way slice 15 must say so in the T11 row of [§2.5](DESIGN.md#25-review-triggers-does-it-need-a-human) and pin it with a test, and a change goes in `record_failures`. It must also decide whether T11 holds are per question: a hold names its questions only inside its message, since `Hold` has no refs, and `failures.json`'s refs are emptied by the next `start`, so `approve` and `reject` can't record a decision against each question without the hold carrying them as data. `approve` counts questions held under T10 or T12 as passed for that approval only, and it reads `judge/failures.json` through `failed_requests` without counting, so a T11 hold stays a hold for it. Slice 15 must also decide whether a missing `reason` fails the call, a point carried from slice 13.
-- **Slice 16**'s `audit` and `judges` read the store. `judge/failures.json` is a new file that hand-editing or removing resets for every item (its error says a human should decide), and `audit` doesn't read it, so a count moved by hand isn't reported. Slice 16 must decide whether `audit` reads it, and say in §7 what it can't catch. The file is reset at each `start` and left behind when an item is deleted, so `judges` and the digest need T11's refs kept somewhere that lasts: the hold in `verification.triggers` keeps only the message. A report of the failed runs for each question would read its `refs`, which the file keeps for that, and `started.checks` is a list of passed flags whose criterion is either a check or a judge, so a reader must look at the criterion. The digest's judge entries read `verification.judges`, as before.
+- **Slice 15** disputes a `no`. A dispute holds the item under T12, and T11 still counts the run that has a disputed fail, since `submit` counts before it decides whether the gates passed. Review 1 would count it, as now, since a dispute is a fail the agent chose to argue. Either way slice 15 must say so in the T11 row of [§2.5](DESIGN.md#25-review-triggers-does-it-need-a-human) and pin it with a test, and a change goes in `record_failures`. It must also decide whether T11 holds are per question: a hold names its questions only inside its message, since `Hold` has no refs, and `failures.json`'s refs are emptied by the next `start`, so `approve` and `reject` can't record a decision against each question without the hold carrying them as data. `approve` counts questions held under T10 or T12 as passed for that approval only, and it reads `judge/failures.json` through `failed_requests` without counting, so a T11 hold stays a hold for it. Slice 15 must also decide whether a missing `reason` fails the call, a point carried from slice 13. [Review 2](reviews/slice-14-review-2.md#slice-15-must-decide) adds two more. Where a dispute lives while the item waits: `Hold` has only `trigger`, `message` and `files`, and `approve` runs the gates again, so the disputed refs and reasons need a field in the item and in `item.schema.json`, and `reject` needs somewhere to record its decision against each held question. And whether a `submit --dispute` refused with exit 1 for a ref the judge didn't fail still counts its run, since `submit` counts before it decides anything. TR-11 also takes criteria 6, 7 and 8, DESIGN.md changes that say what a T11 run can and can't bound, and it keeps T11's unit as it is unless it changes it before `judges` counts per question.
+- **Slice 16**'s `audit` and `judges` read the store. `judge/failures.json` is a new file that hand-editing or removing resets for every item (its error says a human should decide), and `audit` doesn't read it, so a count moved by hand isn't reported. Slice 16 must decide whether `audit` reads it, and say in §7 what it can't catch. The file is reset at each `start` and left behind when an item is deleted, so `judges` and the digest need T11's refs kept somewhere that lasts: the hold in `verification.triggers` keeps only the message. A report of the failed runs for each question would read its `refs`, which the file keeps for that, and `started.checks` is a list of passed flags whose criterion is either a check or a judge, so a reader must look at the criterion. The digest's judge entries read `verification.judges`, as before. TR-12's criterion 7 adds PLAN.md's `audit` check of `refs/tracker/<ID>`. Review 2 also wants the digest to make a shelve and reopen of an item with a judge criterion easy to spot, which has no criterion.
 - **Any change to the request** (the model, a prompt, a question) is a new fingerprint, so a run that fails it is new for T11, and a changed stub at `start` is a new `at_start` entry. The cache is keyed the same way, so unchanged work isn't asked again at `start`, at `gates` or at submit.
 - **TR-47 and a `diff` judge.** Until it's done, a `diff` judge sees comment text that §2.3.1 says it doesn't. A project shouldn't add one before then. Slice 14 doesn't change what the judge sees, only when it's asked.
 - **Interrupting `tracker`.** `start` now runs judges, so a Ctrl-C during `start` can leave the judge command and its `claude` running, as §7's interrupt bullet says for every command that runs judges. The bullet now lists them: `start`, `gates`, `submit` and `approve`.
