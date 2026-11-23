@@ -6,8 +6,8 @@
 //! the folder `RECORD` names: its arguments (`args-<n>`, each ending in a
 //! NUL), its stdin (`prompt-<n>`), its working folder (`cwd-<n>`) and what
 //! that folder held (`ls-<n>`). Then it prints `reply.json` from the same
-//! folder. With a `sleep` file there, it writes its pid to `pid-<n>` and
-//! sleeps instead of replying.
+//! folder. With a `sleep` file there, it only writes its pid to `pid-<n>`,
+//! first, and sleeps instead of recording or replying.
 //!
 //! The tests for each of TR-9's criteria start with its number, such as
 //! `c1_`, so each criterion's check runs only its own.
@@ -29,14 +29,14 @@ const FAKE_CLAUDE: &str = "#!/bin/sh
 dir=\"$RECORD\"
 n=$(ls \"$dir\" | grep -c '^args-')
 n=$((n + 1))
-printf '%s\\0' \"$@\" > \"$dir/args-$n\"
-pwd -P > \"$dir/cwd-$n\"
-ls -A > \"$dir/ls-$n\"
-cat > \"$dir/prompt-$n\"
 if [ -f \"$dir/sleep\" ]; then
   echo $$ > \"$dir/pid-$n\"
   exec sleep 30
 fi
+printf '%s\\0' \"$@\" > \"$dir/args-$n\"
+pwd -P > \"$dir/cwd-$n\"
+ls -A > \"$dir/ls-$n\"
+cat > \"$dir/prompt-$n\"
 cat \"$dir/reply.json\"
 ";
 
@@ -460,7 +460,9 @@ fn c5_a_judge_timeout_stops_the_claude_that_tracker_judge_started() {
     let command = format!("'{}'", tracker_judge());
     edit_config(&env, |config| {
         config["judge"] = json!({ "command": command, "model": MODEL });
-        config["projects"]["XX"]["judge"] = json!({ "timeout_secs": 1 });
+        // Long enough for tracker-judge to start `claude` when the whole
+        // suite runs at once.
+        config["projects"]["XX"]["judge"] = json!({ "timeout_secs": 3 });
     });
 
     let fake = Fake::new(&claude_reply(MODEL, "yes"));
