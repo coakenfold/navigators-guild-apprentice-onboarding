@@ -457,6 +457,7 @@ fn a_script_criterion_needs_no_evidence() {
                 { "trigger": "T9", "fired": false },
                 { "trigger": "T10", "fired": false },
                 { "trigger": "T11", "fired": false },
+                { "trigger": "T12", "fired": false },
                 { "trigger": "T13", "fired": false },
                 { "trigger": "T14", "fired": false }
             ],

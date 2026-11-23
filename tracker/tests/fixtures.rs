@@ -515,3 +515,43 @@ fn slice_12s_fixture_has_a_judge_criterion_and_judge_records() {
     assert!(lost.is_empty(), "{lost:?}");
     check_schema("item", &file);
 }
+
+/// Slice 15's held questions (§2.3.2, §2.7): XX-25 waits in review under
+/// T12 with the question it disputed, and XX-26 was approved, so its
+/// verification record and its approve's history entry keep it.
+#[test]
+fn slice_15s_fixtures_keep_each_held_question() {
+    assert_eq!(names_in("slice-15"), ["XX-25.json", "XX-26.json"]);
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/slice-15");
+    let held: Value =
+        serde_json::from_str(&fs::read_to_string(dir.join("XX-25.json")).unwrap()).unwrap();
+    assert_eq!(held["status"], "review");
+    let fields: Vec<&String> = held["held_questions"][0]
+        .as_object()
+        .unwrap()
+        .keys()
+        .collect();
+    assert_eq!(
+        fields,
+        ["trigger", "ref", "request", "answer", "reason", "dispute"]
+    );
+    let done: Value =
+        serde_json::from_str(&fs::read_to_string(dir.join("XX-26.json")).unwrap()).unwrap();
+    assert_eq!(done["verification"]["by"], "human");
+    assert_eq!(done["verification"]["held_questions"][0]["trigger"], "T12");
+    let approve = done["history"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["via"] == "approve")
+        .unwrap();
+    assert_eq!(approve["held_questions"][0]["ref"], "c1:works");
+    for name in ["XX-25.json", "XX-26.json"] {
+        let text = fs::read_to_string(dir.join(name)).unwrap();
+        let item = tracker::item::from_json(&text).unwrap();
+        assert_eq!(tracker::item::to_json(&item), text, "{name}");
+        let lost = tracker::item::lost_on_rewrite(&text).unwrap();
+        assert!(lost.is_empty(), "{name}: {lost:?}");
+        check_schema("item", &serde_json::from_str(&text).unwrap());
+    }
+}
