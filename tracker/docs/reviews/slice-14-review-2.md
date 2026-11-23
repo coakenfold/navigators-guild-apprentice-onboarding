@@ -21,6 +21,8 @@ Nothing blocks the install. TR-11 and TR-12 have no judge criteria, so `g1_judge
 
 For slice 15, the main point is where a dispute lives while the item waits in review, which neither `Hold` nor §4.3 has room for ([Slice 15 must decide](#slice-15-must-decide)). TR-12 is also missing one of PLAN.md's slice 16 bullets.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -82,3 +84,27 @@ From the readme: no test of `criterion remove` renumbering a judge's `started.ch
 - **Design 1 and security 1 here before T12.** If T11's unit changes again, as design 1's option (b) would, do it before `judges` counts T11 and T12 holds per question.
 - **TR-12 is missing PLAN.md's fifth slice 16 bullet**, "`audit` reports a done `auto` or `human` item whose `refs/tracker/<ID>` is missing, or doesn't point at its record's `commit`". `5eac0b0` added it to PLAN.md at 2026-11-21T15:14:12Z, after TR-12 was created at 07:07:43Z with six criteria, and `tracker show TR-12` still has six. Add it as a seventh criterion before TR-12's `start`. Adding one is allowed, and no written text changes.
 - **For slice 16's digest:** this review's security 2 is seen only as a shelve and a reopen of an item with a judge criterion, so the digest should make that pair easy to spot.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `c8f6e19`'s code, not at the fixed code. The two bugs were fixed as one tracker item, TR-52, with its test committed before `tracker start`, so the user approves once. The rest were folded into TR-11 and TR-12, before they start, or left on purpose. The readme's [Fixes after review 2](../slice-14-readme.md#fixes-after-review-2) lists them too.
+
+This round fixed bug 1 and bug 2 (option (a)), and took the review's pick for every other finding. The commits after this review (`cff2d49`), in order: `32a9256` (the test) and `1d0932c` (the code), both scoped to TR-52. The readme's update and the commit that adds this Outcome belong to no item.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: `criterion add --judge` says the question waits for every other gate at `start` too | TR-52, `1d0932c`: the message reads "Its question is asked at start, and at submit once every other gate passes." Test: `tr52_c1_add_judge_says_the_question_is_asked_at_start_and_at_submit_once_other_gates_pass`, which failed at `start` |
+| Bug 2: six doc comments and a type's name still describe requests, not runs | TR-52, `1d0932c`, option (a): `FailedRequest` and `failed_requests` became `FailedRun` and `failed_runs`, and seven doc comments were reworded. `failures.json`'s field names are unchanged. Check: criterion 2's `grep`, which failed at `start` |
+| Security 1: one run can try several wordings as separate `each` matches, and counts once | Folded into TR-11, criterion 6, option (a): DESIGN.md §7 says so. Not done yet, and TR-11 is not started |
+| Security 2: a shelve, reopen and `start` empties the T11 count | Folded into TR-11, criterion 6, option (a): DESIGN.md §7 says so. The digest marking the pair is left for TR-12, with no criterion |
+| Design 1: fixing an `each` judge's matches one run at a time is still held | Folded into TR-11, criterion 7, option (a): DESIGN.md's T11 row and §5 say to fix every failing match before running `gates` again. Option (b) waits for `judges` to show how often T11 holds are approved |
+| Design 2: two of TR-51's phrases left repeated clauses in DESIGN.md | Folded into TR-11, criterion 8: §6's T11 row and §7's forged-cache bullet drop the repeats |
+| Test gap 1: no test of a run that repeats a counted request beside a new one | Won't fix: low harm |
+| Process 1: the readme and review 1's Outcome name the wrong test as the one edited after `start` | Done in the readme's update and in review 1's Outcome: it was `tr51_c4_criterion_add_judge_doesnt_say_the_question_is_asked_only_at_submit`. The readme also now says a criterion with no `each` gets one excerpt holding every input, gives TR-51's test commit at 16:04:26Z and adds its submit at 16:16:35Z |
+| Slice 15 must decide | The missing PLAN.md bullet, `audit` checking `refs/tracker/<ID>`, is TR-12's criterion 7. The other points are left for TR-11 |
+
+Seen failing:
+
+- **TR-52's two criteria** both failed at `start`, at `32a9256`.
+
+TR-52 was held under T4 only, tracked by the installed slice 13 binary: `1d0932c` updated the existing `tr51_c4_criterion_add_judge_…` assertion, which pinned the old message, after `start`. The other assertion in that test is unchanged. The edit belonged in the test commit before `start`, and the builder should have said so. The user read the diff and approved it from a terminal: `human` at `1d0932c`, with `refs/tracker/TR-52`. The orchestrator checked by hand that its 2 written criteria are unchanged and that every commit since `start` is scoped to TR-52. It also checked that TR-11's and TR-12's written criteria are unchanged. After it, `cargo fmt --check`, `cargo clippy -- -D warnings` and all 504 tests pass, 1 more than at `c8f6e19`, in the new `tests/judge_add_message.rs`.
