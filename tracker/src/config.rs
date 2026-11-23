@@ -54,6 +54,9 @@ pub const DEFAULT_CONTEXT_LINES: usize = 12;
 /// A project's `judge.timeout_secs` when it isn't set (§4.2).
 pub const DEFAULT_JUDGE_TIMEOUT_SECS: u64 = 60;
 
+/// How many different failed judge requests hold an item by default (T11).
+pub const DEFAULT_MAX_FAILURES: u64 = 3;
+
 impl Config {
     fn judge(&self) -> Judge {
         self.judge.clone().unwrap_or_default()
@@ -112,7 +115,7 @@ pub struct Project {
 #[serde(deny_unknown_fields)]
 pub struct ProjectJudge {
     /// How many different failed judge requests hold an item (T11).
-    /// Slice 14 reads it, and it's kept as written until then.
+    /// `DEFAULT_MAX_FAILURES` when it isn't set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_failures: Option<u64>,
     /// `false` holds every item a judge passed (T10).
@@ -266,6 +269,15 @@ impl Project {
             .as_ref()
             .and_then(|judge| judge.auto_verify)
             .unwrap_or(true)
+    }
+
+    /// How many different failed judge requests since start hold an item
+    /// (T11, §4.2).
+    pub fn max_failures(&self) -> u64 {
+        self.judge
+            .as_ref()
+            .and_then(|judge| judge.max_failures)
+            .unwrap_or(DEFAULT_MAX_FAILURES)
     }
 
     /// How long the judge may take per question (§4.2).

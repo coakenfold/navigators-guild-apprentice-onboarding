@@ -81,13 +81,14 @@ enum Command {
     List(ListArgs),
     /// Start work on an open item: open → in-progress
     ///
-    /// Gate G1 runs first: the item needs at least one criterion, and no
-    /// other item in its project may be in progress or in review. If it
-    /// fails, start is refused with exit 2 and every reason, and nothing
-    /// changes. Then it records the commit HEAD points to, and each
-    /// criterion's check runs once and its result is recorded. A check is
-    /// expected to fail before the work is done, so start warns about one
-    /// that already passes, and goes ahead
+    /// Gate G1 runs first: the item needs at least one criterion, every
+    /// judge needs something to grade (a diff judge, a commit scoped to the
+    /// item), and no other item in its project may be in progress or in
+    /// review. If it fails, start is refused with exit 2 and every reason,
+    /// and nothing changes. Then it records the commit HEAD points to, and
+    /// each criterion's check and judge runs once and its result is
+    /// recorded. Each is expected not to pass before the work is done, so
+    /// start warns about one that already passes, and goes ahead
     Start {
         /// The item's ID, such as BM-12
         id: String,
@@ -104,9 +105,10 @@ enum Command {
     /// new source file, T2 a risky path, T3 a dependency manifest, T4 an
     /// existing test changed, T5 a criterion, check or design changed after
     /// start, T6 a manual criterion, T7 a large change, T8 the design doc,
-    /// T9 the label needs-review, T10 a judge's unsure answer, T13 a check
-    /// that already passed at start, and T14 a commit not scoped to an
-    /// item. The project's review settings in config.json tune them.
+    /// T9 the label needs-review, T10 a judge's unsure answer, T11 judges
+    /// that failed judge.max_failures different requests since start, T13 a
+    /// check or judge that already passed at start, and T14 a commit not
+    /// scoped to an item. The project's review settings in config.json tune them.
     /// A held item waits in review for a human to approve or reject it. Otherwise it goes to done, verified automatically against
     /// HEAD, with each check's last lines of output, and the git ref
     /// refs/tracker/<ID> keeps that commit
@@ -2005,6 +2007,10 @@ fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
     report.extend(gates::scripts(&item, &config));
     gates::tree_after_checks(&item, &config, &mut report)?;
     ask_judges(store, &item, &config, &mut report);
+    {
+        let _lock = store.lock()?;
+        count_failures(store, &item, &report)?;
+    }
     if !report.passed() {
         return Err(report.refusal(&id, item.status, Run::DryRun));
     }
@@ -2015,7 +2021,8 @@ fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
     );
     // Every gate passed, so the triggers run, as they would on a submit
     // (§2.5), and say whether it would be held.
-    let triggers = triggers::run(&item, &config, &report.judges)?;
+    let failed = failed_requests(store, &item)?;
+    let triggers = triggers::run(&item, &config, &report.judges, &failed)?;
     let holds = triggers::holds(&triggers);
     if !holds.is_empty() {
         text.push_str("A submit would be held for review:\n");
@@ -2051,6 +2058,26 @@ fn ask_judges(store: &Store, item: &Item, config: &config::Config, report: &mut 
     if report.passed() {
         report.extend(gates::judges(item, config, &store.judge_cache_dir()));
     }
+}
+
+/// Counts each request the judges in `report` failed toward T11, in
+/// `judge/failures.json`, if `item` is in progress (§2.4). A fail before
+/// `start` is expected, as at start, and an item in review is mine to
+/// decide, so neither counts. Call it holding the store's lock.
+fn count_failures(store: &Store, item: &Item, report: &gates::Report) -> Result<()> {
+    if item.status != Status::InProgress {
+        return Ok(());
+    }
+    judge::record_failures(&store.judge_failures_path(), &item.id, &report.judges)
+}
+
+/// The requests judges failed `item` on since its start (T11). An item
+/// with no judge criterion has none, and `judge/failures.json` isn't read.
+fn failed_requests(store: &Store, item: &Item) -> Result<Vec<judge::FailedRequest>> {
+    if !item.criteria.iter().any(|criterion| criterion.is_judge()) {
+        return Ok(Vec::new());
+    }
+    judge::failed_requests(&store.judge_failures_path(), &item.id)
 }
 
 fn unknown_project(config: &config::Config, key: &str) -> String {
@@ -2415,26 +2442,36 @@ fn apply(
     let mut report = None;
     let mut triggers = Vec::new();
     let mut started = Vec::new();
+    let mut judged = Vec::new();
     let mut head = None;
     let _lock = match via {
         Via::Start => {
             // A file that can't be read as an item can't say whether it's
             // in progress, so G1 fails on one in the item's project (§4.4).
             let (items, skipped) = store.load_items()?;
-            let g1 = gates::start(&item, &items, &skipped);
+            let config = config::load(store)?;
+            let mut g1 = gates::start(&item, &items, &skipped);
+            g1.failures.extend(gates::g1_judges(&item, &config));
             if !g1.passed() {
                 return Err(g1.refusal(&item.id, item.status, Run::Start));
             }
-            let config = config::load(store)?;
             head = gates::head_at_start(&item, &config)?;
+            // Checks and judges run without the lock, since they can take
+            // minutes (§4.4).
             drop(lock);
             started = gates::criterion_runs(&item, &config);
+            judged = gates::grade_judges(&item, &config, &store.judge_cache_dir());
             let lock = store.lock_unchanged_after_checks(&item.id, file, &command)?;
             let (items, skipped) = store.load_items()?;
             let g1 = gates::start(&item, &items, &skipped);
             if !g1.passed() {
                 return Err(g1.refusal(&item.id, item.status, Run::Start));
             }
+            let answers: Vec<judge::Answered> = judged
+                .iter()
+                .flat_map(|(_, graded)| graded.answers.iter().cloned())
+                .collect();
+            judge::record_start(&store.judge_failures_path(), &item.id, &answers)?;
             report = Some(g1);
             lock
         }
@@ -2446,10 +2483,12 @@ fn apply(
             gates::tree_after_checks(&item, &config, &mut gates)?;
             ask_judges(store, &item, &config, &mut gates);
             let lock = store.lock_unchanged_after_checks(&item.id, file, &command)?;
+            count_failures(store, &item, &gates)?;
             if !gates.passed() {
                 return Err(gates.refusal(&item.id, item.status, Run::Submit));
             }
-            triggers = triggers::run(&item, &config, &gates.judges)?;
+            let failed = failed_requests(store, &item)?;
+            triggers = triggers::run(&item, &config, &gates.judges, &failed)?;
             if triggers::holds(&triggers).is_empty() {
                 set_ref_at_head(&item, &config, &gates)?;
             } else {
@@ -2485,17 +2524,24 @@ fn apply(
     let mut warnings = Vec::new();
     if via == Via::Start {
         warnings = already_passing(&item, &started);
+        warnings.extend(judges_at_start(&item, &judged));
+        let mut checks: Vec<StartedCheck> = started
+            .iter()
+            .map(|(n, run)| StartedCheck {
+                criterion: *n,
+                passed: run.ok,
+            })
+            .collect();
+        checks.extend(judged.iter().map(|(n, graded)| StartedCheck {
+            criterion: *n,
+            passed: judge_passed(graded),
+        }));
+        checks.sort_by_key(|check| check.criterion);
         item.started = Some(Started {
             at: now,
             criteria_hash: Some(triggers::fingerprint(&item)),
             head,
-            checks: started
-                .iter()
-                .map(|(n, run)| StartedCheck {
-                    criterion: *n,
-                    passed: run.ok,
-                })
-                .collect(),
+            checks,
         });
     }
     // `verification` is only present while the item is done (§2.1). A file
@@ -2686,6 +2732,45 @@ fn already_passing(item: &Item, started: &[(usize, checks::Run)]) -> Vec<String>
             )
         })
         .collect()
+}
+
+/// Whether a judge passed when `start` ran it: every question answered,
+/// each with the passing answer (§2.4). A judge that couldn't be graded,
+/// or was answered unsure, didn't pass.
+fn judge_passed(graded: &judge::Graded) -> bool {
+    graded.failures.is_empty()
+        && !graded.answers.is_empty()
+        && graded
+            .answers
+            .iter()
+            .all(|answered| answered.outcome() == judge::Outcome::Pass)
+}
+
+/// `start`'s warning for each judge in `judged` that already passes, and
+/// each one that couldn't be graded. Neither refuses the start (§2.4): a
+/// judge that couldn't be graded counts as one that didn't pass, and G3
+/// asks it again at submit.
+fn judges_at_start(item: &Item, judged: &[(usize, judge::Graded)]) -> Vec<String> {
+    let mut warnings = Vec::new();
+    for (n, graded) in judged {
+        if judge_passed(graded) {
+            warnings.push(format!(
+                "Criterion {n}'s judge already passes before the work is done: every answer is \
+                 the passing one, so its questions can't tell the code now from the finished \
+                 work. Make sure they ask about what the work changes, and that the judge grades \
+                 a stub it fails. {} started anyway, and T13 will hold it.",
+                item.id
+            ));
+        }
+        for failure in &graded.failures {
+            warnings.push(format!(
+                "Criterion {n}'s judge couldn't be graded at start: {failure} It counts as not \
+                 passing, and is asked again at submit. {} started anyway.",
+                item.id
+            ));
+        }
+    }
+    warnings
 }
 
 /// A check a gate ran, as the verification record keeps it (§4.3).
@@ -3440,7 +3525,8 @@ fn approve(store: &Store, id: &str) -> Result<Output> {
     // cache. A judge that can't be graded now fails the gates below.
     let mut judged = gates::Report::default();
     ask_judges(store, &item, &config, &mut judged);
-    let holds = triggers::holds(&triggers::run(&item, &config, &judged.judges)?);
+    let failed = failed_requests(store, &item)?;
+    let holds = triggers::holds(&triggers::run(&item, &config, &judged.judges, &failed)?);
     tty::confirm(
         &command,
         &id,

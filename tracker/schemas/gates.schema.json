@@ -57,7 +57,7 @@
       }
     },
     "holds": {
-      "description": "Every trigger that fired, with the message saying why: what would hold a submit in review now. Empty when a submit would verify the item automatically. Each one is also in triggers, with fired true. Nothing is written: the item's own holds change only on a submit.",
+      "description": "Every trigger that fired, with the message saying why: what would hold a submit in review now. Empty when a submit would verify the item automatically. Each one is also in triggers, with fired true. The item file isn't written: its own holds change only on a submit. For an item in progress, each request a judge failed is counted toward T11 in judge/failures.json.",
       "type": "array",
       "items": { "$ref": "item.schema.json#/$defs/hold" }
     }
