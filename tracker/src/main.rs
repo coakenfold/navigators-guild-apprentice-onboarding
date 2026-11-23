@@ -1779,10 +1779,10 @@ fn criterion_judge(
     };
     let asked = &item.criteria[n - 1].ask;
     message.push_str(&if asked.len() == 1 {
-        "Its question is asked at start and at submit, once every other gate passes.\n".to_string()
+        "Its question is asked at start, and at submit once every other gate passes.\n".to_string()
     } else {
         format!(
-            "Its {} questions are asked at start and at submit, once every other gate passes.\n",
+            "Its {} questions are asked at start, and at submit once every other gate passes.\n",
             asked.len()
         )
     });
@@ -2021,7 +2021,7 @@ fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
     );
     // Every gate passed, so the triggers run, as they would on a submit
     // (§2.5), and say whether it would be held.
-    let failed = failed_requests(store, &item)?;
+    let failed = failed_runs(store, &item)?;
     let triggers = triggers::run(&item, &config, &report.judges, &failed)?;
     let holds = triggers::holds(&triggers);
     if !holds.is_empty() {
@@ -2073,11 +2073,11 @@ fn count_failures(store: &Store, item: &Item, report: &gates::Report) -> Result<
 
 /// The requests judges failed `item` on since its start (T11). An item
 /// with no judge criterion has none, and `judge/failures.json` isn't read.
-fn failed_requests(store: &Store, item: &Item) -> Result<Vec<judge::FailedRequest>> {
+fn failed_runs(store: &Store, item: &Item) -> Result<Vec<judge::FailedRun>> {
     if !item.criteria.iter().any(|criterion| criterion.is_judge()) {
         return Ok(Vec::new());
     }
-    judge::failed_requests(&store.judge_failures_path(), &item.id)
+    judge::failed_runs(&store.judge_failures_path(), &item.id)
 }
 
 fn unknown_project(config: &config::Config, key: &str) -> String {
@@ -2489,7 +2489,7 @@ fn apply(
             if !gates.passed() {
                 return Err(gates.refusal(&item.id, item.status, Run::Submit));
             }
-            let failed = failed_requests(store, &item)?;
+            let failed = failed_runs(store, &item)?;
             triggers = triggers::run(&item, &config, &gates.judges, &failed)?;
             if triggers::holds(&triggers).is_empty() {
                 set_ref_at_head(&item, &config, &gates)?;
@@ -3529,7 +3529,7 @@ fn approve(store: &Store, id: &str) -> Result<Output> {
     // cache. A judge that can't be graded now fails the gates below.
     let mut judged = gates::Report::default();
     ask_judges(store, &item, &config, &mut judged);
-    let failed = failed_requests(store, &item)?;
+    let failed = failed_runs(store, &item)?;
     let holds = triggers::holds(&triggers::run(&item, &config, &judged.judges, &failed)?);
     tty::confirm(
         &command,

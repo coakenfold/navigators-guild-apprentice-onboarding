@@ -7,7 +7,7 @@
 //! moved), T6 (a manual criterion), T7 (a large change), T8 (the design doc
 //! changed), T9 (the `needs-review` label), T10 (a judge answered unsure,
 //! or the project doesn't auto-verify judged work), T11 (judges failed
-//! `max_failures` runs that failed new requests since start), T13 (a check or judge
+//! `max_failures` runs that failed new questions since start), T13 (a check or judge
 //! passed before the work) and T14 (unscoped commits since start). T1 to T4, T7 and T8 read
 //! the item's changed files (§2.1), and T14 reads the commits made since
 //! start. A trigger in the project's `review.disabled` doesn't run, except
@@ -20,7 +20,7 @@ use crate::config::{self, Config, Review};
 use crate::error::{Error, Result};
 use crate::git;
 use crate::item::{Criterion, Hold, Item, Kind};
-use crate::judge::{Answered, FailedRequest, Outcome};
+use crate::judge::{Answered, FailedRun, Outcome};
 use crate::states;
 use sha2::{Digest, Sha256};
 
@@ -116,13 +116,13 @@ pub fn changes(root: &Path, id: &str, started: Option<&str>) -> Result<Changes> 
 
 /// Runs every trigger on `item` that its project doesn't switch off, in
 /// order, and returns each one. `judges` is every judge question G3 asked
-/// (T10), and `failed` every request judges failed since start (T11).
+/// (T10), and `failed` every run in which judges failed new requests since start (T11).
 /// Exits 3 if git can't say what the item's commits changed.
 pub fn run(
     item: &Item,
     config: &Config,
     judges: &[Answered],
-    failed: &[FailedRequest],
+    failed: &[FailedRun],
 ) -> Result<Vec<Ran>> {
     let project = config.projects.get(&item.project);
     let review = project.map(|project| project.review()).unwrap_or_default();
@@ -503,11 +503,11 @@ fn t10(judges: &[Answered], auto_verify: bool) -> Option<String> {
     })
 }
 
-/// T11: judges failed new requests in `max` or more runs since start
+/// T11: judges failed new questions in `max` or more runs since start
 /// (§2.5), so the work may have been changed until a judge passed. A run
-/// counts once, however many requests it failed, and fails at start don't
+/// counts once, however many questions it failed, and fails at start don't
 /// count. Each question is named once, with how many runs failed it.
-fn t11(failed: &[FailedRequest], max: u64) -> Option<String> {
+fn t11(failed: &[FailedRun], max: u64) -> Option<String> {
     if failed.is_empty() || (failed.len() as u64) < max {
         return None;
     }

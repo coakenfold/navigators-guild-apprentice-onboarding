@@ -760,7 +760,10 @@ mod tr51_c4 {
             .success();
         let text = String::from_utf8(output.get_output().stdout.clone()).unwrap();
         assert!(!text.contains("asked at submit"), "{text}");
-        assert!(text.contains("asked at start and at submit"), "{text}");
+        assert!(
+            text.contains("asked at start, and at submit once every other gate passes"),
+            "{text}"
+        );
     }
 
     #[test]

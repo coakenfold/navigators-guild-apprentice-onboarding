@@ -228,20 +228,21 @@ pub fn nothing_at_start(
 }
 
 /// What `judge/failures.json` keeps for one item (T11, §4.1): the
-/// requests asked at its last `start`, and each request a judge failed
+/// requests asked at its last `start`, and each run that failed a request
 /// since then, other than those.
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct ItemFailures {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     at_start: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    failed: Vec<FailedRequest>,
+    failed: Vec<FailedRun>,
 }
 
-/// One `gates` or `submit` run that failed new requests (T11): their
-/// fingerprints, and the refs of the questions in them that didn't pass.
+/// One `gates` or `submit` run that failed new requests (T11), counted once:
+/// the fingerprints of those requests, and the refs of the questions that
+/// didn't pass.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FailedRequest {
+pub struct FailedRun {
     pub requests: Vec<String>,
     pub refs: Vec<String>,
 }
@@ -270,7 +271,7 @@ fn write_failures(
     crate::store::write_file(path, &format!("{text}\n"))
 }
 
-/// Starts item `id`'s count of failed requests again, at `start`, keeping
+/// Starts item `id`'s count of failed runs again, at `start`, keeping
 /// the fingerprint of every request its judges were asked then: failing
 /// at start is expected, so those never count (§2.4). Call it holding the
 /// store's lock, at `path`, `judge/failures.json`.
@@ -291,7 +292,7 @@ pub fn record_start(path: &Path, id: &str, answers: &[Answered]) -> crate::error
     write_failures(path, &failures)
 }
 
-/// Counts one run for item `id` (T11) if `answers` hold a request a judge
+/// Counts one failed run for item `id` (T11) if `answers` hold a request a judge
 /// failed, with an answer that isn't the passing one, a fail or unsure,
 /// that wasn't asked at start or counted before. The run counts once,
 /// however many new requests it failed, so one try at an `each` judge
@@ -305,7 +306,7 @@ pub fn record_failures(path: &Path, id: &str, answers: &[Answered]) -> crate::er
     }
     let mut failures = read_failures(path)?;
     let item = failures.entry(id.to_string()).or_default();
-    let mut run = FailedRequest {
+    let mut run = FailedRun {
         requests: Vec::new(),
         refs: Vec::new(),
     };
@@ -329,7 +330,7 @@ pub fn record_failures(path: &Path, id: &str, answers: &[Answered]) -> crate::er
 }
 
 /// The runs counted against item `id` since its start (T11).
-pub fn failed_requests(path: &Path, id: &str) -> crate::error::Result<Vec<FailedRequest>> {
+pub fn failed_runs(path: &Path, id: &str) -> crate::error::Result<Vec<FailedRun>> {
     Ok(read_failures(path)?
         .remove(id)
         .map(|item| item.failed)
