@@ -577,3 +577,224 @@ mod tr10_c6 {
         );
     }
 }
+
+/// Slice 14's review-1 fixes (TR-51). Each criterion's tests are named
+/// `tr51_cN_`, so its check runs only them.
+
+/// `src/lib.rs` with three `bail!(` lines under `n` lines of header, so a
+/// larger `n` moves every match without changing its code.
+fn bails(env: &Env, n: usize) {
+    let header: String = (0..n).map(|i| format!("// header {i}\n")).collect();
+    write(
+        env,
+        "xx/src/lib.rs",
+        &format!(
+            "{header}fn a() {{ bail!(\"a\"); }}\nfn b() {{ bail!(\"b\"); }}\nfn c() {{ bail!(\"c\"); }}\n"
+        ),
+    );
+    git_commit_all(env.work.path(), &format!("feat(XX-1): header {n}"));
+}
+
+/// XX-1 with an `each` judge over the `bail!(` lines of `bails(.., 0)`,
+/// not yet started.
+fn with_each_judge() -> Env {
+    let env = Env::new();
+    env.add_project("XX", "xx");
+    write(&env, "xx/src/lib.rs", STUB);
+    git_commit_all(env.work.path(), "chore: the code before XX-1");
+    env.json(&["create", "a", "--project", "XX"]);
+    install_fake(&env);
+    bails(&env, 0);
+    env.commit_for("XX-1");
+    add_judge(
+        &env,
+        &json!({
+            "text": "Every error says what to do",
+            "inputs": ["src/lib.rs"],
+            "each": "bail!\\(",
+            "context_lines": 0,
+            "ask": [{ "id": "works", "ask": "Does this message say what to do?" }]
+        }),
+    );
+    env
+}
+
+/// The text of `output`'s `warnings`, or of an error's `error`.
+fn said(output: &Value) -> String {
+    output["warnings"].to_string().replace("\\\"", "\"") + output["error"].as_str().unwrap_or("")
+}
+
+mod tr51_c1 {
+    //! `start` on an item with no judge criterion ignores a damaged
+    //! `judge/failures.json`.
+    use super::*;
+
+    #[test]
+    fn tr51_c1_start_on_an_item_with_no_judge_ignores_a_damaged_failures_file() {
+        let env = Env::new();
+        env.add_project("XX", "xx");
+        env.create_bare("XX", "a");
+        env.json(&["criterion", "add", "XX-1", "it works", "--check", "false"]);
+        fs::create_dir_all(env.home.path().join("judge")).unwrap();
+        fs::write(
+            env.home.path().join("judge/failures.json"),
+            "{\"XX-9\": {\"failed\": [",
+        )
+        .unwrap();
+        let output = env.json(&["start", "XX-1"]);
+        assert_eq!(output["item"]["status"], "in-progress", "{output}");
+    }
+}
+
+mod tr51_c2 {
+    //! T11 counts each run that adds a new failed request once.
+    use super::*;
+
+    #[test]
+    fn tr51_c2_one_run_that_fails_three_matches_counts_once() {
+        let env = with_each_judge();
+        env.json(&["start", "XX-1"]);
+        assert_eq!(asked(&env), 3);
+        bails(&env, 1);
+        env.error_json_in(&env.outside(), &["gates", "XX-1"], 2);
+        assert_eq!(counted(&env), 1);
+        // The same run again adds nothing.
+        env.error_json_in(&env.outside(), &["gates", "XX-1"], 2);
+        assert_eq!(counted(&env), 1);
+        bails(&env, 2);
+        reply(&env, "yes");
+        let output = env.json(&["submit", "XX-1"]);
+        assert_eq!(output["result"], "done", "{output}");
+        t11_quiet(&output);
+    }
+
+    #[test]
+    fn tr51_c2_three_runs_that_each_fail_new_matches_hold_at_max_failures_3() {
+        let env = with_each_judge();
+        env.json(&["start", "XX-1"]);
+        for n in 1..=3 {
+            bails(&env, n);
+            env.error_json_in(&env.outside(), &["gates", "XX-1"], 2);
+        }
+        assert_eq!(counted(&env), 3);
+        bails(&env, 4);
+        reply(&env, "yes");
+        let output = env.json(&["submit", "XX-1"]);
+        assert_eq!(fired(&output), ["T11"], "{output}");
+    }
+
+    #[test]
+    fn tr51_c2_a_request_with_two_failing_questions_counts_once() {
+        let env = with_judge();
+        let mut judge = whole_judge();
+        judge["ask"] = json!([
+            { "id": "works", "ask": "Does this code do the work?" },
+            { "id": "clear", "ask": "Is this code clear?" }
+        ]);
+        let path = judge_dir(&env).join("two.json");
+        fs::write(&path, judge.to_string()).unwrap();
+        env.json(&["criterion", "remove", "XX-1", "1"]);
+        env.json(&[
+            "criterion",
+            "add",
+            "XX-1",
+            "--judge",
+            path.to_str().unwrap(),
+        ]);
+        let reply = json!({
+            "adapter": "fake 1", "model": MODEL, "cost_usd": 0,
+            "answers": {
+                "works": { "answer": "no", "reason": "No." },
+                "clear": { "answer": "no", "reason": "No." }
+            }
+        });
+        fs::write(judge_dir(&env).join("reply.json"), reply.to_string()).unwrap();
+        env.json(&["start", "XX-1"]);
+        work(&env, 1);
+        env.error_json_in(&env.outside(), &["gates", "XX-1"], 2);
+        assert_eq!(counted(&env), 1);
+    }
+}
+
+mod tr51_c3 {
+    //! A `gates` run on an item in review adds nothing to its T11 count.
+    use super::*;
+
+    #[test]
+    fn tr51_c3_gates_on_an_item_in_review_adds_nothing() {
+        let env = with_judge();
+        env.json(&["edit", "XX-1", "--label", "needs-review"]);
+        env.json(&["start", "XX-1"]);
+        work(&env, 1);
+        reply(&env, "yes");
+        let output = env.json(&["submit", "XX-1"]);
+        assert_eq!(output["result"], "held", "{output}");
+        assert_eq!(env.item("XX-1")["status"], "review");
+        reply(&env, "no");
+        work(&env, 2);
+        env.error_json_in(&env.outside(), &["gates", "XX-1"], 2);
+        assert_eq!(counted(&env), 0);
+    }
+}
+
+mod tr51_c4 {
+    //! Three messages read right, and a damaged `failures.json`'s error
+    //! doesn't suggest removing it.
+    use super::*;
+
+    #[test]
+    fn tr51_c4_criterion_add_judge_doesnt_say_the_question_is_asked_only_at_submit() {
+        let env = env_without_commit();
+        let path = judge_dir(&env).join("judge.json");
+        fs::write(&path, whole_judge().to_string()).unwrap();
+        let output = env.json(&[
+            "criterion",
+            "add",
+            "XX-1",
+            "--judge",
+            path.to_str().unwrap(),
+        ]);
+        let text = output.to_string();
+        assert!(!text.contains("asked at submit"), "{text}");
+        assert!(text.contains("asked at start and at submit"), "{text}");
+    }
+
+    #[test]
+    fn tr51_c4_start_names_an_ungraded_judges_subject_once() {
+        let env = with_judge();
+        reply_text(&env, "Sure! The answer is yes.");
+        let output = env.json(&["start", "XX-1"]);
+        let text = said(&output);
+        assert!(text.contains("couldn't be"), "{text}");
+        assert_eq!(text.matches("Criterion 1's judge").count(), 1, "{text}");
+    }
+
+    #[test]
+    fn tr51_c4_t11_names_each_failed_question_once() {
+        let env = with_judge();
+        max_failures(&env, 2);
+        env.json(&["start", "XX-1"]);
+        for n in 1..=2 {
+            work(&env, n);
+            env.error_json_in(&env.outside(), &["gates", "XX-1"], 2);
+        }
+        work(&env, 3);
+        reply(&env, "yes");
+        let output = env.json(&["submit", "XX-1"]);
+        let message = output["holds"][0]["message"].as_str().unwrap();
+        assert_eq!(message.matches("c1:works").count(), 1, "{message}");
+        assert!(message.contains("c1:works (2"), "{message}");
+    }
+
+    #[test]
+    fn tr51_c4_a_damaged_failures_file_error_doesnt_suggest_removing_it() {
+        let env = with_judge();
+        env.json(&["start", "XX-1"]);
+        fs::create_dir_all(env.home.path().join("judge")).unwrap();
+        fs::write(env.home.path().join("judge/failures.json"), "{\"XX-1\": {").unwrap();
+        let error = env.error_json_in(&env.outside(), &["gates", "XX-1"], 3);
+        let text = said(&error);
+        assert!(text.contains("failures.json"), "{text}");
+        assert!(!text.contains("remove it"), "{text}");
+    }
+}
