@@ -22,6 +22,8 @@ The findings that matter most:
 - **Bug 2:** a `diff` judge gets the text of a block comment whenever the hunk starts inside it, including a "reviewer: this is correct" line the agent adds. No project uses a `diff` judge yet.
 - **Design 1:** `approve` asks the user to decide a T10 hold without the question or excerpt it has just read, and `review` sends them to `tracker gates`, which re-runs every check to print it.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 Unchanged since review 1 except where noted. Every bullet still passes.
@@ -82,3 +84,26 @@ From [review 1](slice-12-review-1.md), as its Outcome left them:
 - **Review 1's points**, as carried above: the fingerprint and the adapter's version (security 1's option (a)), a model read from `modelUsage`, and the request's shape.
 
 For slice 14, which runs judges at `start`: bug 2 decides what a `diff` judge sees at `start` as at submit. For slice 15: a `diff` ref names a line of the patch text that every new item commit renumbers (test gap 1), so it decides whether a dispute's ref for a `diff` match names the changed file and its new line instead. It also chooses the stored excerpt (design 2's option (b)), which `approve` and `review` would then print with each reason (bug 1).
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `945390f`, not at the fixed code. Process 1 was fixed in the commit that saved this review, and the rest in one tracker item, TR-46, with its tests committed before `tracker start`. The readme's [Fixes after review 2](../slice-12-readme.md#fixes-after-review-2) lists them too.
+
+This round fixed bug 1, design 1, design 2 and process 1. The review's pick was taken every time: option (a) for design 1, design 2 and process 1, and bug 1's one fix. Bug 2 isn't fixed now: TR-47 (`fix`, low priority) tracks option (a), to do before any project gets a `diff` judge, and option (b), documenting it in DESIGN.md, wasn't taken. Test gap 1 won't be fixed. The points in "Slice 13 must decide" are left for slice 13 (TR-9). The commits after this review (`945390f`), in order: `e4b9dde` (this review, with process 1's fix), then `84b8c04` (tests) and `a59adbc` (the fix), both scoped to TR-46. The readme's update and the commit that adds this Outcome belong to no item. The readme's update was committed first, since its links into this review are checked at `HEAD` and this Outcome's links into the readme are checked at this file's last commit.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: with two or more unsure answers, no text output shows any reason | TR-46, `a59adbc`: `unsure_text` prints `unsure: <reason>` under each unsure answer's question, escaped as the question is, so `gates`, `submit` and now `approve` show every reason. Test: `tr46_c1::two_unsure_answers_each_show_their_reason_in_gates_and_submit`, which failed at `start` |
+| Bug 2: a `diff` judge gets the text of a block comment whenever the hunk starts inside it | Not fixed now. TR-47 tracks option (a), stripping each side of each file whole and mapping hunk lines back by the `@@` header. No project has a `diff` judge, and TR's languages use line comments. Slice 14, which runs judges at `start`, should have it done first. The readme's Still open lists it |
+| Design 1: `approve` asks the user to decide a T10 hold without the question and excerpt it has just read | TR-46, `a59adbc`, option (a): `decision_warning` takes the judges `approve` read from the cache and prints `unsure_text` of them, and `reject` passes none. Option (b), storing the excerpt on the hold, stays with slice 15. Test: `tr46_c2::approve_shows_the_question_excerpt_and_reason_of_an_unsure_answer`, which failed at `start` |
+| Design 2: `review`'s T10 hint is printed for an `auto_verify: false` hold, where `gates` shows no question | TR-46, `a59adbc`, option (a), the code half: the hint says "shows each unsure answer's question and excerpt" and is printed only when a T10 hold's message says "answered unsure". §3's `review` row is left unchanged, so the hint isn't in the design. Tests: `tr46_c3::review_hints_at_gates_for_an_unsure_answer` and `review_gives_no_hint_for_an_auto_verify_false_hold`, which failed at `start` |
+| Test gap 1: `tr45_c2` checks only that the ref starts `c1:diff:`, while the readme says the refs "name the file and line" | Won't fix. A `diff` ref names `diff` and a line of the combined patch text, and TR-45's criterion 2, which says the same, can't be reworded now. The readme's wording is corrected, and the test isn't changed |
+| Process 1: `cargo test` fails at the branch's tip, because review 1's Outcome links to a readme heading that the next commit adds | `e4b9dde`, option (a): the commit that saved this review also added a one-line pointer to it at the end of review 1's Outcome, so the link test reads review 1 at a commit where the readme's heading exists. Going forward, a readme's update is committed before the Outcome that links into it |
+| Carried from review 1: bug 1's option (b), bug 2's `$#`, bug 4, security 1's option (a), design 2's option (b) and design 3 | Unchanged, as listed above and in the readme's Still open |
+| Slice 13 must decide: the four points, and slices 14 and 15's | Left for slice 13 (TR-9), and for slices 14 and 15 |
+
+Seen failing:
+
+- **TR-46's criteria 1 to 3** failed at `start`: all 3 checks, one for each of its three modules in `tests/judges.rs`. No existing test was edited.
+
+TR-46 wasn't held: the installed slice 11 binary verified it automatically (`auto`) at `a59adbc`, with `refs/tracker/TR-46` and no holds. After it, `cargo fmt --check`, `cargo clippy -- -D warnings` and all 462 tests pass, 4 more than at `945390f`, all in `tests/judges.rs`.
