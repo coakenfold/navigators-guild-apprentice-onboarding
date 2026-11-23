@@ -6,8 +6,8 @@
 //! the folder `RECORD` names: its arguments (`args-<n>`, each ending in a
 //! NUL), its stdin (`prompt-<n>`), its working folder (`cwd-<n>`) and what
 //! that folder held (`ls-<n>`). Then it prints `reply.json` from the same
-//! folder. With a `sleep` file there, it only writes its pid to `pid-<n>`,
-//! first, and sleeps instead of recording or replying.
+//! folder. With a `sleep` file there, it only writes its working folder
+//! and its pid (`pid-<n>`), first, and sleeps instead of replying.
 //!
 //! The tests for each of TR-9's criteria start with its number, such as
 //! `c1_`, so each criterion's check runs only its own.
@@ -30,6 +30,7 @@ dir=\"$RECORD\"
 n=$(ls \"$dir\" | grep -c '^args-')
 n=$((n + 1))
 if [ -f \"$dir/sleep\" ]; then
+  pwd -P > \"$dir/cwd-$n\"
   echo $$ > \"$dir/pid-$n\"
   exec sleep 30
 fi
@@ -488,4 +489,8 @@ fn c5_a_judge_timeout_stops_the_claude_that_tracker_judge_started() {
         !running(pid),
         "claude ({pid}) is still running after the timeout"
     );
+    // The stopped tracker-judge couldn't remove the folder it ran `claude`
+    // in, so the test does.
+    let cwd = fs::read_to_string(fake.record.path().join("cwd-1")).unwrap();
+    let _ = fs::remove_dir(cwd.trim_end());
 }
