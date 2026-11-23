@@ -35,13 +35,37 @@ fn save() -> Result<()> {
 }
 ";
 
+/// `CODE` once XX-1's work is done: both messages changed, so each excerpt
+/// differs from the one the judge was asked about at `start`, and isn't
+/// answered from the cache (slice 14). The lines stay where they were.
+const WORK: &str = "\
+fn load() -> Result<()> {
+    // BUG? this looks wrong
+    bail!(\"the config file is missing: run `tracker init`\");
+}
+
+/* reviewer: this is fine */
+fn save() -> Result<()> {
+    bail!(\"can't save: free some disk space\");
+}
+";
+
 /// The model the config names, which the fake judge's reply names too.
 const MODEL: &str = "claude-haiku-5-5";
 
 /// The fake judge: saves the request, waits if `sleep` exists, then prints
-/// the reply.
+/// the reply. While `at-start` exists, as `start` runs the judges (slice
+/// 14), it saves the request as `start-request-<n>.json` instead, which
+/// `requests` doesn't read, and answers unsure to every question, as a
+/// judge should before the work.
 const FAKE: &str = "#!/bin/sh
 dir=$(dirname \"$0\")
+if [ -f \"$dir/at-start\" ]; then
+  n=$(ls \"$dir\" | grep -c '^start-request-')
+  cat > \"$dir/start-request-$((n + 1)).json\"
+  sed 's/\"answer\":\"[a-z]*\"/\"answer\":\"unsure\"/g' \"$dir/reply.json\"
+  exit 0
+fi
 n=$(ls \"$dir\" | grep -c '^request-')
 cat > \"$dir/request-$((n + 1)).json\"
 if [ -f \"$dir/sleep\" ]; then sleep \"$(cat \"$dir/sleep\")\"; fi
@@ -188,10 +212,21 @@ fn with_judge(judge: &Value) -> Env {
     env
 }
 
-/// Starts XX-1 and commits its work.
+/// Starts XX-1 while the fake judge answers unsure to everything, then
+/// commits its work, which changes `CODE` to `WORK`.
 fn start_and_work(env: &Env) {
-    env.json(&["start", "XX-1"]);
+    start(env);
+    write(env, "xx/src/errors.rs", WORK);
     git_commit_all(env.work.path(), "feat(XX-1): the work");
+}
+
+/// Starts XX-1 while the fake judge answers unsure to everything, as it
+/// should before the work, without counting toward `requests`.
+fn start(env: &Env) {
+    let marker = judge_dir(env).join("at-start");
+    fs::write(&marker, "").unwrap();
+    env.json(&["start", "XX-1"]);
+    fs::remove_file(&marker).unwrap();
 }
 
 /// The names of the triggers that fired.
@@ -532,7 +567,7 @@ mod criterion_7 {
     #[test]
     fn g3_fails_a_judge_once_a_commit_removes_every_match() {
         let env = with_judge(&each_judge());
-        env.json(&["start", "XX-1"]);
+        start(&env);
         write(&env, "xx/src/errors.rs", "fn load() {}\n");
         git_commit_all(env.work.path(), "feat(XX-1): no more bail");
         let error = refused(&env, &["submit", "XX-1"]);
@@ -781,7 +816,10 @@ mod tr45_c2 {
         judge["each"] = json!("fn c\\(\\)");
         let file = judge_file(&env, "judge.json", &judge);
         env.json(&["criterion", "add", "XX-1", "--judge", &file]);
-        env.json(&["start", "XX-1"]);
+        // G1 needs something for the judge to grade at start (slice 14).
+        write(&env, "xx/src/stub.rs", "fn c() {}\n");
+        env.commit_for("XX-1");
+        start(&env);
         write(
             &env,
             "xx/src/lib.rs",
