@@ -3789,7 +3789,10 @@ fn review(store: &Store) -> Result<Output> {
     for digest in &overdue {
         let key = &digest.project;
         let acknowledged = match digest.acknowledged {
-            Some(at) => format!("last acknowledged at {at}"),
+            Some(at) => format!(
+                "last acknowledged at {at}{}",
+                ack_detail(digest.last_ack.as_ref())
+            ),
             None => "never acknowledged".to_string(),
         };
         text.push("\n");
@@ -3825,12 +3828,16 @@ fn review(store: &Store) -> Result<Output> {
         let overdue: Vec<Value> = overdue
             .iter()
             .map(|digest| {
-                json!({
+                let mut one = json!({
                     "project": digest.project,
                     "entries": digest.entries(),
                     "oldest": digest.oldest(),
                     "acknowledged": digest.acknowledged,
-                })
+                });
+                if let Some(ack) = &digest.last_ack {
+                    one["last_ack"] = json!(ack);
+                }
+                one
             })
             .collect();
         json["overdue_digests"] = json!(overdue);
@@ -3943,7 +3950,8 @@ fn digest_text(digest: &digest::Digest) -> Styled {
         text.push(&match digest.acknowledged {
             Some(at) => format!(
                 "{key}'s digest is empty: nothing was auto-verified, shelved or done by hand \
-                 since it was last acknowledged, at {at}.\n"
+                 since it was last acknowledged, at {at}{}.\n",
+                ack_detail(digest.last_ack.as_ref())
             ),
             None => format!(
                 "{key}'s digest is empty: nothing has been auto-verified, shelved or done by \
@@ -3953,7 +3961,10 @@ fn digest_text(digest: &digest::Digest) -> Styled {
         return text;
     }
     let acknowledged = match digest.acknowledged {
-        Some(at) => format!("last acknowledged at {at}"),
+        Some(at) => format!(
+            "last acknowledged at {at}{}",
+            ack_detail(digest.last_ack.as_ref())
+        ),
         None => "never acknowledged".to_string(),
     };
     text.push_styled(&format!("{key}'s digest, {acknowledged}"), styled::HEADING);
@@ -3984,6 +3995,24 @@ fn digest_text(digest: &digest::Digest) -> Styled {
     text
 }
 
+/// What the last ack recorded, such as `, from a terminal, with 2 items and 1
+/// action`, so an ack I didn't make stands out. Empty without one.
+fn ack_detail(ack: Option<&digest::Ack>) -> String {
+    let Some(ack) = ack else {
+        return String::new();
+    };
+    let terminal = if ack.interactive {
+        "from a terminal"
+    } else {
+        "not from a terminal"
+    };
+    format!(
+        ", {terminal}, with {} and {}",
+        plural(ack.verified, "item", "items"),
+        plural(ack.actions, "action", "actions")
+    )
+}
+
 /// An auto-verified item in the digest: its title, commit and time, its
 /// criteria, and each judge answer and check its record holds.
 fn verified_text(entry: &digest::Verified) -> String {
@@ -4007,8 +4036,16 @@ fn verified_text(entry: &digest::Verified) -> String {
     }
     for judge in &record.judges {
         out.push_str(&format!(
-            "    judge {} answered {}: \"{}\"\n",
+            "    judge {}{} answered {}: \"{}\"\n",
             text::for_terminal(&judge.judge_ref, false),
+            match entry
+                .questions
+                .iter()
+                .find(|q| q.judge_ref == judge.judge_ref)
+            {
+                Some(q) => format!(" asked \"{}\"", text::for_terminal(&q.ask, false)),
+                None => String::new(),
+            },
             judge.answer.as_str(),
             text::for_terminal(&judge.reason, false)
         ));
@@ -4070,10 +4107,11 @@ fn action_text(action: &digest::Action) -> String {
     }
     out.push('\n');
     if action.judged == Some(true) {
-        out.push_str(
-            "    It has a judge criterion, and starting it again empties its T11 count, so look \
-             for a reopen and start after this.\n",
-        );
+        out.push_str(&format!(
+            "    It has a judge criterion, and starting it again empties its T11 count, so look in \
+             `tracker show {}` for a reopen and start after this.\n",
+            action.id
+        ));
     }
     for held in &action.held_questions {
         let judge_ref = text::for_terminal(&held.judge_ref, false);
@@ -4119,6 +4157,21 @@ fn digest_ack(store: &Store, project: Option<String>) -> Result<Output> {
         None => config::project_for_dir(&config, &current_dir()?)
             .ok_or_else(|| Error::input(no_project_here(&config)))?,
     };
+    let (_, skipped) = store.load_items()?;
+    let unreadable: Vec<String> = skipped
+        .iter()
+        .filter_map(|s| s.file.file_name()?.to_str().map(str::to_string))
+        .filter(|name| digest::key_of(name.trim_end_matches(".json")) == key)
+        .collect();
+    if !unreadable.is_empty() {
+        return Err(Error::store(format!(
+            "Can't acknowledge {key}'s digest while {} can't be read, since it may be an \
+             auto-verified item the digest would leave out unseen. Fix or restore it, then run \
+             `tracker digest ack --project {key}` again. `tracker digest --project {key}` \
+             says why it can't be read.",
+            unreadable.join(" and ")
+        )));
+    }
     let before = project_digest(store, &key)?;
     let command = format!("tracker digest ack --project {key}");
     let warning = format!(
@@ -4195,7 +4248,7 @@ fn audit(store: &Store) -> Result<Output> {
         let found = plural(problems.len(), "problem", "problems");
         text.push(&format!(
             "{found} found in {checked}, counters.json and deleted.json, each a sign that the \
-             store was edited by hand:\n"
+             store was edited by hand, or something audit couldn't check:\n"
         ));
         for problem in &problems {
             text.push(&format!(

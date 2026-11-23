@@ -57,6 +57,18 @@
           "acknowledged": {
             "description": "When the digest was last acknowledged, or null if it never was.",
             "oneOf": [{ "$ref": "item.schema.json#/$defs/time" }, { "type": "null" }]
+          },
+          "last_ack": {
+            "description": "The project's last ack as digests.json records it: when, whether it came from an interactive terminal, and how many items and actions it listed. Left out when it was never acknowledged.",
+            "type": "object",
+            "required": ["at", "interactive", "verified", "actions"],
+            "properties": {
+              "at": { "$ref": "item.schema.json#/$defs/time" },
+              "interactive": { "type": "boolean" },
+              "verified": { "type": "integer", "minimum": 0 },
+              "actions": { "type": "integer", "minimum": 0 }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false

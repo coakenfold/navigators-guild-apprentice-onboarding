@@ -28,6 +28,18 @@
           "description": "When digest ack last recorded this project's digest as seen, or null if it never has. Everything listed is from after it.",
           "oneOf": [{ "$ref": "item.schema.json#/$defs/time" }, { "type": "null" }]
         },
+        "last_ack": {
+          "description": "The project's last ack as digests.json records it: when, whether it came from an interactive terminal, and how many items and actions it listed. Left out when it was never acknowledged.",
+          "type": "object",
+          "required": ["at", "interactive", "verified", "actions"],
+          "properties": {
+            "at": { "$ref": "item.schema.json#/$defs/time" },
+            "interactive": { "type": "boolean" },
+            "verified": { "type": "integer", "minimum": 0 },
+            "actions": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
         "verified": {
           "description": "Every item auto-verified since the ack, the ones that passed on a judge first, then by when they were verified.",
           "type": "array",
@@ -45,6 +57,20 @@
                 "description": "Each criterion's text, numbered from 1 by position.",
                 "type": "array",
                 "items": { "type": "string" }
+              },
+              "questions": {
+                "description": "For a judge-passed item, each question its judges were asked, by ref such as c1:works, taken from the item's criteria. Left out when none.",
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["ref", "ask"],
+                  "properties": {
+                    "ref": { "type": "string", "minLength": 1 },
+                    "ask": { "type": "string", "minLength": 1 }
+                  },
+                  "additionalProperties": false
+                }
               },
               "verification": { "$ref": "item.schema.json#/$defs/verification" }
             },

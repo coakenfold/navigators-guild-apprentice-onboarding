@@ -32,6 +32,9 @@ pub struct Digest {
     /// When it was last acknowledged, or `None` if it never was. Everything
     /// listed is from after it.
     pub acknowledged: Option<Timestamp>,
+    /// The last ack as recorded, so an ack I didn't make stands out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_ack: Option<Ack>,
     /// Auto-verified items, the ones a judge passed first.
     pub verified: Vec<Verified>,
     /// Shelves, human actions and trigger-switching edits, oldest first.
@@ -46,7 +49,18 @@ pub struct Verified {
     /// Whether a judge passed it, rather than only scripts.
     pub judged: bool,
     pub criteria: Vec<String>,
+    /// Each question a judge was asked, from the item's criteria.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub questions: Vec<Asked>,
     pub verification: Verification,
+}
+
+/// A judge question that was asked, by its ref such as `c1:works`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Asked {
+    #[serde(rename = "ref")]
+    pub judge_ref: String,
+    pub ask: String,
 }
 
 /// A shelve, a human action or an edit that switched off a trigger.
@@ -154,6 +168,7 @@ pub fn build(project: &str, items: &[Item], deleted: &[Value], ack: Option<&Ack>
                 title: item.title.clone(),
                 judged: !record.judges.is_empty(),
                 criteria: item.criteria.iter().map(|c| c.text.clone()).collect(),
+                questions: asked(item, record),
                 verification: record.clone(),
             });
         }
@@ -224,9 +239,39 @@ pub fn build(project: &str, items: &[Item], deleted: &[Value], ack: Option<&Ack>
     Digest {
         project: project.to_string(),
         acknowledged: ack.map(|ack| ack.at),
+        last_ack: ack.cloned(),
         verified,
         actions,
     }
+}
+
+/// The question each of the record's judge answers was for, found by its
+/// ref `c<n>:<id>` in the item's criteria. An answer whose question is gone
+/// from the item is left out.
+fn asked(item: &Item, record: &Verification) -> Vec<Asked> {
+    let mut out = Vec::new();
+    for judge in &record.judges {
+        let Some((criterion, id)) = judge.judge_ref.split_once(':') else {
+            continue;
+        };
+        let Some(n) = criterion
+            .strip_prefix('c')
+            .and_then(|n| n.parse::<usize>().ok())
+        else {
+            continue;
+        };
+        let question = n
+            .checked_sub(1)
+            .and_then(|n| item.criteria.get(n))
+            .and_then(|c| c.ask.iter().find(|q| q.id == id));
+        if let Some(question) = question {
+            out.push(Asked {
+                judge_ref: judge.judge_ref.clone(),
+                ask: question.ask.clone(),
+            });
+        }
+    }
+    out
 }
 
 /// Whether `digest` is overdue: its oldest entry is at least `every_days`
