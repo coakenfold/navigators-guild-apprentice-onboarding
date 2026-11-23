@@ -227,9 +227,9 @@ How a judge runs:
 3. **Read the answer.** The CLI prints one JSON object. Fail if `is_error` is true, if the model it asked for isn't in `modelUsage`, or if `structured_output.answer` isn't `yes`, `no` or `unsure`. Otherwise take `answer` and `reason`.
 4. **Reply** with `{ "adapter": "tracker-judge <version>", "model": …, "answers": { "<id>": { "answer": …, "reason": … } }, "cost_usd": … }`. The tool keeps `adapter` beside the answers in its cache. It isn't part of the key (Cached by content). `cost_usd` adds up the CLI's own `total_cost_usd` for each call.
 
-This is what judge-eval's Node adapter (`judge-eval/adapters/claude.mjs`) does today, moved into Rust. Slice 13 of the build plan checks that the two run `claude` with the same arguments and prompt (§9).
+This is what judge-eval's Node adapter (`judge-eval/adapters/claude.mjs`) did, moved into Rust. judge-eval's `run.mjs` now runs `tracker-judge`, and the Node adapter is kept as the reference: a test runs both against a fake `claude` and checks that they run it with the same arguments and prompt (§9). The reply's `model` is the name `modelUsage` reported, not the request's copied back.
 
-A failed call (`claude` not installed or not logged in, no network, a usage limit reached, a timeout, a different model answering, no usable answer) exits with code 1 and a message. The judge then fails with that message, and it never counts as a pass.
+A failed call (`claude` not installed or not logged in, no network, a usage limit reached, a timeout, a different model answering, no usable answer) exits with code 1 and one short line on stderr, such as "asked for claude-haiku-5-5, but claude-sonnet-5-5 answered", and the request's other questions aren't asked. The judge then fails with that message, and it never counts as a pass. `tracker-judge` starts `claude` in its own process group, the one the tool stops when a judge runs too long, so a timeout stops `claude` too.
 
 #### 2.3.2 When a judge is wrong
 
