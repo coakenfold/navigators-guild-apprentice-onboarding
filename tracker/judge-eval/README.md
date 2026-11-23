@@ -14,6 +14,8 @@ node compare.mjs <model> ...  # just these
 
 `run.mjs` sends each case to `tracker-judge`, the tracker's own judge command, so the eval measures exactly what the tracker runs. It turns a judge request into `claude -p` calls: no tools, `--safe-mode` (no CLAUDE.md, hooks, skills or MCP servers), the judge's own system prompt, an empty working folder, and `--json-schema` so every reply is a one-sentence reason and `yes`, `no` or `unsure`. It fails if a different model answered than the one asked for. `adapters/claude.mjs` is the same adapter in Node, which ran the eval before `tracker-judge` existed. It's kept as the reference: `tests/tracker_judge.rs` checks that the two run `claude` with the same arguments and prompt, so re-run that test after changing either.
 
+`run.mjs` gives each `tracker-judge` call 120 seconds, and its timeout stops only tracker-judge and leaves claude running. A hung call runs on, and costs, until it ends: find it with `pgrep -f 'claude -p'`.
+
 ## Results
 
 Each run writes `results/<model>.json` with a summary (date, adapter, case-set fingerprint, cost at list price) and one row per case, including the model's reason. Re-running a model replaces its file. Results for models you've stopped using stay, so new candidates can be compared against them.
