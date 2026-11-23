@@ -54,7 +54,7 @@ The stack, where things live, the conventions and the test command are in `guild
 | 13  | Real Claude judge               | have judges answered by `claude-haiku-5-5`, with judge-eval running the same binary                   | 12         | —             | in review |
 | 14  | Judges must fail first          | have judges that pass before the work, or get retried until they pass, held                           | 11, 12     | —             | in review |
 | 15  | Disputes                        | dispute a judge's wrong fail and decide it myself                                                     | 9, 12      | —             | in review |
-| 16  | Digest, audit, judge report     | audit auto-verified and shelved items, the store, and each judge question's record                    | 15         | —             | todo   |
+| 16  | Digest, audit, judge report     | audit auto-verified and shelved items, the store, and each judge question's record                    | 15         | —             | in progress |
 
 Nothing is marked parallel. Slices 1–6 all edit the same clap definitions and item structs. From slice 7 on, the tool's own G1 rule allows only one item in progress per project.
 
