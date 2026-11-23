@@ -24,6 +24,8 @@ No finding blocks the install. The findings that matter most:
 
 TR-48 (what else a real judge sees besides the excerpt) and TR-47 (a `diff` judge's block comments) are open and deferred, and aren't reported again here.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -77,3 +79,32 @@ TR-48 (what else a real judge sees besides the excerpt) and TR-47 (a `diff` judg
 - **`tracker-judge` must be installed** before any TR item has a judge criterion (process 1). TR-10 to TR-12 have none.
 
 For slice 15: a dispute shows the model's `reason`, which `tracker-judge` passes on as the CLI gave it, and as an empty string when the CLI gave none ([tracker-judge.rs:209-217](../../src/bin/tracker-judge.rs#L209-L217)). Slice 15 should decide whether a missing reason fails the call, since a dispute with no model reason gives the user half the picture.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `b09863c`, not at the fixed code. The fixes were built as one tracker item, TR-49, with its tests committed before `tracker start`, so the user approves once, and the readme's [Fixes after review 1](../slice-13-readme.md#fixes-after-review-1) lists them too.
+
+This round fixed bug 1 (option (b)), bug 2, security 1 (option (b)), design 1 (option (b)), design 2, design 3, design 4, test gap 1 and test gap 2 for bug 2. The review's pick was taken every time. Bug 3 won't be fixed, as very unlikely. Security 1's option (a) waits for the next prompt change. Process 1 is the orchestrator's, after slice 13's install. The "Slice 14 must decide" points are left for slice 14 (TR-10). The commits after this review (`567272c`), in order: `2752253` (tests), `c4115cb` (the fix) and `9009d56` (DESIGN.md and judge-eval's README), all scoped to TR-49. The readme's update and the commit that adds this Outcome belong to no item.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: judge-eval no longer stops a `claude` call that hangs | TR-49, `9009d56`, option (b): [judge-eval/README.md](../../judge-eval/README.md) says `run.mjs`'s timeout "stops only tracker-judge and leaves claude running", and that `pgrep -f 'claude -p'` finds a hung call. Option (a), killing the group from `run.mjs`, wasn't taken. Check: criterion 4's `grep -qF`, which failed at `start` |
+| Bug 2: a `claude` that exits with an error and prints nothing gives a message that ends in a colon | TR-49, `c4115cb`: `ask` says `claude exited with <code> and printed nothing` when the line is empty. Test: `tr49_c1_a_claude_that_prints_nothing_fails_saying_so`, which failed at `start` |
+| Bug 3: a malformed later question is refused only after the earlier questions are asked | Won't fix. Very unlikely, since only a hand-written request can do it, and the harm is one wasted call. The readme's Still open lists it |
+| Security 1: a `</material>` in the excerpt closes the tag | TR-49, `9009d56`, option (b): §2.3.1's material bullet and §7's bullet on a swayed model say the excerpt can close the frame, and that T11, the digest and the `crit-inj-closes-material` case stand against it. Option (a), escaping the tag in both adapters and rerunning judge-eval, waits for the next prompt change. Check: part of criterion 3, which failed at `start` |
+| Design 1: a `modelUsage` that names the model asked for and another passes, and the reply names the model asked for | TR-49, `9009d56`, option (b): §2.3.1 says the check is that the model asked for is present in `modelUsage`, not that it wrote the answer, and that the reply's `model` always equals the request's. The readme's claim that the check "isn't vacuous" is corrected. Option (a) wasn't taken, since it guesses at how the CLI fills `modelUsage`. Check: part of criterion 3 |
+| Design 2: §7 says an interrupted `tracker` can leave a check running, and doesn't name judges | TR-49, `9009d56`: the bullet now says a check or a judge, and that a judge's `claude` call that finishes unseen still costs. Check: part of criterion 3 |
+| Design 3: §2.3.1's sentence on the process group reads both ways | TR-49, `9009d56`: "leaves `claude` in `tracker-judge`'s process group, which the tool stops when a judge runs too long". Check: part of criterion 3 |
+| Design 4: §2.3.1 and §2.3.2 give 48 cases and point to a §7 summary that isn't there | TR-49, `9009d56`: §2.3.1 keeps "48 labelled cases" and points to judge-eval's README, and §2.3.2 drops its "(§7)" and gives the 54-case run through `tracker-judge`. Check: part of criterion 3 |
+| Test gap 1: nothing ties the two adapters to §2.3.1's text | TR-49, `2752253`: a new test, `tr49_c2_the_first_call_has_the_flags_section_2_3_1_lists`, compares call 1's arguments with step 2's list written out in it. It's a new test, not an edit of `c1_`, so T4 stayed quiet |
+| Test gap 2: the fixes need tests that don't exist | TR-49, `2752253`: bug 2's, `tr49_c1_a_claude_that_prints_nothing_fails_saying_so`. The other tests (bug 3's, a two-model `modelUsage`, a request with no `state`) aren't added, since those fixes weren't taken |
+| Process 1: no check has run the installed `tracker-judge` | The orchestrator's, after slice 13's install. It's recorded here once done |
+| Slice 14 must decide: what a failed call counts as, what it means at `start`, signals at `start`, TR-47 and TR-48, and installing `tracker-judge` | Left for slice 14 (TR-10). Design 2's §7 fix covers the signals point |
+| For slice 15: whether a missing `reason` fails the call | Left for slice 15 |
+
+Seen failing:
+
+- **TR-49's criteria 1, 3 and 4** failed at `start`: bug 2's test and the `grep` checks on DESIGN.md and judge-eval's README.
+- **Criterion 2** (the first call's flags) passed at `start`, since `tracker-judge` already sent them, so its test pins working code. The builder saw it fail by renaming `--no-session-persistence` for a moment, then restored the file. The item doesn't record that.
+
+TR-49 was held under T8 (DESIGN.md) and T13 (criterion 2), and the user read its diff and approved it from a terminal: `human` at `9009d56`, with `refs/tracker/TR-49`. The installed slice 12 binary tracked it. The orchestrator checked by hand that its 4 written criteria are unchanged and that every commit since `start` is scoped to TR-49. After it, `cargo fmt --check`, `cargo clippy -- -D warnings` and all 474 tests pass, 2 more than at `b09863c`, both in `tests/tracker_judge.rs`.
