@@ -176,7 +176,11 @@ fn ask(model: &str, prompt: &str, folder: &Path) -> Result<Answered, String> {
         } else {
             stderr
         };
-        return Err(format!("{how}: {}", first_line(&said)));
+        let said = first_line(&said);
+        if said.is_empty() {
+            return Err(format!("{how} and printed nothing"));
+        }
+        return Err(format!("{how}: {said}"));
     };
     if out["is_error"] == true {
         let said = out["result"]
