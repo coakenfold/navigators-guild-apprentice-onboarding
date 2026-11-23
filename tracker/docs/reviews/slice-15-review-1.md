@@ -22,6 +22,8 @@ Nothing here blocks the install: TR-12 has no judge criterion, so T11 and T12 ne
 
 TR-47, TR-48 and TR-50 are still open and deferred, as the readme says.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -70,3 +72,30 @@ The _Prompt_'s other requirements pass too: `--dispute` is repeatable, `approve`
 - **What the digest shows of a dispute.** It lists each `approve` and `reject`. The disputed questions, with the model's and the agent's reasons, are in those entries, and an approved dispute is the line most worth a second look. Slice 14's review 2 also asked for a shelve and reopen of a judged item to stand out, and security 1's oracle leaves no line at all, so if it's left open, §7 should say so.
 - **What `audit` checks of `held_questions`.** It's present only while an item is in review, so one on an item in another state, a T12 hold with no T12 question, or a T12 question with no T12 hold was written by hand.
 - **The bootstrap.** Slice 15's binary will track TR-12. TR-12 has no judge criterion, so none of this slice's paths run for it, and its item file keeps slice 14's shape. If design 1's field is added, add it with a serde default and `skip_serializing_if`, as the others are.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `a49ee26`'s code, not at the fixed code. The fixes were built as one tracker item, TR-53, with its tests committed before `tracker start`, so the user approves once, and the readme's [Fixes after review 1](../slice-15-readme.md#fixes-after-review-1) lists them too.
+
+This round fixed security 1 (option (a)), design 1 (option (a)), design 2 (options (b) and (a)), design 3 (option (a)), bug 1 (option (a)), bug 2 (option (a)) and test gap 1. The review's pick was taken every time, except that security 1's option (b) was left, since (a) closes the oracle's free tries. The commits after this review (`dd16999`), in order: `109b32f` (tests), `aff07dc` (a test's marker text), `b09c5e6` (the code) and `7e32521` (DESIGN.md and a schema), all scoped to TR-53. The readme's update and the commit that adds this Outcome belong to no item.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: `--reason`'s help says it goes with "the --dispute before it", but the code pairs by position | TR-53, `b09c5e6`, option (a): the help says reasons pair with disputes by position, the first `--reason` with the first `--dispute`. Tests: `tr53_c4_reason_help_says_reasons_pair_by_position`, which failed at `start`, and `tr53_c4_two_disputes_then_two_reasons_pair_in_order`, which passed at `start` since the code was right |
+| Bug 2: during a judge outage, a dispute is refused with exit 1 as "no judge question … was asked" | TR-53, `b09c5e6` and `7e32521`, option (a): `apply` skips `check_disputes` when a G3 failure has no answer, so the submit is refused for the failed call with exit 2, and §2.3.2 says so. Test: `tr53_c5_a_dispute_during_an_outage_is_refused_for_the_failed_call`, which failed at `start` |
+| Security 1: a refused dispute is a free judge oracle that gets past T11 | TR-53, `b09c5e6` and `7e32521`, option (a): `count_failures` runs before `check_disputes`, so a refused dispute counts its run as a `gates` run does, and §2.3.2 and the T11 row say so. This reverses slice 14 review 2's advice. Option (b), refusing a ref that names no question before any judge is asked, isn't taken. Tests: `tr53_c1_a_refused_dispute_of_a_ref_nobody_asked_counts_a_failing_run` and the renamed `tr11_c2_a_dispute_refused_with_exit_1_counts_its_run_toward_t11`, which failed at `start`, and criterion 6's `grep` checks |
+| Design 1: a held question records its ref, not the question | TR-53, `b09c5e6` and `7e32521`, option (a): `HeldQuestion.ask`, with a serde default and left out when empty, in `item.schema.json`'s `held_question` and used by review, verification and history. §4.3 says `judges` groups by it within a project. Tests: `tr53_c2_`, 3 tests, which failed at `start`, one of them for files written without `ask` |
+| Design 2: under `auto_verify: false`, T10 holds with no question recorded, and `approve` and `reject` record from different runs | TR-53, `b09c5e6` and `7e32521`, options (b) and (a): `t10_questions` replaces `unsure_questions`, so every non-fail answer is recorded as T10 under `auto_verify: false`, and `approve` copies the submit's `held_questions`, as `reject` does. Tests: `tr53_c3_`, 3 tests, which failed at `start` |
+| Design 3: a held submit's JSON reports G3 as passed | TR-53, `7e32521`, option (a): §3 and `submit.schema.json` say a disputed fail leaves G3 `ok`, with the fail in `judges` and in `item.held_questions`. No code changed. Check: criterion 6's `grep` checks, which failed at `start` |
+| Test gap 1: nothing pins that a disputed fail counts toward T11 | TR-53, `109b32f`: `tr53_c1_a_held_dispute_of_a_new_failing_request_adds_one_run`, which passed at `start`, since the code already counted it. Criterion 1's check failed at `start` through the refused-dispute tests |
+| Test gap 2: only one of the input rules has a test | Not taken: low value. The pairing order is tested, under bug 1 |
+| Test gap 3: `show`'s text, a T10 reject and a combined T10 and T12 hold have no test | Not taken: low value. `tr53_c3_reject_records_every_question` records a T10 reject, as a side effect of design 2 |
+| Slice 16 must decide | Left for TR-12. Design 1, which was to come first, is done: a judge question is the `ask` in each entry |
+
+Seen failing:
+
+- **All 6 of TR-53's checks** failed at `start`. Criterion 4 failed through the help-text test only, since `tr53_c4_two_disputes_then_two_reasons_pair_in_order` passed before the work.
+- **`tr11_c2_a_dispute_refused_with_exit_1_counts_its_run_toward_t11`** is TR-11's test, renamed from `…counts_nothing_toward_t11` and changed to assert 1 run, in `109b32f`, before `start`.
+- **`tr53_c2_files_written_without_ask_round_trip_byte_for_byte`** had its marker text fixed after `start`, in `aff07dc`, since the fixture's criterion already held it. That is why T4 names `aff07dc`.
+
+TR-53 was held under T4, T7 (374 lines) and T8, tracked by the installed slice 14 binary. The user read its diff and approved it from a terminal: `human` at `7e32521`, with `refs/tracker/TR-53`. The orchestrator checked by hand that its 6 written criteria are unchanged and that every commit since `start` is scoped to TR-53. After it, `cargo fmt --check`, `cargo clippy -- -D warnings` and all 534 tests pass, 11 more than at `a49ee26`, all in `tests/disputes.rs`.
