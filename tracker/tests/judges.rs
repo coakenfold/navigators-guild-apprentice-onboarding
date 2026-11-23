@@ -927,3 +927,102 @@ mod tr45_c5 {
         assert!(message.contains("the model is down"), "{message}");
     }
 }
+
+/// What `command` prints to stdout and stderr, run outside the project.
+fn text_of(env: &Env, args: &[&str]) -> String {
+    let output = env
+        .cmd()
+        .current_dir(env.outside())
+        .args(args)
+        .output()
+        .unwrap();
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+}
+
+mod tr46_c1 {
+    //! With two or more unsure answers, `gates` and `submit` text show
+    //! each answer's reason beside its question and excerpt.
+    use super::*;
+
+    #[test]
+    fn two_unsure_answers_each_show_their_reason_in_gates_and_submit() {
+        let env = with_judge(&each_judge());
+        start_and_work(&env);
+        reply(&env, &[("suggests_next_step", "unsure")]);
+        let submitted = text_of(&env, &["submit", "XX-1"]);
+        let gates = text_of(&env, &["gates", "XX-1"]);
+        for shown in [&submitted, &gates] {
+            assert!(
+                shown.contains("judges answered unsure to 2 questions"),
+                "{shown}"
+            );
+            assert_eq!(
+                shown.matches("The fake judge says unsure.").count(),
+                2,
+                "{shown}"
+            );
+        }
+    }
+}
+
+mod tr46_c2 {
+    //! `approve`'s question for a T10 hold from an unsure answer shows
+    //! the answer's question, excerpt and reason.
+    use super::*;
+
+    #[test]
+    fn approve_shows_the_question_excerpt_and_reason_of_an_unsure_answer() {
+        let env = with_judge(&each_judge());
+        start_and_work(&env);
+        reply(&env, &[("suggests_next_step", "unsure")]);
+        let held = env.json(&["submit", "XX-1"]);
+        assert_eq!(held["result"], "held", "{held}");
+        let Some((output, ok)) =
+            env.in_terminal_typing(&["approve", "XX-1"], "Type XX-1 to confirm", "XX-2", || {})
+        else {
+            return;
+        };
+        assert!(!ok, "{output}");
+        assert!(
+            output.contains("Does this error message tell the user what to do next?"),
+            "{output}"
+        );
+        assert!(output.contains("the config file is missing"), "{output}");
+        assert!(output.contains("The fake judge says unsure."), "{output}");
+    }
+}
+
+mod tr46_c3 {
+    //! `review` gives the `gates` hint for a T10 hold only when a judge
+    //! answered unsure, not for an `auto_verify: false` hold.
+    use super::*;
+
+    #[test]
+    fn review_hints_at_gates_for_an_unsure_answer() {
+        let env = with_judge(&each_judge());
+        start_and_work(&env);
+        reply(&env, &[("suggests_next_step", "unsure")]);
+        env.json(&["submit", "XX-1"]);
+        let review = text_of(&env, &["review"]);
+        assert!(
+            review.contains("shows each unsure answer's question and excerpt"),
+            "{review}"
+        );
+    }
+
+    #[test]
+    fn review_gives_no_hint_for_an_auto_verify_false_hold() {
+        let env = with_judge(&each_judge());
+        set_project_judge(&env, json!({ "auto_verify": false }));
+        start_and_work(&env);
+        let held = env.json(&["submit", "XX-1"]);
+        assert_eq!(held["result"], "held", "{held}");
+        let review = text_of(&env, &["review"]);
+        assert!(review.contains("T10"), "{review}");
+        assert!(!review.contains("tracker gates XX-1"), "{review}");
+    }
+}
