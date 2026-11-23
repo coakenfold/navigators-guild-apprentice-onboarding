@@ -44,8 +44,10 @@ cat \"$dir/reply.json\"
 /// compiled, so before the binary exists the tests fail here rather than
 /// failing to compile.
 fn tracker_judge() -> &'static str {
-    option_env!("CARGO_BIN_EXE_tracker-judge")
-        .expect("there's no tracker-judge binary in this crate yet")
+    match option_env!("CARGO_BIN_EXE_tracker-judge") {
+        Some(path) => path,
+        None => panic!("there's no tracker-judge binary in this crate yet"),
+    }
 }
 
 /// judge-eval's Node adapter, the one tracker-judge must match.
