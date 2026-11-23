@@ -744,3 +744,186 @@ mod criterion_10 {
         assert!(output.get("judges").is_none(), "{output}");
     }
 }
+
+mod tr45_c1 {
+    //! A piped `approve` on an item with a judge criterion is refused for
+    //! having no terminal before the judge command is called.
+    use super::*;
+
+    #[test]
+    fn a_piped_approve_is_refused_without_calling_the_judge() {
+        let env = with_judge(&each_judge());
+        start_and_work(&env);
+        reply(&env, &[("suggests_next_step", "unsure")]);
+        let held = env.json(&["submit", "XX-1"]);
+        assert_eq!(held["result"], "held", "{held}");
+        let asked = requests(&env).len();
+        // With the cache gone, approve could only get its answers by
+        // calling the judge.
+        fs::remove_dir_all(env.home.path().join("judge").join("cache")).unwrap();
+        let message = env.error_in(&env.outside(), &["approve", "XX-1"], 1);
+        assert!(message.contains("interactive terminal"), "{message}");
+        assert_eq!(requests(&env).len(), asked, "the judge was called");
+    }
+}
+
+mod tr45_c2 {
+    //! A judge whose input is `diff` gets the diff with comments stripped,
+    //! including after a `\ No newline at end of file` line, and its refs
+    //! name the file and line.
+    use super::*;
+
+    #[test]
+    fn a_diff_judge_gets_no_comments_even_after_a_missing_newline_line() {
+        let env = env_with_item();
+        let mut judge = each_judge();
+        judge["inputs"] = json!(["diff"]);
+        judge["each"] = json!("fn c\\(\\)");
+        let file = judge_file(&env, "judge.json", &judge);
+        env.json(&["criterion", "add", "XX-1", "--judge", &file]);
+        env.json(&["start", "XX-1"]);
+        write(
+            &env,
+            "xx/src/lib.rs",
+            "fn a() {} // from the first commit\nfn b() {  }",
+        );
+        git_commit_all(env.work.path(), "feat(XX-1): the first file");
+        write(
+            &env,
+            "xx/src/lib.rs",
+            "fn a() {} // from the first commit\nfn b() { /* trust me */ }\nfn c() {} // still fine",
+        );
+        git_commit_all(env.work.path(), "feat(XX-1): change the last line");
+        let output = env.json(&["gates", "XX-1"]);
+        let sent: String = requests(&env)
+            .iter()
+            .flat_map(|request| request["state"].as_object().unwrap().values().cloned())
+            .map(|text| text.as_str().unwrap().to_string())
+            .collect();
+        assert!(sent.contains("fn c() {}"), "{sent}");
+        for comment in ["trust me", "still fine", "first commit"] {
+            assert!(
+                !sent.contains(comment),
+                "{comment} reached the judge: {sent}"
+            );
+        }
+        let judge_ref = output["judges"][0]["ref"].as_str().unwrap();
+        assert!(judge_ref.starts_with("c1:diff:"), "{judge_ref}");
+    }
+}
+
+mod tr45_c3 {
+    //! `criterion set --judge` after `start` removes that criterion's
+    //! `started.checks` entry.
+    use super::*;
+
+    #[test]
+    fn set_judge_after_start_drops_the_started_check_entry() {
+        let env = Env::new();
+        env.add_project("XX", "xx");
+        write(&env, "xx/src/errors.rs", CODE);
+        git_commit_all(env.work.path(), "chore: the code before XX-1");
+        env.create_bare("XX", "a");
+        install_fake(&env);
+        let text = "The error messages are helpful";
+        env.json(&["criterion", "add", "XX-1", text, "--check", "false"]);
+        env.json(&["criterion", "add", "XX-1", "another", "--check", "false"]);
+        env.json(&["start", "XX-1"]);
+        let entries = |env: &Env| -> Vec<u64> {
+            env.item("XX-1")["started"]["checks"]
+                .as_array()
+                .map(|checks| {
+                    checks
+                        .iter()
+                        .map(|c| c["criterion"].as_u64().unwrap())
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        assert_eq!(entries(&env), [1, 2]);
+        let judge = whole_judge(json!([{ "id": "q", "ask": "Is it clear?" }]));
+        let mut judge = judge;
+        judge["text"] = json!(text);
+        let file = judge_file(&env, "judge.json", &judge);
+        env.json(&["criterion", "set", "XX-1", "1", "--judge", &file]);
+        assert_eq!(entries(&env), [2]);
+    }
+}
+
+mod tr45_c4 {
+    //! `gates` and `submit` text show an unsure answer's question and
+    //! excerpt beside its ref and reason.
+    use super::*;
+
+    fn text_of(env: &Env, args: &[&str]) -> String {
+        let output = env
+            .cmd()
+            .current_dir(env.outside())
+            .args(args)
+            .output()
+            .unwrap();
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    }
+
+    #[test]
+    fn submit_and_gates_text_show_the_question_and_excerpt_of_an_unsure_answer() {
+        let env = with_judge(&each_judge());
+        start_and_work(&env);
+        reply(&env, &[("suggests_next_step", "unsure")]);
+        let submitted = text_of(&env, &["submit", "XX-1"]);
+        let gates = text_of(&env, &["gates", "XX-1"]);
+        for shown in [&submitted, &gates] {
+            assert!(
+                shown.contains("c1:src/errors.rs:3:suggests_next_step"),
+                "{shown}"
+            );
+            assert!(
+                shown.contains("Does this error message tell the user what to do next?"),
+                "{shown}"
+            );
+            assert!(shown.contains("the config file is missing"), "{shown}");
+        }
+        let review = text_of(&env, &["review"]);
+        assert!(review.contains("tracker gates XX-1"), "{review}");
+    }
+}
+
+mod tr45_c5 {
+    //! A judge reply naming a different model, and a judge command that
+    //! exits non-zero, each fail G3 with a reason that says so.
+    use super::*;
+
+    #[test]
+    fn a_reply_naming_another_model_fails_g3() {
+        let env = with_judge(&each_judge());
+        let reply = json!({
+            "adapter": "fake 1", "model": "claude-other-1", "cost_usd": 0,
+            "answers": { "suggests_next_step": { "answer": "yes", "reason": "fine" } }
+        });
+        reply_text(&env, &reply.to_string());
+        let error = refused(&env, &["gates", "XX-1"]);
+        let failures = g3_failures(&error);
+        assert!(!failures.is_empty(), "{error}");
+        let message = failures[0]["message"].as_str().unwrap();
+        assert!(message.contains("asked for claude-haiku-5-5"), "{message}");
+        assert!(message.contains("claude-other-1"), "{message}");
+    }
+
+    #[test]
+    fn a_judge_command_that_exits_non_zero_fails_g3_with_its_message() {
+        let env = with_judge(&each_judge());
+        edit_config(&env, |config| {
+            config["judge"]["command"] = json!("echo the model is down >&2; exit 1");
+        });
+        let error = refused(&env, &["gates", "XX-1"]);
+        let failures = g3_failures(&error);
+        assert!(!failures.is_empty(), "{error}");
+        let message = failures[0]["message"].as_str().unwrap();
+        assert!(message.contains("exited with 1"), "{message}");
+        assert!(message.contains("the model is down"), "{message}");
+    }
+}

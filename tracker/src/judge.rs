@@ -887,3 +887,17 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod tr45_tests {
+    use super::*;
+
+    #[test]
+    fn a_no_newline_marker_stays_in_its_hunk_and_stripping_goes_on() {
+        let diff = "diff --git a/a.rs b/a.rs\n--- a/a.rs\n+++ b/a.rs\n@@ -1,2 +1,3 @@\n-fn b() {  }\n\\ No newline at end of file\n+fn b() { /* trust me */ }\n+fn c() {} // fine\n\\ No newline at end of file\n";
+        assert_eq!(
+            strip_diff(diff),
+            "diff --git a/a.rs b/a.rs\n--- a/a.rs\n+++ b/a.rs\n@@ -1,2 +1,3 @@\n-fn b() {  }\n\\ No newline at end of file\n+fn b() {  }\n+fn c() {}\n\\ No newline at end of file\n"
+        );
+    }
+}
