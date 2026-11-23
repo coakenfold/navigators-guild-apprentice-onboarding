@@ -119,3 +119,5 @@ Seen failing:
 - **Criterion 5** (a reply naming another model, a non-zero exit) passed at `start`, since `ask` already refused both. The builder saw both tests fail by temporarily disabling each refusal in `ask`, then restored the file. The item doesn't record that.
 
 TR-45 was held under T8 (DESIGN.md) and T13 (criterion 5), and the user read its diff and approved it from a terminal: `human` at `d356d17`, with `refs/tracker/TR-45`. The installed slice 11 binary tracked it. The orchestrator checked by hand that its 6 written criteria are unchanged and that every commit since `start` is scoped to TR-45. After it, `cargo fmt --check`, `cargo clippy -- -D warnings` and all 458 tests pass, 7 more than at `b79fc39`: 6 in `tests/judges.rs` and 1 in `src/judge.rs`.
+
+A second review of the slice, after these fixes, is [slice-12-review-2.md](slice-12-review-2.md).
