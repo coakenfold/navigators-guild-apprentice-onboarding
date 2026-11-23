@@ -687,9 +687,10 @@ fn criterion_accept_refuses_a_done_item() {
 
 #[test]
 fn criterion_accept_refuses_a_newer_trackers_file_before_it_asks() {
-    // I wrote "Errors say what to do", then reworded it by hand as a judge
-    // criterion (slice 12), with `ask`, which this version doesn't know.
-    // Accepting it would mean rewriting the file without `ask`, so it's
+    // I wrote "Errors say what to do", then reworded it by hand as a
+    // criterion with `rubric`, a field from a newer tracker, which this
+    // version doesn't know. (Until slice 12 that field was a judge's `ask`.)
+    // Accepting it would mean rewriting the file without `rubric`, so it's
     // refused, and before asking me anything (review 2's bug 1).
     let env = Env::new();
     env.add_project("XX", "xx");
@@ -704,7 +705,7 @@ fn criterion_accept_refuses_a_newer_trackers_file_before_it_asks() {
     let mut item = env.item("XX-1");
     item["criteria"] = json!([{
         "text": "Errors say what to do, reworded",
-        "ask": ["Does each error message say how to fix the problem?"],
+        "rubric": ["Does each error message say how to fix the problem?"],
     }]);
     fs::write(
         env.item_path("XX-1"),
