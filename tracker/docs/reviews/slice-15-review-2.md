@@ -21,6 +21,8 @@ Nothing here blocks the install. TR-12 has no judge criterion, so none of this s
 
 TR-47, TR-48 and TR-50 are still open and deferred, as the readme says.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -83,3 +85,26 @@ From the readme's Still open, unchanged: no terminal `approve` of a T12 hold by 
 - **What the digest shows of a dispute.** An approved dispute, with the model's and the agent's reasons, is the line most worth a second look. A refused dispute now leaves its trace only as a counted run in `judge/failures.json`, which `start` empties, and in a T11 hold if it reaches one.
 - **What `audit` checks of `held_questions`**, as review 1 said: present only while an item is in review, so one on an item in another state, a T12 hold with no T12 question, or the reverse, was written by hand.
 - **The bootstrap.** Slice 15's binary tracks TR-12. TR-12 has no judge criterion, its item file keeps slice 14's shape, and none of its 7 criteria has a check yet, so each needs one, and its tests committed and seen failing, before `start`.
+
+## Outcome
+
+Added after the fix. The findings above are left as written, so their line links point at `4584bd5`'s code, not at the fixed code. The one bug was fixed as a tracker item, TR-54, with its tests committed before `tracker start`, and the readme's [Fixes after review 2](../slice-15-readme.md#fixes-after-review-2) lists everything too.
+
+This round fixed bug 1 (option (b)) and process 1, folded design 1 and design 3 into TR-12, and left design 2 and both test gaps. The review's pick was taken every time. The commits after this review (`f0141d1`), in order: `7752965` (tests) and `2a9989d` (the code), both scoped to TR-54, then `5be20bc`, the readme's update, which belongs to no item along with the commit that adds this Outcome.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: a refused dispute says "Nothing was changed." though it has just counted a run toward T11 | TR-54, `2a9989d`, option (b): a refused dispute, and a submit refused because a judge's answer wasn't a pass, end "<ID> wasn't changed." A refusal that counts nothing keeps "Nothing was changed." No count is shown, since option (a) would tell an agent how many tries are left. Tests: `tr54_c1_a_refused_dispute_says_the_item_wasnt_changed` and `tr54_c2_a_submit_refused_for_a_judge_fail_says_the_item_wasnt_changed`, which failed at `start`, and `tr54_c2_a_submit_refused_before_any_judge_is_asked_says_nothing_was_changed`, which passed at `start` and guards the wording that stays |
+| Design 1: an approve of a held question means different things in different entries | Folded into TR-12 before it starts, as its criterion 8, option (a): `judges` splits each question's counts by the held question's trigger and answer, and §6 says so. No change in slice 15 |
+| Design 2: a T10 hold that first appears at `approve` gets no decision recorded | Not taken: unlikely, and only `judges`' counts lose the decision |
+| Design 3: §2.3.2 says a failed call skips the dispute check, but the code skips it for any G3 failure with no answer | Folded into TR-12 before it starts, as its criterion 9, option (a): §2.3.2 says any G3 failure without a judge answer skips it. The code was right |
+| Test gap 1: no test covers a T10 hold that first appears at `approve` | Not taken, with design 2 |
+| Test gap 2: `unasked` is tested only for a failed call | Not taken: low, since every such case refuses with exit 2 anyway |
+| Process 1: the readme's "Test command" row names `4dce835` | Done in the readme's update, `5be20bc`: the row names `2a9989d`, the last commit to change code |
+| Slice 16 must decide | Left for TR-12, apart from design 1 and design 3, now its criteria 8 and 9. TR-12's seven written criteria are unchanged |
+
+Seen failing:
+
+- **Both of TR-54's checks** failed at `start`, at `7752965`, which was committed 3 seconds before it. Criterion 2 failed through the judge-fail test only, since the guard for the unchanged wording passed before the work. No existing test changed.
+
+TR-54 was verified `auto` at `2a9989d`, with `refs/tracker/TR-54` and no holds, tracked by the installed slice 14 binary. After it, `cargo fmt --check`, `cargo clippy -- -D warnings` and all 537 tests pass, 3 more than at `4584bd5`, all in `tests/refusal_wording.rs`.
