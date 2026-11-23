@@ -32,6 +32,8 @@ The findings that matter most:
 - **Bug 1:** T14's message says "which no item's scope covers" for a commit that another item's scope does cover.
 - **Design 1:** §5's agent block, §6 and §7 still say work scoped to another item's ID gets past T14.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -81,3 +83,30 @@ The findings that matter most:
 - **TR-8 under the new binary.** It's started after the install, so it gets a `criteria_hash`. Items started before the install have none, and T5 compares only `written` for them, so install between items, as the integration risk says.
 - **The T14 message.** If bug 1's fix changes the wording, the slice 11 fixture keeps the old one, and a new test reads the new one, so slice 12's test commit doesn't also have to edit it.
 - Review 1's five points, carried above, still stand.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `5548c3a`, not at the fixed code. The fixes were built as one tracker item, TR-43 ("Count a scope whose key isn't a project as unscoped for T14, and bring T14's wording up to date", kind `fix`), with its tests committed before `tracker start`, and the readme's [Fixes after review 2](../slice-11-readme.md#fixes-after-review-2) lists it too.
+
+This round fixed bug 1, security 1, design 1 and test gap 1, grouped into one item so the user approves once. The review's pick was taken for security 1, option (a), and its fix was taken for each of the others. Option (b) of security 1, requiring the other project's root to contain this one or sit inside it, wasn't taken. Process 1 is now a rule in the agents' standing brief. The points in "Slice 12 must decide" are left for slice 12 (TR-8), apart from which binary tracks these fixes. The commits after this review (`570de3b`), in order:
+
+- **Fixes:** `17c2c3e` (the tests), `dfce073` (the code) and `49cfa56` (DESIGN.md), all scoped to TR-43.
+- **Docs:** the readme's update and the commit that adds this Outcome, which belong to no item.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: T14's message says "which no item's scope covers" for a commit scoped to another item | TR-43, `dfce073`: `t14` takes the item's ID, and the message reads "an unscoped commit since start, not scoped to <ID>: …". The slice 11 fixture's stored message keeps the old wording, as the review allowed. Test: `commits_scoped_elsewhere::t14_says_a_commit_isnt_scoped_to_the_item`, a new test so T4 doesn't fire for it |
+| Security 1: a commit scoped to a key that isn't a project gets past T14 and every trigger that reads files | TR-43, `dfce073`, option (a): `git::unscoped` takes the registered projects' keys, which `triggers::run` reads from the config, and `is_another_projects` counts a scope as another project's work only when its key is one of them and isn't the item's own. §2.5's T14 row says so (`49cfa56`). Option (b), a nested-root requirement, wasn't taken, since TR has one project. Tests: the new `t14_counts_a_scope_that_isnt_a_project`, and `t14_tells_another_project_from_another_item`, changed before `start` in `17c2c3e` to register `YY` and to add an unregistered `ZZ` that fires T14 |
+| Design 1: §5's agent block, §6 and §7 still describe T14 as it was before TR-41 | TR-43, `49cfa56`: §5 says a commit "that isn't scoped to this item, including one scoped to another item or to a key that isn't a project, holds the item", §6's row and §7's bullet say the same, and §7 says only work scoped to another registered project's key gets past T14. The check is four `grep -qF` commands on DESIGN.md, one for each place. The review's note that the §5 wording also lives in the user's `~/.claude/CLAUDE.md` was checked: that file has no sentence about unscoped commits, so nothing there is stale |
+| Test gap 1: nothing tests T14 with a commit scoped to another item made before `start` | TR-43, `17c2c3e`: `commits_scoped_elsewhere::t14_tells_another_project_from_another_item_before_start` has a `docs(XX-2)` commit before `start`, quiet under T14. It passed before the fix, as the review's replay said |
+| Process 1: the next item's test commit, made while the current item waits in review, holds it under T14 | Option (a), a rule in the agents' standing brief: an item held in review isn't done, and a commit scoped to the next item, made while one waits in review, makes T14 hold it at `approve`, so the next item's tests wait. The user's own `~/.claude/CLAUDE.md` says "until the current one is submitted", and that wording is the user's to change |
+| Still open, carried forward: review 1's test gaps 1, 4 and 5, bug 1 and process 1, and its "Slice 12 must decide" points | Left as the review lists them. Nothing in this round changes them |
+| Slice 12 must decide: which binary tracks this review's fixes | The slice 10 binary tracked TR-43, so T5, T13 and T14 weren't run on it. It was held under T4 (the test commit's edit to an existing test) and T8 (DESIGN.md), and the user read its diff and approved it |
+| Slice 12 must decide: TR-8 under the new binary | Left for slice 12 (TR-8). TR-8 is tracked by slice 11's binary, installed after this round's commits, so T13 and T14 apply to it. Install between items |
+| Slice 12 must decide: the T14 message | The new wording is read by TR-43's new tests only, and XX-23's stored message is unchanged, so slice 12's test commit doesn't have to edit it |
+
+Seen failing:
+
+- **TR-43's four checks failed at `start`:** `started.checks` has criterion 1 to 4 as `passed: false`. The new test `t14_tells_another_project_from_another_item_before_start` pins code that already worked, so criterion 2's check failed through the changed test beside it.
+
+TR-43 was held under T4 (`tests/tampered_proof.rs`, `17c2c3e before start`) and T8 (`docs/DESIGN.md`), and the user read its diff and approved it from a terminal: `human` at `49cfa56`, with `refs/tracker/TR-43`. The installed slice 10 binary tracked it, so T5, T13 and T14 weren't run on it. The orchestrator checked by hand that its written criteria were unchanged, that its checks failed at `start`, and that every commit since `start` was scoped to TR-43. After it, `cargo fmt --check`, `cargo clippy -- -D warnings` and all 415 tests pass, 3 more than at `5548c3a`, all in `tests/tampered_proof.rs`, which now has 21.
