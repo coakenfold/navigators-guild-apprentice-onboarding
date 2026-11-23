@@ -1750,6 +1750,11 @@ fn criterion_judge(
                 ));
             }
             item.criteria[i] = judge;
+            // The old check's start result isn't the judge's (T13 reads a
+            // missing entry as a check given after start).
+            if let Some(started) = &mut item.started {
+                started.checks.retain(|check| check.criterion != n);
+            }
             (n, message)
         }
         None => {
@@ -2015,6 +2020,7 @@ fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
     if !holds.is_empty() {
         text.push_str("A submit would be held for review:\n");
         text.push_str(&holds_text(&holds));
+        text.push_str(&unsure_text(&report.judges));
     }
     if let Some(line) = gates::not_submittable(item.status) {
         text.push_str(&format!("{line}\n"));
@@ -2516,6 +2522,9 @@ fn apply(
                 item.id
             ));
             text.push(&holds_text(&holds));
+            if let Some(report) = &report {
+                text.push(&unsure_text(&report.judges));
+            }
             text.push(&format!(
                 "It waits in `tracker review` for a human to approve or reject it. `tracker show \
                  {} --diff` shows its work.\n",
@@ -2622,6 +2631,25 @@ fn verification_record(
         },
         note: None,
     }
+}
+
+/// Each unsure answer's question and excerpt, under the holds (§2.3.1).
+fn unsure_text(judges: &[judge::Answered]) -> String {
+    let mut text = String::new();
+    for answered in judges
+        .iter()
+        .filter(|answered| answered.outcome() == judge::Outcome::Unsure)
+    {
+        text.push_str(&format!(
+            "    {}: {}\n",
+            answered.judge_ref,
+            text::for_terminal(&answered.question, false)
+        ));
+        for line in text::for_terminal(&answered.excerpt, true).lines() {
+            text.push_str(&format!("      {line}\n").replace(" \n", "\n"));
+        }
+    }
+    text
 }
 
 /// Each hold on its own line, its trigger, then why, indented.
@@ -3323,6 +3351,11 @@ fn review(store: &Store) -> Result<Output> {
                 text.push("  No trigger is recorded: it was put in review by hand.\n");
             }
             text.push(&holds_text(&item.holds));
+            if item.holds.iter().any(|hold| hold.trigger == "T10") {
+                text.push(&format!(
+                    "  `tracker gates {id}` shows each judge's question and excerpt.\n"
+                ));
+            }
             text.push(&format!(
                 "  See its work with `{}`, then run `{}` or `{}`.\n",
                 diff_command(id),
@@ -3380,6 +3413,13 @@ fn approve(store: &Store, id: &str) -> Result<Output> {
         return Err(states::not_from(&id, item.status, Via::Approve));
     }
     let command = states::command(&id, Via::Approve);
+    // Refused first, so a piped approve never asks a judge (slice 12 review 1, bug 1).
+    tty::require_interactive(
+        &command,
+        &id,
+        "Only a human approves a held item. It waits in `tracker review` until one approves or \
+         rejects it.",
+    )?;
     // The triggers run again before asking, at the HEAD the question names,
     // so a commit made since the submit is shown with every hold it fires
     // (slice 9 review 1, design 1).

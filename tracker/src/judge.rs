@@ -848,6 +848,12 @@ fn strip_diff(diff: &str) -> String {
             hunk.push((marker, line[marker.len_utf8()..].to_string()));
             continue;
         }
+        // git's `\ No newline at end of file` sits inside a hunk.
+        if in_hunk && line.starts_with('\\') {
+            flush(&mut hunk, &mut out, style);
+            out.push(line.to_string());
+            continue;
+        }
         flush(&mut hunk, &mut out, style);
         if let Some(rest) = line.strip_prefix("diff --git ") {
             style = style_for(rest.rsplit(" b/").next().unwrap_or(rest));
