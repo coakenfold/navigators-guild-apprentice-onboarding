@@ -702,11 +702,11 @@ mod tr53_c2 {
         assert!(seen > 10, "only {seen} fixtures read");
         let held = dir.join("slice-15/XX-25.json");
         let text = fs::read_to_string(held).unwrap();
-        assert!(!text.contains("\"ask\": \"Does"), "the fixture has no ask");
+        assert!(!text.contains("call step"), "the fixture has no held ask");
         // With it set, it is written back as it was read.
         let with = text.replacen(
             "\"ref\": \"c1:works\",\n",
-            "\"ref\": \"c1:works\",\n      \"ask\": \"Does this code do the work?\",\n",
+            "\"ref\": \"c1:works\",\n      \"ask\": \"Does this code call step?\",\n",
             1,
         );
         assert_ne!(with, text);
