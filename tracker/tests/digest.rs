@@ -562,3 +562,154 @@ mod tr12_c11 {
         assert_eq!(output["questions"], json!([]), "{output}");
     }
 }
+
+mod tr55 {
+    //! TR-55, slice 16 review 1's fixes: `digest ack` refuses over an
+    //! unreadable item file, a judged shelve's warning points to `show`,
+    //! `audit` doesn't call an unchecked ref a hand edit, `review` and the
+    //! digest show the last ack, a judge-passed entry prints its questions,
+    //! and an ack leaves out what came before it.
+    use super::*;
+
+    #[test]
+    fn tr55_c1_digest_ack_refuses_while_an_item_file_of_the_project_is_unreadable() {
+        let env = two_projects();
+        auto_verified(&env, "XX", "readable");
+        auto_verified(&env, "XX", "damaged");
+        auto_verified(&env, "YY", "other project");
+        fs::write(env.item_path("XX-2"), "{ broken").unwrap();
+
+        // Refused before it asks, so it needs no terminal.
+        let error = env.error(&["digest", "ack", "--project", "XX"], 3);
+        assert!(error.contains("XX-2"), "{error}");
+        assert!(!env.home.path().join("digests.json").exists());
+
+        // Under a terminal it still refuses, and records nothing.
+        if let Some((shown, ok)) = ack(&env, "XX", "ack") {
+            assert!(!ok, "{shown}");
+            assert!(shown.contains("XX-2"), "{shown}");
+            assert!(!env.home.path().join("digests.json").exists());
+        }
+        // A broken file in XX doesn't stop YY's ack.
+        if let Some((shown, ok)) = ack(&env, "YY", "ack") {
+            assert!(ok, "{shown}");
+        }
+    }
+
+    #[test]
+    fn tr55_c2_a_judged_shelve_points_to_tracker_show() {
+        let env = two_projects();
+        install_fake(&env);
+        let lib = env.work.path().join("xx/src/lib.rs");
+        fs::create_dir_all(lib.parent().unwrap()).unwrap();
+        fs::write(&lib, "fn run() {}\n").unwrap();
+        let id = env.create_bare("XX", "judged");
+        let judge = json!({
+            "text": "The code does the work",
+            "inputs": ["src/lib.rs"],
+            "ask": [{ "id": "works", "ask": "Does this code do the work?" }],
+        });
+        let file = judge_dir(&env).join("judge.json");
+        fs::write(&file, judge.to_string()).unwrap();
+        env.json(&["criterion", "add", &id, "--judge", file.to_str().unwrap()]);
+        env.json(&["shelve", &id, "--reason", "later"]);
+        let shown = text(&env, &["digest", "--project", "XX"]);
+        assert!(shown.contains("tracker show XX-1"), "{shown}");
+        assert!(!shown.contains("look for a reopen and start"), "{shown}");
+    }
+
+    #[test]
+    fn tr55_c2_audit_does_not_call_an_unchecked_ref_a_hand_edit() {
+        let env = two_projects();
+        auto_verified(&env, "XX", "verified");
+        let root = env.work.path().join("xx");
+        let moved = env.work.path().join("xx-moved");
+        fs::rename(&root, &moved).unwrap();
+        let shown = text(&env, &["audit"]);
+        fs::rename(&moved, &root).unwrap();
+        assert!(shown.contains("can't be checked"), "{shown}");
+        assert!(
+            shown.contains("edited by hand, or something audit couldn't check"),
+            "{shown}"
+        );
+    }
+
+    #[test]
+    fn tr55_c3_review_and_digest_show_the_last_ack() {
+        let env = two_projects();
+        edit_config(&env, |config| {
+            config["projects"]["XX"]["review"] = json!({ "digest": { "every_days": 0 } });
+        });
+        auto_verified(&env, "XX", "first");
+        let Some((shown, ok)) = ack(&env, "XX", "ack") else {
+            return;
+        };
+        assert!(ok, "{shown}");
+        auto_verified(&env, "XX", "second");
+
+        let digest = digest_of(&env, "XX");
+        let last = &digest["last_ack"];
+        assert_eq!(last["at"], digest["acknowledged"], "{digest}");
+        assert_eq!(last["interactive"], true, "{digest}");
+        assert_eq!(last["verified"], 1, "{digest}");
+        assert_eq!(last["actions"], 0, "{digest}");
+        let shown = text(&env, &["digest", "--project", "XX"]);
+        assert!(
+            shown.contains("from a terminal, with 1 item and 0 actions"),
+            "{shown}"
+        );
+        let review = env.json(&["review"]);
+        assert_eq!(review["overdue_digests"][0]["last_ack"], *last, "{review}");
+        let shown = text(&env, &["review"]);
+        assert!(
+            shown.contains("from a terminal, with 1 item and 0 actions"),
+            "{shown}"
+        );
+
+        // An ack not from a terminal is marked so.
+        let path = env.home.path().join("digests.json");
+        let mut acks: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        acks["XX"]["interactive"] = json!(false);
+        fs::write(&path, acks.to_string()).unwrap();
+        let shown = text(&env, &["digest", "--project", "XX"]);
+        assert!(
+            shown.contains("not from a terminal, with 1 item and 0 actions"),
+            "{shown}"
+        );
+    }
+
+    #[test]
+    fn tr55_c4_a_judge_passed_entry_prints_each_question_asked() {
+        let env = two_projects();
+        judge_verified(&env, "judged");
+        let digest = digest_of(&env, "XX");
+        assert_eq!(
+            digest["verified"][0]["questions"],
+            json!([{ "ref": "c1:works", "ask": "Does this code do the work?" }]),
+            "{digest}"
+        );
+        let shown = text(&env, &["digest", "--project", "XX"]);
+        assert!(shown.contains("Does this code do the work?"), "{shown}");
+    }
+
+    #[test]
+    fn tr55_c5_an_action_before_the_ack_is_left_out_and_one_after_is_listed() {
+        let env = two_projects();
+        env.create("XX", "before");
+        env.create("XX", "after");
+        env.json(&["shelve", "XX-1", "--reason", "before the ack"]);
+        let Some((shown, ok)) = ack(&env, "XX", "ack") else {
+            return;
+        };
+        assert!(ok, "{shown}");
+        env.json(&["shelve", "XX-2", "--reason", "after the ack"]);
+        let digest = digest_of(&env, "XX");
+        let ids: Vec<&str> = digest["actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|action| action["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, ["XX-2"], "{digest}");
+    }
+}
