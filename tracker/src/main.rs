@@ -2633,7 +2633,7 @@ fn verification_record(
     }
 }
 
-/// Each unsure answer's question and excerpt, under the holds (§2.3.1).
+/// Each unsure answer's question, excerpt and reason, under the holds (§2.3.1).
 fn unsure_text(judges: &[judge::Answered]) -> String {
     let mut text = String::new();
     for answered in judges
@@ -2644,6 +2644,10 @@ fn unsure_text(judges: &[judge::Answered]) -> String {
             "    {}: {}\n",
             answered.judge_ref,
             text::for_terminal(&answered.question, false)
+        ));
+        text.push_str(&format!(
+            "      unsure: {}\n",
+            text::for_terminal(&answered.reason, false)
         ));
         for line in text::for_terminal(&answered.excerpt, true).lines() {
             text.push_str(&format!("      {line}\n").replace(" \n", "\n"));
@@ -3351,9 +3355,13 @@ fn review(store: &Store) -> Result<Output> {
                 text.push("  No trigger is recorded: it was put in review by hand.\n");
             }
             text.push(&holds_text(&item.holds));
-            if item.holds.iter().any(|hold| hold.trigger == "T10") {
+            if item
+                .holds
+                .iter()
+                .any(|hold| hold.trigger == "T10" && hold.message.contains("answered unsure"))
+            {
                 text.push(&format!(
-                    "  `tracker gates {id}` shows each judge's question and excerpt.\n"
+                    "  `tracker gates {id}` shows each unsure answer's question and excerpt.\n"
                 ));
             }
             text.push(&format!(
@@ -3439,6 +3447,7 @@ fn approve(store: &Store, id: &str) -> Result<Output> {
         &decision_warning(
             &item,
             &holds,
+            &judged.judges,
             &format!(
                 "Approving it runs the gates again at {}, and if they pass, moves it to done, \
                  verified by a human, with {} keeping that commit.",
@@ -3528,6 +3537,7 @@ fn reject(store: &Store, id: &str, reason: Option<String>) -> Result<Output> {
         &decision_warning(
             &item,
             &item.holds,
+            &[],
             &format!(
                 "Rejecting it sends it back to in-progress, with this reason in its history for \
                  the agent: \"{}\"",
@@ -3565,7 +3575,12 @@ fn reject(store: &Store, id: &str, reason: Option<String>) -> Result<Output> {
 /// among the submit's, in `item.holds`, is marked new. `tty::confirm`
 /// escapes it, so the title and messages go in as they are. A hold of the
 /// submit's that no longer fires is listed as such.
-fn decision_warning(item: &Item, holds: &[item::Hold], what: &str) -> String {
+fn decision_warning(
+    item: &Item,
+    holds: &[item::Hold],
+    judges: &[judge::Answered],
+    what: &str,
+) -> String {
     let id = &item.id;
     let mut warning = format!("{id} \"{}\" is in review", item.title);
     // Holds from the submit that nothing fires now, such as one whose
@@ -3594,6 +3609,7 @@ fn decision_warning(item: &Item, holds: &[item::Hold], what: &str) -> String {
             hold.trigger, hold.message
         ));
     }
+    warning.push_str(&unsure_text(judges));
     warning.push_str(&format!("{what}\n`{}` shows its work.\n", diff_command(id)));
     warning
 }
