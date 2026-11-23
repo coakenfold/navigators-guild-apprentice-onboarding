@@ -22,6 +22,8 @@ Nothing here blocks the install. TR-11 and TR-12 have no judge criteria, so T11 
 
 TR-47, TR-48 and TR-50 are still open and deferred, as the readme says. TR-47 now reaches `start` too, since G1 makes a `diff` judge grade the item's first commit there.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -90,3 +92,33 @@ For slice 16:
 - **`audit` can't see `failures.json` change.** It's reset at each `start`, left behind when an item is deleted, and removing it clears every count (security 2). Slice 16 should decide whether `audit` reads it at all, and say in §7 what it can't catch.
 - **`judges` and the digest need T11's refs kept somewhere that lasts**: the hold in `verification.triggers` keeps only the message, and a reopen and `start` empties `failures.json`'s entry.
 - **`started.checks` holds judges' entries too.** A reader must look at the criterion to know whether an entry is a check's or a judge's, as `t13` does ([triggers.rs:529-555](../../src/triggers.rs#L529-L555)).
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `6ab6d5d`'s code, not at the fixed code. The fixes were built as one tracker item, TR-51, with its tests committed before `tracker start`, so the user approves once, and the readme's [Fixes after review 1](../slice-14-readme.md#fixes-after-review-1) lists them too.
+
+This round fixed bug 1 (option (a)), bug 2 (option (a)), bug 3, security 1 (option (a)), security 2 (option (a)), design 1 (option (a)), design 2, test gap 1 and test gap 2. The review's pick was taken every time. The commits after this review (`d6c851a`), in order: `8c85448` (tests), `ab22bb7` (the code), `a40e720` (DESIGN.md) and `42f3128` (a test comment), all scoped to TR-51. The readme's update and the commit that adds this Outcome belong to no item.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: a damaged `judge/failures.json` refuses `start` for every item, judge or not | TR-51, `ab22bb7`, option (a): `apply` calls `judge::record_start` only for an item with a judge criterion. Test: `tr51_c1_start_on_an_item_with_no_judge_ignores_a_damaged_failures_file`, which failed at `start` |
+| Bug 2: after a failed call at `start`, the stub's own fail counts toward T11 | TR-51, `a40e720`, option (a): §2.4 and §2.5 say a judge whose call failed at `start` leaves no request to skip, so its later fails count from its first answer and it is outside T13. No code changed. Check: part of criterion 5's `grep -qF` checks, which failed at `start` |
+| Bug 3: three messages read wrong | TR-51, `ab22bb7`: `criterion add --judge` says "asked at start and at submit", `start`'s warning for an ungraded judge names its subject once and drops G3's last sentence, and T11's hold names each question once, with how many runs failed it. Tests: the three `tr51_c4_` tests for them, which failed at `start` |
+| Security 1: re-rolls before `start` are free | TR-51, `a40e720`, option (a): a new §7 bullet, "Tries before `start` are free", and a sentence in §6's T11 row. Option (b), counting failed requests on an open item too, isn't taken, and waits for the digest to show the move happening. Check: criterion 6's `grep -qF` checks, which failed at `start` |
+| Security 2: removing `judge/failures.json` clears every item's T11 count, and its own error says to | TR-51, `ab22bb7` and `a40e720`, option (a): the error says "Fix it by hand. Removing it clears every item's T11 count, so a human should decide.", and §7's forged-cache bullet covers `judge/failures.json`. Tests: `tr51_c4_a_damaged_failures_file_error_doesnt_suggest_removing_it` and criterion 6's `grep -qF` checks, which failed at `start` |
+| Design 1: T11 counts requests, not attempts | TR-51, `ab22bb7` and `a40e720`, option (a): a `gates` or `submit` run that adds a new failed request counts once. `failures.json`'s `request` became `requests`, and T11 reads "judges failed new requests in N runs since start". Tests: `tr51_c2_one_run_that_fails_three_matches_counts_once` and `tr51_c2_three_runs_that_each_fail_new_matches_hold_at_max_failures_3`, which failed at `start` |
+| Design 2: §3, §4.2 and §6 describe T11 and `gates` as they were | TR-51, `a40e720`: §3's `gates` row, §4.2's `max_failures` line and §6's T11 row. Check: criterion 5's `grep -qF` checks, which failed at `start` |
+| Test gap 1: nothing tests which states `gates` counts in | TR-51, `8c85448`: `tr51_c3_gates_on_an_item_in_review_adds_nothing`, which passed at `start` since it pins working code |
+| Test gap 2: no test for a request with two failing questions or an `each` judge under T11 | TR-51, `8c85448`: the three `tr51_c2_` tests. `tr51_c2_a_request_with_two_failing_questions_counts_once` also passes on the old code |
+| Process 1: the six pinned trigger lists were changed after `start` | Now a rule in the agents' standing brief: a slice that adds a trigger adds it to every pinned trigger list in its first test commit, so TR-11 adds T12 before `start` |
+| Process 2: criterion 5's check failed at `start` only through its second test | No action |
+| Process 3: one of the readme's test gaps is wrong | Done in the readme update: the clause is gone, and the warning is tested through `--json` in `tr10_c2_a_judge_that_passes_at_start_is_recorded_and_held_by_t13` |
+| Slice 15 must decide, and the slice 16 notes | Left for TR-11 and TR-12. Design 1, which was to come first, is done |
+
+Seen failing:
+
+- **TR-51's criteria 1, 2, 4, 5 and 6** failed at `start`.
+- **Criterion 3** passed at `start`, since it pins working code, and the builder saw it fail by temporarily making `count_failures` count items in review. `tr51_c2_a_request_with_two_failing_questions_counts_once` also passes on old code, so criterion 2's check failed through its other tests.
+- **`tr51_c4`'s test of T11's message** was edited after `start`, in `ab22bb7`, to read the text output, since its first version read `--json`, which never holds the message. That is why T4 fired.
+
+TR-51 was held under T4, T7 (373 lines), T8 and T13, tracked by the installed slice 13 binary. The user read its diff and approved it from a terminal: `human` at `42f3128`, with `refs/tracker/TR-51`. The orchestrator checked by hand that its 6 written criteria are unchanged and that every commit since `start` is scoped to TR-51. After it, `cargo fmt --check`, `cargo clippy -- -D warnings` and all 503 tests pass, 9 more than at `6ab6d5d`, all in `tests/judges_first.rs`.
