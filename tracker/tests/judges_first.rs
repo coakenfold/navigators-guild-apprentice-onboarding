@@ -578,8 +578,8 @@ mod tr10_c6 {
     }
 }
 
-/// Slice 14's review-1 fixes (TR-51). Each criterion's tests are named
-/// `tr51_cN_`, so its check runs only them.
+// Slice 14's review-1 fixes (TR-51). Each criterion's tests are named
+// `tr51_cN_`, so its check runs only them.
 
 /// `src/lib.rs` with three `bail!(` lines under `n` lines of header, so a
 /// larger `n` moves every match without changing its code.
