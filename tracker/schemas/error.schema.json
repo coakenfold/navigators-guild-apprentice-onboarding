@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tracker.invalid/schemas/error.schema.json",
   "title": "Error",
-  "description": "The base shape of every non-zero exit under --json (DESIGN.md §3). A move the diagram doesn't draw adds allowed. A gate's refusal, from start, submit, approve, shelving an in-progress item or the gates dry run, adds id, status, result, gates and failures, and exits 2.",
+  "description": "The base shape of every non-zero exit under --json (DESIGN.md §3). A move the diagram doesn't draw adds allowed. A gate's refusal, from start, submit, approve, shelving an in-progress item or the gates dry run, adds id, status, result, gates and failures, with judges once any judge was asked, and exits 2.",
   "type": "object",
   "required": ["error", "exit_code"],
   "properties": {
@@ -70,8 +70,14 @@
         "additionalProperties": false
       }
     },
+    "judges": {
+      "description": "Only for a gate's refusal in which judges were asked: every judge question G3 asked, in order, with its ref and answer.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "item.schema.json#/$defs/judged" }
+    },
     "failures": {
-      "description": "Only for a gate's refusal: every reason a gate failed, each with its gate, the criterion it's about if it's about one, numbered from 1, and a message saying what to do. A check that failed (G3 or G4) adds cmd, exit_code, timed_out and output.",
+      "description": "Only for a gate's refusal: every reason a gate failed, each with its gate, the criterion it's about if it's about one, numbered from 1, and a message saying what to do. A check that failed (G3 or G4) adds cmd, exit_code, timed_out and output, and a judge question that failed (G3) adds ref, answer and reason.",
       "type": "array",
       "minItems": 1,
       "items": {
@@ -94,6 +100,19 @@
             "description": "For a check that failed: whether it ran longer than the project's check_timeout_secs, and was stopped.",
             "type": "boolean"
           },
+          "ref": {
+            "description": "For a judge question that failed: its ref (DESIGN.md §2.3.2).",
+            "type": "string",
+            "pattern": "^c[1-9][0-9]*:"
+          },
+          "answer": {
+            "description": "For a judge question that failed: the judge's answer.",
+            "enum": ["yes", "no"]
+          },
+          "reason": {
+            "description": "For a judge question that failed: the judge's one-sentence reason.",
+            "type": "string"
+          },
           "output": {
             "description": "For a check that failed: its last 20 lines of output, stdout and stderr together, without a final line break. Each kept line is cut at 500 characters, the last of them `…`, if it's longer. Empty if it printed nothing.",
             "type": "string"
@@ -104,7 +123,10 @@
           "cmd": ["exit_code", "timed_out", "output"],
           "exit_code": ["cmd"],
           "timed_out": ["cmd"],
-          "output": ["cmd"]
+          "output": ["cmd"],
+          "ref": ["answer", "reason"],
+          "answer": ["ref"],
+          "reason": ["ref"]
         }
       }
     }
@@ -115,6 +137,7 @@
     "status": ["result"],
     "result": ["id", "status", "gates", "failures"],
     "gates": ["result"],
+    "judges": ["result"],
     "failures": ["result"]
   },
   "if": { "required": ["result"] },

@@ -19,6 +19,7 @@ use tracker::item::{
     self, CheckRecord, Criterion, HistoryEntry, Item, Kind, Priority, Started, StartedCheck,
     Status, Verification, VerifiedBy, Via,
 };
+use tracker::judge;
 use tracker::states;
 use tracker::store::{Skipped, Store};
 use tracker::styled::{self, Styled};
@@ -96,13 +97,15 @@ enum Command {
     /// Gates G2, G5, G6, G3 and G4 run first, as `tracker gates` runs them:
     /// G5 needs a clean tree under the project's root and a commit scoped to
     /// the item, such as `feat(BM-12): …`, G3 runs each criterion's check,
-    /// and G4 the project's checks. If any fails, submit is refused with
-    /// exit 2 and every reason, and nothing changes. Then the triggers run:
-    /// T1 holds a capability or a new source file, T2 a risky path, T3 a
-    /// dependency manifest, T4 an existing test changed, T5 a criterion,
-    /// check or design changed after start, T6 a manual criterion, T7 a
-    /// large change, T8 the design doc, T9 the label needs-review, T13 a
-    /// check that already passed at start, and T14 a commit not scoped to an
+    /// and G4 the project's checks. Once they all pass, G3 asks each judge
+    /// criterion's questions, through the config's judge command. If any
+    /// gate fails, submit is refused with exit 2 and every reason, and
+    /// nothing changes. Then the triggers run: T1 holds a capability or a
+    /// new source file, T2 a risky path, T3 a dependency manifest, T4 an
+    /// existing test changed, T5 a criterion, check or design changed after
+    /// start, T6 a manual criterion, T7 a large change, T8 the design doc,
+    /// T9 the label needs-review, T10 a judge's unsure answer, T13 a check
+    /// that already passed at start, and T14 a commit not scoped to an
     /// item. The project's review settings in config.json tune them.
     /// A held item waits in review for a human to approve or reject it. Otherwise it goes to done, verified automatically against
     /// HEAD, with each check's last lines of output, and the git ref
@@ -270,25 +273,35 @@ struct CreateArgs {
 
 #[derive(Subcommand)]
 enum CriterionCommand {
-    /// Add a criterion: with --check, a script criterion, and without, a manual one
+    /// Add a criterion: with --check, a script criterion, with --judge, a judge criterion, and
+    /// with neither, a manual one
     ///
     /// Before start, an agent can add criteria freely. From an interactive
     /// terminal, the new criterion's text is also recorded in `written`, as
-    /// one written at create is
+    /// one written at create is. A judge file gives the criterion's text
+    /// itself, so the text can be left out
     Add {
         /// The item's ID, such as BM-12
         id: String,
-        /// What must be true, on one line of at most 500 characters
-        text: String,
+        /// What must be true, on one line of at most 500 characters. Left out with --judge,
+        /// whose file gives it
+        #[arg(required_unless_present = "judge")]
+        text: Option<String>,
         /// A shell command on one line of at most 1000 characters, run in the project's root,
         /// whose exit code 0 shows the criterion holds, such as "cargo test filter_by_label"
-        #[arg(long)]
+        #[arg(long, conflicts_with = "judge")]
         check: Option<String>,
+        /// A JSON file in DESIGN.md §2.3.1's format: text, inputs, an optional each regex,
+        /// context_lines, keep_comments and the yes/no questions in ask. It's checked, then
+        /// copied into the item. Refused if an input is missing or each matches nothing
+        #[arg(long, value_name = "FILE")]
+        judge: Option<PathBuf>,
     },
-    /// Give a criterion a script check, replacing what it had
+    /// Give a criterion a script check or a judge, replacing what it had
     ///
-    /// The criterion keeps its text. A manual criterion's evidence is
-    /// removed, since a check's own output is its proof
+    /// The criterion keeps its text, so a judge file whose text differs is
+    /// refused. A manual criterion's evidence is removed, since a check's
+    /// own output, or a judge's answers, are its proof
     Set {
         /// The item's ID, such as BM-12
         id: String,
@@ -296,8 +309,11 @@ enum CriterionCommand {
         n: usize,
         /// A shell command on one line of at most 1000 characters, run in the project's root,
         /// whose exit code 0 shows the criterion holds
-        #[arg(long)]
-        check: String,
+        #[arg(long, required_unless_present = "judge", conflicts_with = "judge")]
+        check: Option<String>,
+        /// A JSON file in DESIGN.md §2.3.1's format, as for `criterion add --judge`
+        #[arg(long, value_name = "FILE")]
+        judge: Option<PathBuf>,
     },
     /// Remove a criterion. The ones after it move up one
     ///
@@ -501,8 +517,31 @@ fn main() -> ExitCode {
         Command::Submit { id } => move_item(&store, &id, Via::Submit, None),
         Command::Gates { id } => gates_dry_run(&store, &id),
         Command::Criterion { command } => match command {
-            CriterionCommand::Add { id, text, check } => criterion_add(&store, &id, &text, check),
-            CriterionCommand::Set { id, n, check } => criterion_set(&store, &id, n, &check),
+            CriterionCommand::Add {
+                id,
+                text,
+                check,
+                judge: None,
+            } => criterion_add(&store, &id, text.as_deref().unwrap_or_default(), check),
+            CriterionCommand::Add {
+                id,
+                text,
+                judge: Some(file),
+                ..
+            } => criterion_judge(&store, &id, None, text.as_deref(), &file),
+            CriterionCommand::Set {
+                id,
+                n,
+                check: Some(check),
+                ..
+            } => criterion_set(&store, &id, n, &check),
+            CriterionCommand::Set {
+                id,
+                n,
+                judge: Some(file),
+                ..
+            } => criterion_judge(&store, &id, Some(n), None, &file),
+            CriterionCommand::Set { .. } => unreachable!("clap requires --check or --judge"),
             CriterionCommand::Remove { id, n } => criterion_remove(&store, &id, n),
             CriterionCommand::Accept { id } => criterion_accept(&store, &id),
         },
@@ -889,8 +928,7 @@ fn create(store: &Store, args: CreateArgs) -> Result<Output> {
         }
         criteria.push(Criterion {
             text,
-            check: None,
-            evidence: None,
+            ..Criterion::default()
         });
     }
     // Taken at create, by whoever creates the item, so T5 can tell when a
@@ -1505,7 +1543,7 @@ fn criterion_add(store: &Store, id: &str, text: &str, check: Option<String>) -> 
     item.criteria.push(Criterion {
         text,
         check,
-        evidence: None,
+        ..Criterion::default()
     });
     let n = item.criteria.len();
     let how = format!("tracker criterion add {id} \"…\" --check \"…\"");
@@ -1609,8 +1647,13 @@ fn criterion_set(store: &Store, id: &str, n: usize, check: &str) -> Result<Outpu
         let text = format!("Criterion {n} of {id} already has that check. Nothing changed.\n");
         return Ok(criterion_output(text, &item, n, None));
     }
-    criterion.check = Some(check);
     let evidence = criterion.evidence.take();
+    // A check replaces a judge, as a judge replaces a check.
+    *criterion = Criterion {
+        text: criterion.text.clone(),
+        check: Some(check),
+        ..Criterion::default()
+    };
     let how = format!("tracker criterion set {id} {n} --check \"…\"");
     let (_lock, ran) = run_check_given_after_start(store, lock, &mut item, &file, n, &how)?;
     item.updated = item::now();
@@ -1626,6 +1669,119 @@ fn criterion_set(store: &Store, id: &str, n: usize, check: &str) -> Result<Outpu
         ));
     }
     Ok(criterion_output(text, &item, n, ran))
+}
+
+/// `criterion add --judge` and `criterion set <n> --judge`: reads the judge
+/// in `file`, checks it, and copies it into the item, as a new criterion,
+/// or, with `n`, in place of what criterion `n` had (§3). Its file gives
+/// the criterion's text, so `text`, if given to `add`, and criterion `n`'s
+/// text must match it. A judge whose input is missing, or whose `each`
+/// matches nothing, is refused, since it would have nothing to grade
+/// (§2.3.1).
+///
+/// A judge given after `start` isn't asked then: slice 14 runs judges
+/// before the work. The change fires T5.
+fn criterion_judge(
+    store: &Store,
+    id: &str,
+    n: Option<usize>,
+    text: Option<&str>,
+    file: &Path,
+) -> Result<Output> {
+    store.require_exists()?;
+    let id = normalize_id(id);
+    let shown = file.display();
+    let contents = std::fs::read_to_string(file).map_err(|e| {
+        Error::input(format!(
+            "Can't read the judge file {shown}: {e}. Give the path of a JSON file in DESIGN.md \
+             §2.3.1's format."
+        ))
+    })?;
+    let mut judge = judge::parse_file(&contents)
+        .map_err(|why| Error::input(format!("The judge file {shown} {why}")))?;
+    judge.text = check_criterion_text(&judge.text)?;
+    if let Some(text) = text {
+        let text = check_criterion_text(text)?;
+        if text != judge.text {
+            return Err(Error::input(format!(
+                "The judge file {shown} has the text \"{}\", not \"{text}\". Leave the text out, \
+                 since the file gives it, or make them the same.",
+                judge.text
+            )));
+        }
+    }
+
+    let _lock = store.lock()?;
+    let (mut item, file_text) = store.load_item_with_text(&id)?;
+    refuse_newer_file(store, &id, &file_text)?;
+    check_criteria_changeable(&item)?;
+    let config = config::load(store)?;
+    let root = gates::root(&item, &config).map_err(|why| {
+        Error::input(format!(
+            "Can't check the judge file {shown} against {id}'s work: {why}."
+        ))
+    })?;
+    judge::check_inputs(&judge, &root, &item.project)
+        .map_err(|why| Error::input(format!("The judge file {shown} {why}")))?;
+
+    let (n, mut message) = match n {
+        Some(n) => {
+            let i = criterion_index(&item, n)?;
+            let criterion = &item.criteria[i];
+            if criterion.text != judge.text {
+                return Err(Error::input(format!(
+                    "The judge file {shown} has the text \"{}\", but criterion {n} of {id} is \
+                     \"{}\". A criterion keeps its text, so make the file's text match it, or \
+                     add the judge as a new criterion with `tracker criterion add {id} --judge \
+                     …`.",
+                    judge.text, criterion.text
+                )));
+            }
+            if *criterion == judge {
+                let text =
+                    format!("Criterion {n} of {id} already has that judge. Nothing changed.\n");
+                return Ok(criterion_output(text, &item, n, None));
+            }
+            let mut message = format!("Criterion {n} of {id} now has a judge.\n");
+            if let Some(evidence) = &criterion.evidence {
+                message.push_str(&format!(
+                    "Its evidence, \"{}\", was removed: a judge's answers are its proof.\n",
+                    text::for_terminal(evidence, false)
+                ));
+            }
+            item.criteria[i] = judge;
+            (n, message)
+        }
+        None => {
+            if let Some(i) = item.criteria.iter().position(|c| c.text == judge.text) {
+                return Err(Error::input(format!(
+                    "{id} already has that criterion, as criterion {}. Give it the judge with \
+                     `tracker criterion set {id} {} --judge …`.",
+                    i + 1,
+                    i + 1
+                )));
+            }
+            if tty::is_interactive() && !item.written.contains(&judge.text) {
+                item.written.push(judge.text.clone());
+            }
+            let text = judge.text.clone();
+            item.criteria.push(judge);
+            let n = item.criteria.len();
+            (n, format!("Added criterion {n} to {id}, a judge: {text}\n"))
+        }
+    };
+    let asked = &item.criteria[n - 1].ask;
+    message.push_str(&if asked.len() == 1 {
+        "Its question is asked at submit, once every other gate passes.\n".to_string()
+    } else {
+        format!(
+            "Its {} questions are asked at submit, once every other gate passes.\n",
+            asked.len()
+        )
+    });
+    item.updated = item::now();
+    store.update_item(&item)?;
+    Ok(criterion_output(message, &item, n, None))
 }
 
 /// `criterion remove <n>`: removes criterion `n` (§3). Its text stays in
@@ -1808,6 +1964,12 @@ fn record_evidence(store: &Store, id: &str, n: usize, evidence: &str) -> Result<
              nothing can run."
         )));
     }
+    if criterion.is_judge() {
+        return Err(Error::input(format!(
+            "Criterion {n} of {id} has a judge, and a judge's answers are its proof, so it takes \
+             no evidence. Evidence is only for a manual criterion, one nothing can run."
+        )));
+    }
     if criterion.evidence.as_deref() == Some(evidence.as_str()) {
         return Ok(Output::plain(
             format!("Criterion {n} of {id} already has that evidence. Nothing changed.\n"),
@@ -1837,6 +1999,7 @@ fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
     let mut report = gates::statics(&item, &config)?;
     report.extend(gates::scripts(&item, &config));
     gates::tree_after_checks(&item, &config, &mut report)?;
+    ask_judges(store, &item, &config, &mut report);
     if !report.passed() {
         return Err(report.refusal(&id, item.status, Run::DryRun));
     }
@@ -1847,7 +2010,7 @@ fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
     );
     // Every gate passed, so the triggers run, as they would on a submit
     // (§2.5), and say whether it would be held.
-    let triggers = triggers::run(&item, &config)?;
+    let triggers = triggers::run(&item, &config, &report.judges)?;
     let holds = triggers::holds(&triggers);
     if !holds.is_empty() {
         text.push_str("A submit would be held for review:\n");
@@ -1860,17 +2023,28 @@ fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
         .iter()
         .map(|ran| json!({ "trigger": ran.trigger, "fired": ran.hold.is_some() }))
         .collect();
-    Ok(Output::plain(
-        text,
-        json!({
-            "id": id,
-            "status": item.status.as_str(),
-            "result": "passed",
-            "gates": report.gates_json(),
-            "triggers": triggers,
-            "holds": holds,
-        }),
-    ))
+    let mut json = json!({
+        "id": id,
+        "status": item.status.as_str(),
+        "result": "passed",
+        "gates": report.gates_json(),
+    });
+    if !report.judges.is_empty() {
+        json["judges"] = report.judges_json();
+    }
+    json["triggers"] = json!(triggers);
+    json["holds"] = json!(holds);
+    Ok(Output::plain(text, json))
+}
+
+/// G3's judges, asked only once every gate in `report` has passed, so the
+/// model never grades work that has already failed a test (§2.4). Their
+/// answers and fails are added to `report`, and kept in the store's judge
+/// cache.
+fn ask_judges(store: &Store, item: &Item, config: &config::Config, report: &mut gates::Report) {
+    if report.passed() {
+        report.extend(gates::judges(item, config, &store.judge_cache_dir()));
+    }
 }
 
 fn unknown_project(config: &config::Config, key: &str) -> String {
@@ -2264,11 +2438,12 @@ fn apply(
             drop(lock);
             gates.extend(gates::scripts(&item, &config));
             gates::tree_after_checks(&item, &config, &mut gates)?;
+            ask_judges(store, &item, &config, &mut gates);
             let lock = store.lock_unchanged_after_checks(&item.id, file, &command)?;
             if !gates.passed() {
                 return Err(gates.refusal(&item.id, item.status, Run::Submit));
             }
-            triggers = triggers::run(&item, &config)?;
+            triggers = triggers::run(&item, &config, &gates.judges)?;
             if triggers::holds(&triggers).is_empty() {
                 set_ref_at_head(&item, &config, &gates)?;
             } else {
@@ -2353,20 +2528,23 @@ fn apply(
     store.update_item(&item)?;
     let json = if via == Via::Submit {
         // §3's shape for a submit.
-        let gates = report.map_or(json!([]), |report| report.gates_json());
         let triggers: Vec<Value> = triggers
             .iter()
             .map(|ran| json!({ "trigger": ran.trigger, "fired": ran.hold.is_some() }))
             .collect();
-        json!({
+        let mut json = json!({
             "id": item.id,
             "result": if to == Status::Done { "done" } else { "held" },
             "status": item.status.as_str(),
-            "gates": gates,
-            "triggers": triggers,
-            "holds": holds,
-            "item": item,
-        })
+            "gates": report.as_ref().map_or(json!([]), |report| report.gates_json()),
+        });
+        if let Some(report) = report.as_ref().filter(|report| !report.judges.is_empty()) {
+            json["judges"] = report.judges_json();
+        }
+        json["triggers"] = json!(triggers);
+        json["holds"] = json!(holds);
+        json["item"] = json!(item);
+        json
     } else if via == Via::Start {
         json!({ "item": item, "warnings": warnings })
     } else {
@@ -2433,6 +2611,9 @@ fn verification_record(
         git_ref: Some(git::ref_name(&item.id)),
         checks: report
             .map(|report| report.checks.iter().map(check_record).collect())
+            .unwrap_or_default(),
+        judges: report
+            .map(|report| report.judges.iter().map(judge::Answered::record).collect())
             .unwrap_or_default(),
         triggers: if by == VerifiedBy::Human {
             item.holds.clone()
@@ -2564,6 +2745,7 @@ fn show(store: &Store, id: &str, diff: bool) -> Result<Output> {
         for (i, criterion) in item.criteria.iter().enumerate() {
             let how = match (&criterion.check, &criterion.evidence) {
                 (Some(check), _) => format!("check: {check}"),
+                _ if criterion.is_judge() => judge_text(criterion),
                 (None, Some(evidence)) => format!("manual, evidence: {evidence}"),
                 (None, None) => "manual, no evidence yet".to_string(),
             };
@@ -2573,6 +2755,17 @@ fn show(store: &Store, id: &str, diff: bool) -> Result<Output> {
                 text::for_terminal(&criterion.text, false),
                 text::for_terminal(&how, false)
             ));
+            for question in &criterion.ask {
+                let pass = match question.pass_when {
+                    Some(answer) => format!(" (passes on {})", answer.as_str()),
+                    None => String::new(),
+                };
+                text.push(&format!(
+                    "         {}: {}{pass}\n",
+                    text::for_terminal(&question.id, false),
+                    text::for_terminal(&question.ask, false)
+                ));
+            }
         }
     }
 
@@ -2809,6 +3002,28 @@ fn refuse_newer_file(store: &Store, id: &str, file: &str) -> Result<()> {
     )))
 }
 
+/// A judge criterion's line in `show`: what it reads, and how.
+fn judge_text(criterion: &Criterion) -> String {
+    let mut how = format!("judge, reads {}", criterion.inputs.join(", "));
+    if let Some(each) = &criterion.each {
+        how.push_str(&format!(", once per match of `{each}`"));
+        match criterion.context_lines {
+            Some(1) => how.push_str(" with 1 line of context"),
+            Some(lines) => how.push_str(&format!(" with {lines} lines of context")),
+            None => {}
+        }
+    }
+    if criterion.keep_comments {
+        how.push_str(", comments kept");
+    }
+    let count = criterion.ask.len();
+    how.push_str(&format!(
+        ", asks {count} question{}:",
+        if count == 1 { "" } else { "s" }
+    ));
+    how
+}
+
 /// What `start` recorded, as indented rows: when, `HEAD` then, and whether
 /// each criterion's check passed, when failing was expected (§2.4).
 fn started_text(started: &Started) -> Styled {
@@ -2867,10 +3082,9 @@ fn verification_text(record: &Verification) -> Styled {
             text.push(&format!("  {line}\n"));
         }
     }
-    if record.checks.is_empty() {
-        return text;
+    if !record.checks.is_empty() {
+        text.push("  checks:\n");
     }
-    text.push("  checks:\n");
     for check in &record.checks {
         let from = match check.criterion {
             Some(n) => format!("criterion {n}"),
@@ -2886,6 +3100,20 @@ fn verification_text(record: &Verification) -> Styled {
             for line in output.lines() {
                 text.push(&format!("      {line}\n"));
             }
+        }
+    }
+    // Each judge question's answer is its proof, as a check's output is
+    // (§2.3).
+    if !record.judges.is_empty() {
+        text.push("  judges:\n");
+        for judged in &record.judges {
+            text.push(&format!(
+                "    {}, {} answered {}: {}\n",
+                text::for_terminal(&judged.judge_ref, false),
+                text::for_terminal(&judged.model, false),
+                judged.answer.as_str(),
+                text::for_terminal(&judged.reason, false)
+            ));
         }
     }
     text
@@ -3160,7 +3388,11 @@ fn approve(store: &Store, id: &str) -> Result<Output> {
         .map_err(|why| Error::store(format!("Can't approve {id}: {why}. Nothing was changed.")))?;
     git::require_work_tree(&root, &item.project, &id)?;
     let head = git::head(&root)?;
-    let holds = triggers::holds(&triggers::run(&item, &config)?);
+    // T10 reads the judges' answers, which unchanged work gets from the
+    // cache. A judge that can't be graded now fails the gates below.
+    let mut judged = gates::Report::default();
+    ask_judges(store, &item, &config, &mut judged);
+    let holds = triggers::holds(&triggers::run(&item, &config, &judged.judges)?);
     tty::confirm(
         &command,
         &id,
@@ -3183,6 +3415,7 @@ fn approve(store: &Store, id: &str) -> Result<Output> {
     drop(lock);
     report.extend(gates::scripts(&item, &config));
     gates::tree_after_checks(&item, &config, &mut report)?;
+    ask_judges(store, &item, &config, &mut report);
     let _lock = store.lock_unchanged_after_checks(&id, &before, &command)?;
     if !report.passed() {
         return Err(report.refusal(&id, item.status, Run::Approve));

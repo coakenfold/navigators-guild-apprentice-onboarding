@@ -127,7 +127,7 @@
       "additionalProperties": false
     },
     "criterion": {
-      "description": "One criterion (DESIGN.md §2.3): what must be true, and how it's verified. With check, a script criterion. With neither a check nor (from slice 12) a judge, a manual one, which alone takes evidence.",
+      "description": "One criterion (DESIGN.md §2.3): what must be true, and how it's verified. With check, a script criterion. With ask, a judge criterion, whose inputs, each, context_lines and keep_comments say what its questions are asked about (DESIGN.md §2.3.1). With neither, a manual one, which alone takes evidence.",
       "type": "object",
       "required": ["text"],
       "properties": {
@@ -143,6 +143,32 @@
           "minLength": 1,
           "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]+$"
         },
+        "inputs": {
+          "description": "For a judge: the files it reads, relative to the project's root, or diff for the item's changes.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]+$" }
+        },
+        "each": {
+          "description": "For a judge: a regex. The questions are asked once per line it matches, about the lines around it. Without it, the whole input is the excerpt.",
+          "type": "string",
+          "minLength": 1
+        },
+        "context_lines": {
+          "description": "For a judge with each: the lines shown either side of a match. The config's judge.context_lines when it's left out.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "keep_comments": {
+          "description": "For a judge about comments: its excerpts keep them. Left out when false, and comments are stripped.",
+          "const": true
+        },
+        "ask": {
+          "description": "For a judge: its yes/no questions, each asked in a call of its own.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/question" }
+        },
         "evidence": {
           "description": "For a manual criterion, a note saying where to look (gate G2). On one line.",
           "type": "string",
@@ -151,10 +177,71 @@
         }
       },
       "additionalProperties": false,
-      "not": { "required": ["check", "evidence"] }
+      "not": {
+        "anyOf": [
+          { "required": ["check", "evidence"] },
+          { "required": ["check", "ask"] },
+          { "required": ["ask", "evidence"] }
+        ]
+      },
+      "dependentRequired": {
+        "inputs": ["ask"],
+        "each": ["ask"],
+        "context_lines": ["ask"],
+        "keep_comments": ["ask"],
+        "ask": ["inputs"]
+      }
+    },
+    "judged": {
+      "description": "One judge question G3 asked, as gates, submit and a refusal list it (DESIGN.md §3): its ref, its criterion, the answer and reason, and what the answer means. pass is the answer that passes, fail refuses the gate, and unsure holds the item under T10.",
+      "type": "object",
+      "required": ["ref", "criterion", "answer", "reason", "result"],
+      "properties": {
+        "ref": { "type": "string", "pattern": "^c[1-9][0-9]*:" },
+        "criterion": { "type": "integer", "minimum": 1 },
+        "answer": { "enum": ["yes", "no", "unsure"] },
+        "reason": { "type": "string" },
+        "result": { "enum": ["pass", "fail", "unsure"] }
+      },
+      "additionalProperties": false
+    },
+    "question": {
+      "description": "One of a judge's yes/no questions (DESIGN.md §2.3.1).",
+      "type": "object",
+      "required": ["id", "ask"],
+      "properties": {
+        "id": {
+          "description": "Names the question in its ref, such as c2:src/import.js:57:suggests_next_step.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+        },
+        "ask": {
+          "description": "The question, on one line.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]+$"
+        },
+        "yes": {
+          "description": "What a yes means, on one line.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]+$"
+        },
+        "no": {
+          "description": "What a no means, on one line.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]+$"
+        },
+        "pass_when": {
+          "description": "The answer that passes. yes when it's left out, and no for a question about a defect.",
+          "enum": ["yes", "no"]
+        }
+      },
+      "additionalProperties": false
     },
     "verification": {
-      "description": "How an item reached done (DESIGN.md §2.7). Slice 12 adds the judges that ran.",
+      "description": "How an item reached done (DESIGN.md §2.7).",
       "type": "object",
       "required": ["by", "at"],
       "properties": {
@@ -192,6 +279,38 @@
                 "description": "Its last 20 lines of output, stdout and stderr together, without a final line break. Each kept line is cut at 500 characters, the last of them `…`, if it's longer. Left out if it printed nothing.",
                 "type": "string",
                 "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "judges": {
+          "description": "Every judge question the submit asked, one entry per question and excerpt, in order (DESIGN.md §4.3). Left out when the item has no judge.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["ref", "model", "request", "answer", "reason"],
+            "properties": {
+              "ref": {
+                "description": "The question's ref (DESIGN.md §2.3.2): the criterion, the file:line of an each match, if it has one, and the question's id, such as c2:src/import.js:57:suggests_next_step.",
+                "type": "string",
+                "pattern": "^c[1-9][0-9]*:"
+              },
+              "model": {
+                "description": "The model that answered.",
+                "type": "string",
+                "minLength": 1
+              },
+              "request": {
+                "description": "The fingerprint of the request it was asked in, which names its answer in judge/cache/: a SHA-256 in 64 lower-case hex characters.",
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "answer": { "enum": ["yes", "no", "unsure"] },
+              "reason": {
+                "description": "The judge's one-sentence reason.",
+                "type": "string"
               }
             },
             "additionalProperties": false

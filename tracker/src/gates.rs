@@ -4,7 +4,8 @@
 //!
 //! This version has G1 (at `start`), and G2, G5, G6, G3 and G4 (at
 //! `submit`, `approve`, and in the `gates` dry run). G3 and G4 run checks
-//! (`checks.rs`), and G5 reads git (`git.rs`). Shelving an in-progress item
+//! (`checks.rs`), G3 asks judges once every other gate has passed
+//! (`judge.rs`), and G5 reads git (`git.rs`). Shelving an in-progress item
 //! runs G5's clean-tree half and G4 (§2.8).
 
 use std::fs;
@@ -18,8 +19,10 @@ use crate::config::Config;
 use crate::error::Error;
 use crate::git;
 use crate::item::{Item, Status, is_valid_id};
+use crate::judge;
 use crate::states;
 use crate::store::Skipped;
+use crate::text;
 
 /// One reason a gate failed.
 #[derive(Debug, Clone, PartialEq)]
@@ -34,6 +37,9 @@ pub struct Failure {
     /// For a check that failed, its run: the command, exit code and last
     /// lines of output.
     pub check: Option<checks::Run>,
+    /// For a judge question that failed, its ref, answer, reason and
+    /// excerpt (§2.3.1).
+    pub judge: Option<judge::Answered>,
 }
 
 /// What a run of the gates found: the gates that ran, in order, every
@@ -50,6 +56,8 @@ pub struct Report {
     /// What G5 found uncommitted under the root, as `git::uncommitted`
     /// names them, so `tree_after_checks` can tell what the checks left.
     pub uncommitted: Vec<String>,
+    /// Every judge question G3 asked, in order, with its answer.
+    pub judges: Vec<judge::Answered>,
 }
 
 /// One check a gate ran: G3 for a criterion's, G4 for a project's.
@@ -89,6 +97,7 @@ impl Report {
             self.head = other.head;
         }
         self.uncommitted.extend(other.uncommitted);
+        self.judges.extend(other.judges);
     }
 
     /// The gates that failed, each once, in the order they ran.
@@ -123,6 +132,12 @@ impl Report {
         Value::Array(gates)
     }
 
+    /// Every judge question G3 asked, with its ref and answer, for
+    /// `--json` (§3).
+    pub fn judges_json(&self) -> Value {
+        Value::Array(self.judges.iter().map(judge::Answered::json).collect())
+    }
+
     /// Every reason a gate failed, for `--json`.
     fn failures_json(&self) -> Value {
         let failures: Vec<Value> = self
@@ -134,6 +149,11 @@ impl Report {
                     object["criterion"] = json!(n);
                 }
                 object["message"] = json!(failure.message);
+                if let Some(answered) = &failure.judge {
+                    object["ref"] = json!(answered.judge_ref);
+                    object["answer"] = json!(answered.answer);
+                    object["reason"] = json!(answered.reason);
+                }
                 if let Some(run) = &failure.check {
                     object["cmd"] = json!(run.cmd);
                     object["exit_code"] = json!(run.exit_code);
@@ -179,6 +199,10 @@ impl Report {
             ("gates".to_string(), self.gates_json()),
             ("failures".to_string(), self.failures_json()),
         ];
+        let mut fields = fields;
+        if !self.judges.is_empty() {
+            fields.push(("judges".to_string(), self.judges_json()));
+        }
         // A failed check's last lines of output go under its reason, one
         // per line, indented past the gate.
         let mut details = Vec::new();
@@ -187,6 +211,12 @@ impl Report {
             if let Some(run) = &failure.check {
                 for line in run.output.lines() {
                     details.push(format!("      {line}"));
+                }
+            }
+            // A judge's fail shows what it was asked about (§2.3.1).
+            if let Some(answered) = &failure.judge {
+                for line in text::for_terminal(&answered.excerpt, true).lines() {
+                    details.push(format!("      {line}").trim_end().to_string());
                 }
             }
         }
@@ -247,6 +277,7 @@ pub fn start(item: &Item, items: &[Item], skipped: &[Skipped]) -> Report {
             criterion: None,
             message,
             check: None,
+            judge: None,
         });
     }
     for problem in skipped {
@@ -274,6 +305,7 @@ pub fn start(item: &Item, items: &[Item], skipped: &[Skipped]) -> Report {
                 problem.fix
             ),
             check: None,
+            judge: None,
         });
     }
     Report {
@@ -433,6 +465,7 @@ fn g5_failure(message: String) -> Failure {
         criterion: None,
         message,
         check: None,
+        judge: None,
     }
 }
 
@@ -466,6 +499,72 @@ pub fn g3(item: &Item, config: &Config) -> Report {
     report
 }
 
+/// G3's judge half (§2.3.1): asks each judge criterion's questions, once
+/// every gate before it has passed, keeping the answers in the `cache`
+/// folder. A no, or the pass_when answer's opposite, fails it, and so does
+/// a judge that can't be graded, such as one whose input is gone or whose
+/// call failed. An unsure answer doesn't: T10 holds the item for it. Adds
+/// nothing to `ran`, since `g3` has already named G3.
+pub fn judges(item: &Item, config: &Config, cache: &Path) -> Report {
+    let mut report = Report::default();
+    let judged: Vec<(usize, &crate::item::Criterion)> = item
+        .criteria
+        .iter()
+        .enumerate()
+        .filter(|(_, criterion)| criterion.is_judge())
+        .map(|(i, criterion)| (i + 1, criterion))
+        .collect();
+    if judged.is_empty() {
+        return report;
+    }
+    let root = match root(item, config) {
+        Ok(root) => root,
+        Err(why) => {
+            report.failures.push(Failure {
+                gate: "G3",
+                criterion: Some(judged[0].0),
+                message: format!("The judges can't read {}'s work: {why}.", item.id),
+                check: None,
+                judge: None,
+            });
+            return report;
+        }
+    };
+    for (n, criterion) in judged {
+        let graded = judge::grade(item, n, criterion, config, &root, cache);
+        for message in graded.failures {
+            report.failures.push(Failure {
+                gate: "G3",
+                criterion: Some(n),
+                message,
+                check: None,
+                judge: None,
+            });
+        }
+        for answered in graded.answers {
+            if answered.outcome() == judge::Outcome::Fail {
+                report.failures.push(Failure {
+                    gate: "G3",
+                    criterion: Some(n),
+                    message: format!(
+                        "Criterion {n}'s judge answered {} to {}, \"{}\", and only {} passes: {} \
+                         Its excerpt follows.",
+                        answered.answer.as_str(),
+                        answered.judge_ref,
+                        answered.question,
+                        answered.passing.as_str(),
+                        answered.reason
+                    ),
+                    check: None,
+                    judge: Some(answered.clone()),
+                });
+            }
+            report.judges.push(answered);
+        }
+    }
+    report
+}
+
 /// G4: each of the project's checks, run in its root. Shelving an
 /// in-progress item runs it on its own (§2.8).
 pub fn g4(item: &Item, config: &Config) -> Report {
@@ -484,6 +583,7 @@ pub fn g4(item: &Item, config: &Config) -> Report {
                  again with `tracker project add`."
             ),
             check: None,
+            judge: None,
         });
         return report;
     };
@@ -632,6 +732,7 @@ fn check_failure(
         criterion,
         message,
         check: Some(run.clone()),
+        judge: None,
     }
 }
 
@@ -647,6 +748,7 @@ fn no_criteria(item: &Item, gate: &'static str) -> Failure {
              criterion add {id} \"…\" --check \"…\"`."
         ),
         check: None,
+        judge: None,
     }
 }
 
@@ -675,6 +777,7 @@ fn g2(item: &Item) -> Vec<Failure> {
                     criterion.text
                 ),
                 check: None,
+                judge: None,
             }
         })
         .collect()
@@ -695,6 +798,7 @@ fn g6(item: &Item, config: &Config) -> Vec<Failure> {
             criterion: None,
             message,
             check: None,
+            judge: None,
         }],
     }
 }
