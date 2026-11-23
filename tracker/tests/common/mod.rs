@@ -567,6 +567,10 @@ pub fn schema_for(args: &[&str]) -> &'static str {
         ["gates", ..] => "gates",
         ["criterion", "accept", ..] => "criterion-accept",
         ["criterion", ..] | ["evidence", ..] => "criterion",
+        ["digest", "ack", ..] => "digest-ack",
+        ["digest", ..] => "digest",
+        ["audit", ..] => "audit",
+        ["judges", ..] => "judges",
         _ => panic!(
             "No schema for `tracker {}`. Add one to schemas/.",
             args.join(" ")

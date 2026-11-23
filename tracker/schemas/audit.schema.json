@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracker.invalid/schemas/audit.schema.json",
+  "title": "tracker audit --json",
+  "description": "What audit found in the whole store (DESIGN.md §3): signs that a file was edited by hand. It exits 0 whatever it finds.",
+  "type": "object",
+  "required": ["items", "problems", "skipped"],
+  "properties": {
+    "items": {
+      "description": "How many item files were read as items and checked.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "problems": {
+      "description": "Each problem found, items first by ID, then deleted.json's lines in order. Empty when nothing was found.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["problem", "message"],
+        "properties": {
+          "problem": {
+            "description": "status: the state doesn't match the last move in history. verification: a done item with no verification record. ref: a done auto or human item whose refs/tracker/<ID> is missing or doesn't point at its record's commit. held: holds or held questions that only an item in review can have, or that don't agree. id: an ID used twice, by an item and a deleted.json line or by two lines. deleted: a deleted.json line that can't be read, or whose ID is at or above its project's counter.",
+            "enum": ["status", "verification", "ref", "held", "id", "deleted"]
+          },
+          "id": {
+            "description": "The item or deleted.json line it's about. Left out for a line that can't be read.",
+            "$ref": "item.schema.json#/properties/id"
+          },
+          "message": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "skipped": { "$ref": "list.schema.json#/$defs/skipped" }
+  },
+  "additionalProperties": false
+}

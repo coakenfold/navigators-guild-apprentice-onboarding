@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tracker.invalid/schemas/review.schema.json",
   "title": "tracker review --json",
-  "description": "The inbox (DESIGN.md §3): every item in review, from every project, with the triggers that hold it. Empty when nothing needs a human.",
+  "description": "The inbox (DESIGN.md §3): every item in review, from every project, with the triggers that hold it, and every overdue digest. Empty when nothing needs a human.",
   "type": "object",
   "required": ["held", "skipped"],
   "properties": {
@@ -31,6 +31,32 @@
             "description": "The command that shows the item's commits and their diff, for reviewing it: tracker show <ID> --diff.",
             "type": "string",
             "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "overdue_digests": {
+      "description": "Each project whose digest is overdue: its oldest entry is older than the project's review.digest.every_days (DESIGN.md §2.6). Left out when none is.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["project", "entries", "oldest", "acknowledged"],
+        "properties": {
+          "project": { "$ref": "item.schema.json#/$defs/key" },
+          "entries": {
+            "description": "How many items and actions the digest lists.",
+            "type": "integer",
+            "minimum": 1
+          },
+          "oldest": {
+            "description": "When its oldest entry happened.",
+            "$ref": "item.schema.json#/$defs/time"
+          },
+          "acknowledged": {
+            "description": "When the digest was last acknowledged, or null if it never was.",
+            "oneOf": [{ "$ref": "item.schema.json#/$defs/time" }, { "type": "null" }]
           }
         },
         "additionalProperties": false
