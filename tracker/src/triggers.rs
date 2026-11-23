@@ -7,7 +7,7 @@
 //! moved), T6 (a manual criterion), T7 (a large change), T8 (the design doc
 //! changed), T9 (the `needs-review` label), T10 (a judge answered unsure,
 //! or the project doesn't auto-verify judged work), T11 (judges failed
-//! `max_failures` different requests since start), T13 (a check or judge
+//! `max_failures` runs that failed new requests since start), T13 (a check or judge
 //! passed before the work) and T14 (unscoped commits since start). T1 to T4, T7 and T8 read
 //! the item's changed files (§2.1), and T14 reads the commits made since
 //! start. A trigger in the project's `review.disabled` doesn't run, except
@@ -503,17 +503,33 @@ fn t10(judges: &[Answered], auto_verify: bool) -> Option<String> {
     })
 }
 
-/// T11: judges failed `max` or more different requests since start
-/// (§2.5), so the work may have been changed until a judge passed. Each
-/// request is counted once, and fails at start don't count.
+/// T11: judges failed new requests in `max` or more runs since start
+/// (§2.5), so the work may have been changed until a judge passed. A run
+/// counts once, however many requests it failed, and fails at start don't
+/// count. Each question is named once, with how many runs failed it.
 fn t11(failed: &[FailedRequest], max: u64) -> Option<String> {
     if failed.is_empty() || (failed.len() as u64) < max {
         return None;
     }
-    let refs: Vec<String> = failed.iter().map(|f| f.refs.join(", ")).collect();
+    let mut refs: Vec<(&String, usize)> = Vec::new();
+    for run in failed {
+        for judge_ref in &run.refs {
+            match refs.iter_mut().find(|(seen, _)| *seen == judge_ref) {
+                Some(found) => found.1 += 1,
+                None => refs.push((judge_ref, 1)),
+            }
+        }
+    }
+    let refs: Vec<String> = refs
+        .iter()
+        .map(|(judge_ref, n)| match n {
+            1 => judge_ref.to_string(),
+            n => format!("{judge_ref} ({n} runs)"),
+        })
+        .collect();
     Some(format!(
-        "judges failed {} different requests since start, and judge.max_failures is {max}, so the \
-         work may have been changed until a judge passed: {}",
+        "judges failed new requests in {} runs since start, and judge.max_failures is {max}, so \
+         the work may have been changed until a judge passed: {}",
         failed.len(),
         file_list(&refs)
     ))

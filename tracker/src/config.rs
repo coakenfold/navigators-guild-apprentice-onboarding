@@ -54,7 +54,7 @@ pub const DEFAULT_CONTEXT_LINES: usize = 12;
 /// A project's `judge.timeout_secs` when it isn't set (§4.2).
 pub const DEFAULT_JUDGE_TIMEOUT_SECS: u64 = 60;
 
-/// How many different failed judge requests hold an item by default (T11).
+/// How many runs that failed new judge requests hold an item by default (T11).
 pub const DEFAULT_MAX_FAILURES: u64 = 3;
 
 impl Config {
@@ -114,7 +114,7 @@ pub struct Project {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectJudge {
-    /// How many different failed judge requests hold an item (T11).
+    /// How many runs that failed new judge requests hold an item (T11).
     /// `DEFAULT_MAX_FAILURES` when it isn't set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_failures: Option<u64>,
@@ -271,7 +271,7 @@ impl Project {
             .unwrap_or(true)
     }
 
-    /// How many different failed judge requests since start hold an item
+    /// How many runs that failed new judge requests since start hold an item
     /// (T11, §4.2).
     pub fn max_failures(&self) -> u64 {
         self.judge

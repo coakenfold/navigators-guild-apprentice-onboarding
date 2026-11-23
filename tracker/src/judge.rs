@@ -238,17 +238,17 @@ struct ItemFailures {
     failed: Vec<FailedRequest>,
 }
 
-/// One request a judge failed: its fingerprint, and the refs of the
-/// questions in it that didn't pass.
+/// One `gates` or `submit` run that failed new requests (T11): their
+/// fingerprints, and the refs of the questions in them that didn't pass.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FailedRequest {
-    pub request: String,
+    pub requests: Vec<String>,
     pub refs: Vec<String>,
 }
 
 const FAILURES_FIX: &str = "It's JSON that tracker writes, counting failed judge requests for \
-                            T11 (§4.1). Fix it by hand, or remove it, which starts every \
-                            item's count again.";
+                            T11 (§4.1). Fix it by hand. Removing it clears every \
+                            item's T11 count, so a human should decide.";
 
 fn read_failures(path: &Path) -> crate::error::Result<BTreeMap<String, ItemFailures>> {
     let text = match fs::read_to_string(path) {
@@ -291,43 +291,44 @@ pub fn record_start(path: &Path, id: &str, answers: &[Answered]) -> crate::error
     write_failures(path, &failures)
 }
 
-/// Counts each request among `answers` that a judge failed, for item `id`
-/// (T11): one with an answer that isn't the passing one, a fail or
-/// unsure. A request asked at start, or already counted, isn't counted
-/// again, so unchanged work that fails the same way doesn't add to the
-/// count. A call that failed has no answers, so it isn't counted. Call it
-/// holding the store's lock, only for an item in progress.
+/// Counts one run for item `id` (T11) if `answers` hold a request a judge
+/// failed, with an answer that isn't the passing one, a fail or unsure,
+/// that wasn't asked at start or counted before. The run counts once,
+/// however many new requests it failed, so one try at an `each` judge
+/// with three failing matches adds one. Unchanged work that fails the same
+/// way adds nothing. A call that failed has no answers, so it isn't
+/// counted. Call it holding the store's lock, only for an item in
+/// progress.
 pub fn record_failures(path: &Path, id: &str, answers: &[Answered]) -> crate::error::Result<()> {
-    let mut new: Vec<FailedRequest> = Vec::new();
-    for answered in answers.iter().filter(|a| a.outcome() != Outcome::Pass) {
-        match new.iter_mut().find(|f| f.request == answered.request) {
-            Some(found) => found.refs.push(answered.judge_ref.clone()),
-            None => new.push(FailedRequest {
-                request: answered.request.clone(),
-                refs: vec![answered.judge_ref.clone()],
-            }),
-        }
-    }
-    if new.is_empty() {
+    if answers.iter().all(|a| a.outcome() == Outcome::Pass) {
         return Ok(());
     }
     let mut failures = read_failures(path)?;
     let item = failures.entry(id.to_string()).or_default();
-    let before = item.failed.len();
-    for failed in new {
-        let seen = item.at_start.contains(&failed.request)
-            || item.failed.iter().any(|f| f.request == failed.request);
-        if !seen {
-            item.failed.push(failed);
+    let mut run = FailedRequest {
+        requests: Vec::new(),
+        refs: Vec::new(),
+    };
+    for answered in answers.iter().filter(|a| a.outcome() != Outcome::Pass) {
+        let request = &answered.request;
+        let seen = item.at_start.contains(request)
+            || item.failed.iter().any(|f| f.requests.contains(request));
+        if seen {
+            continue;
         }
+        if !run.requests.contains(request) {
+            run.requests.push(request.clone());
+        }
+        run.refs.push(answered.judge_ref.clone());
     }
-    if item.failed.len() == before {
+    if run.requests.is_empty() {
         return Ok(());
     }
+    item.failed.push(run);
     write_failures(path, &failures)
 }
 
-/// The requests counted against item `id` since its start (T11).
+/// The runs counted against item `id` since its start (T11).
 pub fn failed_requests(path: &Path, id: &str) -> crate::error::Result<Vec<FailedRequest>> {
     Ok(read_failures(path)?
         .remove(id)

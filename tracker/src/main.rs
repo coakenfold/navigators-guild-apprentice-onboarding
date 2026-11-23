@@ -106,7 +106,7 @@ enum Command {
     /// existing test changed, T5 a criterion, check or design changed after
     /// start, T6 a manual criterion, T7 a large change, T8 the design doc,
     /// T9 the label needs-review, T10 a judge's unsure answer, T11 judges
-    /// that failed judge.max_failures different requests since start, T13 a
+    /// that failed new requests in judge.max_failures runs since start, T13 a
     /// check or judge that already passed at start, and T14 a commit not
     /// scoped to an item. The project's review settings in config.json tune them.
     /// A held item waits in review for a human to approve or reject it. Otherwise it goes to done, verified automatically against
@@ -1779,10 +1779,10 @@ fn criterion_judge(
     };
     let asked = &item.criteria[n - 1].ask;
     message.push_str(&if asked.len() == 1 {
-        "Its question is asked at submit, once every other gate passes.\n".to_string()
+        "Its question is asked at start and at submit, once every other gate passes.\n".to_string()
     } else {
         format!(
-            "Its {} questions are asked at submit, once every other gate passes.\n",
+            "Its {} questions are asked at start and at submit, once every other gate passes.\n",
             asked.len()
         )
     });
@@ -2471,7 +2471,9 @@ fn apply(
                 .iter()
                 .flat_map(|(_, graded)| graded.answers.iter().cloned())
                 .collect();
-            judge::record_start(&store.judge_failures_path(), &item.id, &answers)?;
+            if item.criteria.iter().any(|criterion| criterion.is_judge()) {
+                judge::record_start(&store.judge_failures_path(), &item.id, &answers)?;
+            }
             report = Some(g1);
             lock
         }
@@ -2763,9 +2765,11 @@ fn judges_at_start(item: &Item, judged: &[(usize, judge::Graded)]) -> Vec<String
             ));
         }
         for failure in &graded.failures {
+            let failure = failure
+                .replace(" couldn't be asked: ", " couldn't be graded at start: ")
+                .replace(" A failed call never counts as a pass.", "");
             warnings.push(format!(
-                "Criterion {n}'s judge couldn't be graded at start: {failure} It counts as not \
-                 passing, and is asked again at submit. {} started anyway.",
+                "{failure} It counts as not passing, and is asked again at submit. {} started anyway.",
                 item.id
             ));
         }

@@ -747,14 +747,18 @@ mod tr51_c4 {
         let env = env_without_commit();
         let path = judge_dir(&env).join("judge.json");
         fs::write(&path, whole_judge().to_string()).unwrap();
-        let output = env.json(&[
-            "criterion",
-            "add",
-            "XX-1",
-            "--judge",
-            path.to_str().unwrap(),
-        ]);
-        let text = output.to_string();
+        let output = env
+            .cmd()
+            .args([
+                "criterion",
+                "add",
+                "XX-1",
+                "--judge",
+                path.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+        let text = String::from_utf8(output.get_output().stdout.clone()).unwrap();
         assert!(!text.contains("asked at submit"), "{text}");
         assert!(text.contains("asked at start and at submit"), "{text}");
     }
