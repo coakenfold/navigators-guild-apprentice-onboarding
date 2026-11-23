@@ -16,8 +16,8 @@ use tracker::error::{Error, Result};
 use tracker::gates::{self, Run};
 use tracker::git;
 use tracker::item::{
-    self, CheckRecord, Criterion, HistoryEntry, Item, Kind, Priority, Started, StartedCheck,
-    Status, Verification, VerifiedBy, Via,
+    self, CheckRecord, Criterion, HeldQuestion, HistoryEntry, Item, Kind, Priority, Started,
+    StartedCheck, Status, Verification, VerifiedBy, Via,
 };
 use tracker::judge;
 use tracker::states;
@@ -106,15 +106,30 @@ enum Command {
     /// existing test changed, T5 a criterion, check or design changed after
     /// start, T6 a manual criterion, T7 a large change, T8 the design doc,
     /// T9 the label needs-review, T10 a judge's unsure answer, T11 judges
-    /// that failed new requests in judge.max_failures runs since start, T13 a
+    /// that failed new requests in judge.max_failures runs since start, T12 a
+    /// judge's fail the agent disputed, T13 a
     /// check or judge that already passed at start, and T14 a commit not
     /// scoped to an item. The project's review settings in config.json tune them.
     /// A held item waits in review for a human to approve or reject it. Otherwise it goes to done, verified automatically against
     /// HEAD, with each check's last lines of output, and the git ref
     /// refs/tracker/<ID> keeps that commit
+    #[command(
+        override_usage = "tracker submit [OPTIONS] <ID> [--dispute <REF> --reason <REASON>]..."
+    )]
     Submit {
         /// The item's ID, such as BM-12
         id: String,
+        /// Dispute a judge's fail you've checked and still believe is
+        /// wrong, by its ref from the gate output, such as c2:names_problem.
+        /// If the disputed questions are the only failures, T12 holds the
+        /// item for a human to decide. A dispute never passes anything.
+        /// Repeat it for each question, each with its own --reason
+        #[arg(long, value_name = "REF")]
+        dispute: Vec<String>,
+        /// Why the judge is wrong, for the --dispute before it: one line of
+        /// at most 500 characters, with evidence such as a file:line
+        #[arg(long)]
+        reason: Vec<String>,
     },
     /// Run the gates submit runs, without changing anything
     ///
@@ -516,7 +531,11 @@ fn main() -> ExitCode {
         Command::Edit(args) => edit(&store, args),
         Command::List(args) => list(&store, args),
         Command::Start { id } => move_item(&store, &id, Via::Start, None),
-        Command::Submit { id } => move_item(&store, &id, Via::Submit, None),
+        Command::Submit {
+            id,
+            dispute,
+            reason,
+        } => submit(&store, &id, dispute, reason),
         Command::Gates { id } => gates_dry_run(&store, &id),
         Command::Criterion { command } => match command {
             CriterionCommand::Add {
@@ -980,6 +999,7 @@ fn create(store: &Store, args: CreateArgs) -> Result<Output> {
         verification: None,
         previous_verification: None,
         holds: Vec::new(),
+        held_questions: Vec::new(),
         history: Vec::new(),
         description,
     };
@@ -1363,6 +1383,7 @@ fn edit(store: &Store, args: EditArgs) -> Result<Output> {
             fields: fields.clone(),
             kind_before,
             labels_removed,
+            held_questions: Vec::new(),
         });
         store.update_item(&item)?;
         format!("Edited {id}: changed {}.\n", states::join(&fields, "and"))
@@ -1889,6 +1910,7 @@ fn criterion_accept(store: &Store, id: &str) -> Result<Output> {
         fields: vec!["written".to_string()],
         kind_before: None,
         labels_removed: Vec::new(),
+        held_questions: Vec::new(),
     });
     store.update_item(&item)?;
 
@@ -2022,7 +2044,7 @@ fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
     // Every gate passed, so the triggers run, as they would on a submit
     // (§2.5), and say whether it would be held.
     let failed = failed_runs(store, &item)?;
-    let triggers = triggers::run(&item, &config, &report.judges, &failed)?;
+    let triggers = triggers::run(&item, &config, &report.judges, &failed, &[])?;
     let holds = triggers::holds(&triggers);
     if !holds.is_empty() {
         text.push_str("A submit would be held for review:\n");
@@ -2339,7 +2361,48 @@ fn move_item(store: &Store, id: &str, via: Via, reason: Option<String>) -> Resul
         return Err(states::not_from(&id, item.status, via));
     }
     let reason = check_reason(&id, via, reason, &states::command(&id, via))?;
-    apply(store, lock, item, &file, via, reason)
+    apply(store, lock, item, &file, via, reason, &[])
+}
+
+/// `submit`, disputing each judge fail in `refs`, with the reason in
+/// `reasons` at the same place (§2.3.2). Each ref needs its own reason, on
+/// one line, and a ref can be disputed once.
+fn submit(store: &Store, id: &str, refs: Vec<String>, reasons: Vec<String>) -> Result<Output> {
+    let id = normalize_id(id);
+    if refs.len() != reasons.len() {
+        return Err(Error::input(format!(
+            "Each --dispute needs its own --reason, and {} has {} --dispute and {} --reason. \
+             Give them in pairs: `tracker submit {id} --dispute <ref> --reason \"…\"`.",
+            id,
+            refs.len(),
+            reasons.len()
+        )));
+    }
+    let mut disputes: Vec<(String, String)> = Vec::new();
+    for (judge_ref, reason) in refs.into_iter().zip(reasons) {
+        let judge_ref = judge_ref.trim().to_string();
+        if disputes.iter().any(|(seen, _)| *seen == judge_ref) {
+            return Err(Error::input(format!(
+                "{judge_ref} is disputed twice. Dispute each question once, with one reason."
+            )));
+        }
+        let how = format!("tracker submit {id} --dispute {judge_ref} --reason \"…\"");
+        if reason.trim().is_empty() {
+            return Err(Error::input(format!(
+                "A dispute needs a reason: one line saying why the judge is wrong, with evidence \
+                 such as a file:line. `{how}`."
+            )));
+        }
+        let reason = check_reason(&id, Via::Reject, Some(reason), &how)?.unwrap_or_default();
+        disputes.push((judge_ref, reason));
+    }
+    store.require_exists()?;
+    let lock = store.lock()?;
+    let (item, file) = store.load_item_with_text(&id)?;
+    if !states::has_move(Via::Submit, item.status) {
+        return Err(states::not_from(&id, item.status, Via::Submit));
+    }
+    apply(store, lock, item, &file, Via::Submit, None, &disputes)
 }
 
 /// `status <id> <state>`: the alias that maps a state onto the command that
@@ -2369,7 +2432,7 @@ fn status(store: &Store, id: &str, to: Status, reason: Option<String>) -> Result
     }
     let how = format!("tracker status {id} {state} --reason \"…\"");
     let reason = check_reason(&id, via, reason, &how)?;
-    apply(store, lock, item, &file, via, reason)
+    apply(store, lock, item, &file, via, reason, &[])
 }
 
 /// The longest reason a move takes, in characters. A reason is printed on
@@ -2432,6 +2495,7 @@ fn apply(
     file: &str,
     via: Via,
     reason: Option<String>,
+    disputes: &[(String, String)],
 ) -> Result<Output> {
     refuse_newer_file(store, &item.id, file)?;
     let command = states::command(&item.id, via);
@@ -2443,6 +2507,7 @@ fn apply(
     let mut triggers = Vec::new();
     let mut started = Vec::new();
     let mut judged = Vec::new();
+    let mut held_questions = Vec::new();
     let mut head = None;
     let _lock = match via {
         Via::Start => {
@@ -2483,18 +2548,29 @@ fn apply(
             drop(lock);
             gates.extend(gates::scripts(&item, &config));
             gates::tree_after_checks(&item, &config, &mut gates)?;
+            // The judges are asked only once every other gate has passed,
+            // so only then can a dispute be checked against their answers.
+            let asked = gates.passed();
             ask_judges(store, &item, &config, &mut gates);
             let lock = store.lock_unchanged_after_checks(&item.id, file, &command)?;
+            // A ref the judges didn't fail is refused before anything is
+            // counted, since nothing was submitted (§2.3.2).
+            if asked {
+                check_disputes(&item.id, disputes, &gates.judges)?;
+            }
             count_failures(store, &item, &gates)?;
+            let disputed = take_disputed(&mut gates, disputes);
             if !gates.passed() {
                 return Err(gates.refusal(&item.id, item.status, Run::Submit));
             }
             let failed = failed_runs(store, &item)?;
-            triggers = triggers::run(&item, &config, &gates.judges, &failed)?;
+            triggers = triggers::run(&item, &config, &gates.judges, &failed, &disputed)?;
             if triggers::holds(&triggers).is_empty() {
                 set_ref_at_head(&item, &config, &gates)?;
             } else {
                 to = Status::Review;
+                held_questions = disputed;
+                held_questions.extend(unsure_questions(&gates.judges));
             }
             report = Some(gates);
             lock
@@ -2565,13 +2641,17 @@ fn apply(
             ));
             item.verification = Some(record);
         } else {
-            text.push(&format!(
-                "Every gate passed, and {} is held for review:\n",
-                item.id
-            ));
+            // A disputed fail is still a fail: only the others passed.
+            let passed = if held_questions.iter().any(|q| q.trigger == "T12") {
+                "Every gate passed but the disputed judge questions"
+            } else {
+                "Every gate passed"
+            };
+            text.push(&format!("{passed}, and {} is held for review:\n", item.id));
             text.push(&holds_text(&holds));
             if let Some(report) = &report {
                 text.push(&unsure_text(&report.judges));
+                text.push(&disputed_text(&held_questions, &report.judges));
             }
             text.push(&format!(
                 "It waits in `tracker review` for a human to approve or reject it. `tracker show \
@@ -2580,6 +2660,7 @@ fn apply(
             ));
         }
         item.holds = holds.clone();
+        item.held_questions = held_questions;
     }
     push_move(&mut item, from, via, reason, now);
     store.update_item(&item)?;
@@ -2614,6 +2695,126 @@ fn apply(
     })
 }
 
+/// Refuses, with exit 1, a dispute whose ref names no judge question in
+/// `judges` that failed: one that passed, one answered unsure, which T10
+/// holds anyway, or one no judge was asked (§2.3.2).
+fn check_disputes(
+    id: &str,
+    disputes: &[(String, String)],
+    judges: &[judge::Answered],
+) -> Result<()> {
+    for (judge_ref, _) in disputes {
+        let answered = judges.iter().find(|a| a.judge_ref == *judge_ref);
+        let why = match answered.map(|a| a.outcome()) {
+            Some(judge::Outcome::Fail) => continue,
+            Some(judge::Outcome::Pass) => {
+                format!("the judge passed {judge_ref}, so there's nothing to dispute")
+            }
+            Some(judge::Outcome::Unsure) => format!(
+                "the judge answered unsure to {judge_ref}, and T10 holds an unsure answer for a \
+                 human anyway"
+            ),
+            None => format!(
+                "no judge question {judge_ref} was asked. `tracker gates {id}` lists each \
+                 question's ref"
+            ),
+        };
+        return Err(Error::input(format!(
+            "{id} can't be submitted with that dispute: {why}. Only a judge's fail can be \
+             disputed. Nothing was changed."
+        )));
+    }
+    Ok(())
+}
+
+/// Takes the G3 failures of each disputed question out of `report`, and
+/// returns each as a question held under T12, with the agent's reason, in
+/// the order they were disputed. A dispute that matches no failure, which
+/// can only happen when the judges weren't asked, holds nothing.
+fn take_disputed(report: &mut gates::Report, disputes: &[(String, String)]) -> Vec<HeldQuestion> {
+    let mut held = Vec::new();
+    for (judge_ref, reason) in disputes {
+        let failed = report.failures.iter().position(|failure| {
+            failure
+                .judge
+                .as_ref()
+                .is_some_and(|a| a.judge_ref == *judge_ref && a.outcome() == judge::Outcome::Fail)
+        });
+        let Some(at) = failed else { continue };
+        let failure = report.failures.remove(at);
+        let answered = failure.judge.expect("found above");
+        held.push(held_question(&answered, "T12", Some(reason.clone())));
+    }
+    held
+}
+
+/// Each unsure answer in `judges`, as a question held under T10.
+fn unsure_questions(judges: &[judge::Answered]) -> Vec<HeldQuestion> {
+    judges
+        .iter()
+        .filter(|answered| answered.outcome() == judge::Outcome::Unsure)
+        .map(|answered| held_question(answered, "T10", None))
+        .collect()
+}
+
+fn held_question(
+    answered: &judge::Answered,
+    trigger: &str,
+    dispute: Option<String>,
+) -> HeldQuestion {
+    HeldQuestion {
+        trigger: trigger.to_string(),
+        judge_ref: answered.judge_ref.clone(),
+        request: answered.request.clone(),
+        answer: answered.answer,
+        reason: answered.reason.clone(),
+        dispute,
+    }
+}
+
+/// The questions in `held` that the agent disputed (T12).
+fn disputed_questions(held: &[HeldQuestion]) -> Vec<HeldQuestion> {
+    held.iter()
+        .filter(|q| q.trigger == "T12")
+        .cloned()
+        .collect()
+}
+
+/// Each disputed question in `held`: its ref and question, the model's
+/// answer and reason, the agent's reason, and its excerpt, when `judges`
+/// holds the answer, under the holds (§2.3.2).
+fn disputed_text(held: &[HeldQuestion], judges: &[judge::Answered]) -> String {
+    let mut text = String::new();
+    for question in held.iter().filter(|q| q.trigger == "T12") {
+        let answered = judges
+            .iter()
+            .find(|a| a.judge_ref == question.judge_ref && a.request == question.request);
+        match answered {
+            Some(answered) => text.push_str(&format!(
+                "    {}: {}\n",
+                question.judge_ref,
+                text::for_terminal(&answered.question, false)
+            )),
+            None => text.push_str(&format!("    {}\n", question.judge_ref)),
+        }
+        text.push_str(&format!(
+            "      model answered {}: {}\n",
+            question.answer.as_str(),
+            text::for_terminal(&question.reason, false)
+        ));
+        text.push_str(&format!(
+            "      agent disputes: {}\n",
+            text::for_terminal(question.dispute.as_deref().unwrap_or_default(), false)
+        ));
+        if let Some(answered) = answered {
+            for line in text::for_terminal(&answered.excerpt, true).lines() {
+                text.push_str(&format!("      {line}\n").replace(" \n", "\n"));
+            }
+        }
+    }
+    text
+}
+
 /// Adds the history entry for a move from `from` to the item's state now,
 /// made by `via` at `now`, with its reason, if it needs one.
 fn push_move(
@@ -2633,6 +2834,7 @@ fn push_move(
         fields: Vec::new(),
         kind_before: None,
         labels_removed: Vec::new(),
+        held_questions: Vec::new(),
     });
 }
 
@@ -2674,6 +2876,11 @@ fn verification_record(
             .unwrap_or_default(),
         triggers: if by == VerifiedBy::Human {
             item.holds.clone()
+        } else {
+            Vec::new()
+        },
+        held_questions: if by == VerifiedBy::Human {
+            item.held_questions.clone()
         } else {
             Vec::new()
         },
@@ -2970,6 +3177,7 @@ fn show(store: &Store, id: &str, diff: bool) -> Result<Output> {
     if !item.holds.is_empty() {
         section(&mut text, "Held for review", " by:");
         text.push(&holds_text(&item.holds));
+        text.push(&disputed_text(&item.held_questions, &[]));
     }
 
     let mut json = json!({ "item": item });
@@ -3200,6 +3408,9 @@ fn verification_text(record: &Verification) -> Styled {
     if !record.triggers.is_empty() {
         text.push("  approved, held by:\n");
         for line in holds_text(&record.triggers).lines() {
+            text.push(&format!("  {line}\n"));
+        }
+        for line in disputed_text(&record.held_questions, &[]).lines() {
             text.push(&format!("  {line}\n"));
         }
     }
@@ -3453,6 +3664,13 @@ fn review(store: &Store) -> Result<Output> {
                     "  `tracker gates {id}` shows each unsure answer's question and excerpt.\n"
                 ));
             }
+            if item.held_questions.iter().any(|q| q.trigger == "T12") {
+                text.push(&disputed_text(&item.held_questions, &[]));
+                text.push(&format!(
+                    "  `tracker gates {id}` shows each disputed question and excerpt, as a G3 \
+                     failure.\n"
+                ));
+            }
             text.push(&format!(
                 "  See its work with `{}`, then run `{}` or `{}`.\n",
                 diff_command(id),
@@ -3467,13 +3685,17 @@ fn review(store: &Store) -> Result<Output> {
     let held: Vec<Value> = held
         .iter()
         .map(|item| {
-            json!({
+            let mut held = json!({
                 "id": item.id,
                 "project": item.project,
                 "title": item.title,
                 "holds": item.holds,
-                "diff": diff_command(&item.id),
-            })
+            });
+            if !item.held_questions.is_empty() {
+                held["held_questions"] = json!(item.held_questions);
+            }
+            held["diff"] = json!(diff_command(&item.id));
+            held
         })
         .collect();
     Ok(Output {
@@ -3530,7 +3752,15 @@ fn approve(store: &Store, id: &str) -> Result<Output> {
     let mut judged = gates::Report::default();
     ask_judges(store, &item, &config, &mut judged);
     let failed = failed_runs(store, &item)?;
-    let holds = triggers::holds(&triggers::run(&item, &config, &judged.judges, &failed)?);
+    // A dispute holds the item until I decide, so T12 fires here too.
+    let disputed = disputed_questions(&item.held_questions);
+    let holds = triggers::holds(&triggers::run(
+        &item,
+        &config,
+        &judged.judges,
+        &failed,
+        &disputed,
+    )?);
     tty::confirm(
         &command,
         &id,
@@ -3556,6 +3786,16 @@ fn approve(store: &Store, id: &str) -> Result<Output> {
     gates::tree_after_checks(&item, &config, &mut report)?;
     ask_judges(store, &item, &config, &mut report);
     let _lock = store.lock_unchanged_after_checks(&id, &before, &command)?;
+    // Each disputed answer counts as passed, for this approval only. A
+    // dispute covers the answer it disputed, so a new answer, to changed
+    // work, still fails (§2.3.2).
+    report.failures.retain(|failure| {
+        !failure.judge.as_ref().is_some_and(|answered| {
+            disputed
+                .iter()
+                .any(|q| q.judge_ref == answered.judge_ref && q.request == answered.request)
+        })
+    });
     if !report.passed() {
         return Err(report.refusal(&id, item.status, Run::Approve));
     }
@@ -3576,13 +3816,19 @@ fn approve(store: &Store, id: &str) -> Result<Output> {
     let from = item.status;
     item.status = Status::Done;
     item.updated = now;
-    // The record keeps the holds I was shown and approved.
+    // The record keeps the holds I was shown and approved, and the judge
+    // questions they held: each disputed one, and each answered unsure now.
     item.holds = holds;
+    let mut questions = disputed;
+    questions.extend(unsure_questions(&report.judges));
+    item.held_questions = questions.clone();
     let record = verification_record(VerifiedBy::Human, &item, Some(&report), now);
     let commit = record.commit.clone().unwrap_or_default();
     item.verification = Some(record);
     item.holds = Vec::new();
+    item.held_questions = Vec::new();
     push_move(&mut item, from, Via::Approve, None, now);
+    record_decision(&mut item, questions);
     store.update_item(&item)?;
 
     let mut text = Styled::new();
@@ -3646,7 +3892,9 @@ fn reject(store: &Store, id: &str, reason: Option<String>) -> Result<Output> {
     item.status = Status::InProgress;
     item.updated = now;
     item.holds = Vec::new();
+    let questions = std::mem::take(&mut item.held_questions);
     push_move(&mut item, from, Via::Reject, reason, now);
+    record_decision(&mut item, questions);
     store.update_item(&item)?;
 
     let mut text = Styled::new();
@@ -3658,6 +3906,15 @@ fn reject(store: &Store, id: &str, reason: Option<String>) -> Result<Output> {
         json: json!({ "item": item }),
         warnings: Vec::new(),
     })
+}
+
+/// Records my decision against each judge question that held the item, in
+/// the history entry `approve` or `reject` just added, for `tracker
+/// judges` (§2.3.2).
+fn record_decision(item: &mut Item, questions: Vec<HeldQuestion>) {
+    if let Some(entry) = item.history.last_mut() {
+        entry.held_questions = questions;
+    }
 }
 
 /// What `approve` and `reject` say before asking for the ID: the item,
@@ -3700,6 +3957,7 @@ fn decision_warning(
         ));
     }
     warning.push_str(&unsure_text(judges));
+    warning.push_str(&disputed_text(&item.held_questions, judges));
     warning.push_str(&format!("{what}\n`{}` shows its work.\n", diff_command(id)));
     warning
 }

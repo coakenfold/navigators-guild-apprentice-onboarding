@@ -51,6 +51,14 @@ pub struct Item {
     /// and reject clears them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub holds: Vec<Hold>,
+    /// The judge questions held at the last submit, while the item waits
+    /// in review: each one an agent disputed (T12), with its reason, and
+    /// each one a judge answered unsure (T10). `approve` counts the
+    /// disputed ones as passed for that approval only, and both `approve`
+    /// and `reject` record them as decided (§2.3.2, §2.7). Present only
+    /// while the item is in review.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub held_questions: Vec<HeldQuestion>,
     /// One entry per move between states (§2.2) or `edit`, oldest first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub history: Vec<HistoryEntry>,
@@ -212,6 +220,10 @@ pub struct Verification {
     /// accepted by approving it (§2.7). Empty for an `auto` one.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub triggers: Vec<Hold>,
+    /// For a `human` record, the judge questions held under T10 or T12
+    /// that I accepted by approving it (§2.7).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub held_questions: Vec<HeldQuestion>,
     /// Why the record says what it does, such as that no gates ran.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
@@ -228,6 +240,22 @@ pub struct Hold {
     /// trigger that isn't about files, and in holds written before TR-6.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<String>,
+}
+
+/// One judge question that held an item for a human (§2.3.2): the trigger,
+/// T12 for a fail the agent disputed or T10 for an unsure answer, the
+/// question's ref, the request it was answered in, the model's answer and
+/// reason, and, for a dispute, the agent's reason.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HeldQuestion {
+    pub trigger: String,
+    #[serde(rename = "ref")]
+    pub judge_ref: String,
+    pub request: String,
+    pub answer: Answer,
+    pub reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dispute: Option<String>,
 }
 
 /// One check in a verification record: the criterion it came from, its
@@ -318,6 +346,10 @@ pub struct HistoryEntry {
     /// that removed `needs-review`, which T9 relies on (§2.6).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels_removed: Vec<String>,
+    /// For an `approve` or `reject`, the judge questions it held under T10
+    /// or T12, so `tracker judges` can count my decisions on each (§2.3.2).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub held_questions: Vec<HeldQuestion>,
 }
 
 /// The commands that add a history entry: the ones that move an item
