@@ -364,11 +364,99 @@ pub fn changes(root: &Path, shas: &[String]) -> Result<Vec<FileChange>> {
 
 /// The commits `HEAD` reaches that `base` doesn't, as full SHAs.
 pub fn since(root: &Path, base: &str) -> Result<Vec<String>> {
-    let range = format!("{base}..HEAD");
-    Ok(git(root, &["rev-list", &range])?
+    Ok(git(root, &["rev-list", &since_range(base)])?
         .lines()
         .map(str::to_string)
         .collect())
+}
+
+/// The range of commits made since `base`, as `since` and `unscoped` read
+/// it, so T4 and T14 agree on what "after start" means: a commit `base`
+/// can't reach, which includes every commit rewritten since then (§2.5).
+fn since_range(base: &str) -> String {
+    format!("{base}..HEAD")
+}
+
+/// Whether `header`, a commit message's first line, is scoped to some
+/// item: `<type>(<ID>): …`, where the ID is a project key, a dash and a
+/// number, as `is_item_header` matches it (§2.1). A commit that isn't is
+/// unscoped (T14).
+pub fn is_scoped_header(header: &str) -> bool {
+    let Some(scope) = header
+        .split_once('(')
+        .and_then(|(_, rest)| rest.split_once(')'))
+        .map(|(scope, _)| scope)
+    else {
+        return false;
+    };
+    let Some((key, number)) = scope.split_once('-') else {
+        return false;
+    };
+    crate::config::is_valid_key(key)
+        && !number.is_empty()
+        && number.bytes().all(|b| b.is_ascii_digit())
+        && is_item_header(header, scope)
+}
+
+/// Whether a commit headed `header` is another project's work: scoped to
+/// an item whose key is one of `projects`, other than item `id`'s own
+/// project. A scope in a key that isn't a registered project isn't, so it
+/// counts as unscoped.
+fn is_another_projects(header: &str, id: &str, projects: &[String]) -> bool {
+    let scope = header
+        .split_once('(')
+        .and_then(|(_, rest)| rest.split_once(')'))
+        .map_or("", |(scope, _)| scope);
+    let key = |text: &str| text.split_once('-').map_or("", |(key, _)| key).to_string();
+    key(scope) != key(id) && projects.contains(&key(scope))
+}
+
+/// The unscoped commits made since `base` that touch `root` (T14), each as
+/// its full SHA and header, newest first. With no `base`, as for an item
+/// started in a repository with no commits yet, every commit `HEAD`
+/// reaches counts. A commit that only touches files outside the root
+/// doesn't, and neither does a commit scoped to item `id` or to the key of
+/// another project in `projects`. One scoped to another item of `id`'s
+/// project counts, since it gets past every trigger that reads this item's
+/// changed files, and so does one scoped to a key that isn't in `projects`.
+pub fn unscoped(
+    root: &Path,
+    id: &str,
+    base: Option<&str>,
+    projects: &[String],
+) -> Result<Vec<(String, String)>> {
+    if head(root)?.is_none() {
+        return Ok(Vec::new());
+    }
+    let range = base.map_or("HEAD".to_string(), since_range);
+    // One record per commit, ended by a NUL, as `item_log` reads them. The
+    // `.` limits it to commits that touch the root, the current folder,
+    // and `--full-history` keeps each one, even where a merge would hide
+    // it.
+    let text = git(
+        root,
+        &[
+            "log",
+            "-z",
+            "--full-history",
+            "--format=%H%n%B",
+            &range,
+            "--",
+            ".",
+        ],
+    )?;
+    let commits = text
+        .split('\0')
+        .filter_map(|record| {
+            let mut lines = record.trim_start_matches('\n').lines();
+            let sha = lines.next()?;
+            let header = lines.next().unwrap_or_default();
+            let own = is_item_header(header, id);
+            let other = is_scoped_header(header) && is_another_projects(header, id, projects);
+            (!own && !other).then(|| (sha.to_string(), header.to_string()))
+        })
+        .collect();
+    Ok(commits)
 }
 
 /// Whether `path`, from the top of the repository, is a file at commit
@@ -406,7 +494,32 @@ pub fn delete_ref(root: &Path, id: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::is_item_header;
+    use super::{is_item_header, is_scoped_header};
+
+    #[test]
+    fn a_header_is_scoped_when_its_scope_is_any_items_id() {
+        for header in [
+            "feat(BM-1): add search",
+            "fix(TR2-40)!: drop the old sort flag",
+            "docs(XX-12): say so",
+        ] {
+            assert!(is_scoped_header(header), "{header}");
+        }
+        for header in [
+            "BM-1: add search",
+            "tidy the notes",
+            "chore: tidy",
+            "feat(search): add search",
+            "feat(bm-1): add search",
+            "feat(BM-): add search",
+            "feat(BM-1a): add search",
+            "feat(BM-1):add search",
+            "Merge branch 'feat(BM-1): x'",
+            "",
+        ] {
+            assert!(!is_scoped_header(header), "{header}");
+        }
+    }
 
     #[test]
     fn a_header_is_scoped_to_an_item_only_by_its_conventional_commit_scope() {

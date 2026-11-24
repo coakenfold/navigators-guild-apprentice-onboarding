@@ -212,11 +212,16 @@
       "additionalProperties": false
     },
     "started": {
-      "description": "What start recorded. Slice 11 adds the criteria's fingerprint.",
+      "description": "What start recorded (DESIGN.md §4.3).",
       "type": "object",
       "required": ["at"],
       "properties": {
         "at": { "$ref": "#/$defs/time" },
+        "criteria_hash": {
+          "description": "A SHA-256 fingerprint, in lower-case hex, of the criteria (each without its evidence), the kind and the design at start (T5). Left out by trackers before slice 11.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
         "head": {
           "description": "The commit HEAD pointed to at start, as a full SHA (T14). Left out for a repository with no commits yet, and by trackers before slice 8.",
           "$ref": "#/$defs/sha"

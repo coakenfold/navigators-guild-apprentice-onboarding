@@ -99,9 +99,11 @@ enum Command {
     /// and G4 the project's checks. If any fails, submit is refused with
     /// exit 2 and every reason, and nothing changes. Then the triggers run:
     /// T1 holds a capability or a new source file, T2 a risky path, T3 a
-    /// dependency manifest, T4 an existing test changed, T6 a manual
-    /// criterion, T7 a large change, T8 the design doc, and T9 the label
-    /// needs-review. The project's review settings in config.json tune them.
+    /// dependency manifest, T4 an existing test changed, T5 a criterion,
+    /// check or design changed after start, T6 a manual criterion, T7 a
+    /// large change, T8 the design doc, T9 the label needs-review, T13 a
+    /// check that already passed at start, and T14 a commit not scoped to an
+    /// item. The project's review settings in config.json tune them.
     /// A held item waits in review for a human to approve or reject it. Otherwise it goes to done, verified automatically against
     /// HEAD, with each check's last lines of output, and the git ref
     /// refs/tracker/<ID> keeps that commit
@@ -2304,6 +2306,7 @@ fn apply(
         warnings = already_passing(&item, &started);
         item.started = Some(Started {
             at: now,
+            criteria_hash: Some(triggers::fingerprint(&item)),
             head,
             checks: started
                 .iter()
@@ -2810,6 +2813,11 @@ fn refuse_newer_file(store: &Store, id: &str, file: &str) -> Result<()> {
 /// each criterion's check passed, when failing was expected (§2.4).
 fn started_text(started: &Started) -> Styled {
     let mut rows = vec![vec!["  at".to_string(), started.at.to_string()]];
+    // The criteria's fingerprint (T5), under a label no wider than the
+    // others, so the rows line up as before.
+    if let Some(hash) = &started.criteria_hash {
+        rows.push(vec!["  hash".to_string(), text::for_terminal(hash, false)]);
+    }
     if let Some(head) = &started.head {
         rows.push(vec!["  head".to_string(), text::for_terminal(head, false)]);
     }

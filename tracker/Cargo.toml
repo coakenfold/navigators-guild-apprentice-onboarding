@@ -13,6 +13,7 @@ globset = "0.4.21"
 jiff = { version = "1.0.0", features = ["serde"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["preserve_order"] }
+sha2 = "0.11.1"
 unicode-width = "0.2.3"
 
 [dev-dependencies]

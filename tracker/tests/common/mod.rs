@@ -13,6 +13,10 @@ use assert_cmd::Command;
 use serde_json::Value;
 use tempfile::TempDir;
 
+/// `Env::add_criterion`'s check. `$PPID` is the tracker that runs it.
+pub const BEFORE_THE_WORK_FAILS: &str =
+    "! ps -ww -o args= -p $PPID | grep -qwE 'start|in-progress|criterion'";
+
 pub struct Env {
     /// The store, which `TRACKER_HOME` points to.
     pub home: TempDir,
@@ -343,10 +347,22 @@ impl Env {
         git_commit_all(self.work.path(), &format!("test({id}): the work"));
     }
 
-    /// Gives item `id` a script criterion whose check is `true`, so that
-    /// G1 lets it start and G2 needs no evidence for it.
+    /// Gives item `id` a script criterion whose check fails when it's run
+    /// before the work, as a check should (§2.4), and passes everywhere
+    /// else, so that G1 lets the item start, G2 needs no evidence for it,
+    /// G3 passes, and T13 doesn't hold it. The check runs before the work
+    /// when `start`, `status <id> in-progress` or a `criterion` command
+    /// runs it, so it fails when the tracker that runs it was started with
+    /// one of those words.
     pub fn add_criterion(&self, id: &str) {
-        self.json(&["criterion", "add", id, "it works", "--check", "true"]);
+        self.json(&[
+            "criterion",
+            "add",
+            id,
+            "it works",
+            "--check",
+            BEFORE_THE_WORK_FAILS,
+        ]);
     }
 
     /// Reads an item's file as JSON.

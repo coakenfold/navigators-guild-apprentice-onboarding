@@ -9,7 +9,7 @@ mod common;
 
 use std::fs;
 
-use common::{Env, check_schema};
+use common::{BEFORE_THE_WORK_FAILS, Env, check_schema};
 use serde_json::{Value, json};
 
 /// The end of `delete`'s question, which the tests wait for before typing.
@@ -196,6 +196,8 @@ fn show_prints_every_field_the_verification_records_and_history_with_times() {
     let item = env.item("XX-1");
 
     let shown = text(&env, &["show", "XX-1"]);
+    let check = format!("  2. it works\n       check: {BEFORE_THE_WORK_FAILS}\n");
+    let ran = format!(": `{BEFORE_THE_WORK_FAILS}`\n");
     for expected in [
         "XX-1  Search filters bookmarks by tag",
         "XX project",
@@ -212,12 +214,12 @@ fn show_prints_every_field_the_verification_records_and_history_with_times() {
         "Done when:",
         "  1. Clicking a tag shows only bookmarks with that tag\n       manual, evidence: the \
          tag chips on the home page\n",
-        "  2. it works\n       check: true\n",
+        &check,
         // What start recorded, and both verification records, with the
         // commit, its ref, and each check with its saved output (slice 8).
         "Started:",
         item["started"]["head"].as_str().unwrap(),
-        "checks  criterion 2 passed",
+        "checks  criterion 2 failed",
         "Verification:",
         "Previous verification",
         "numbered as they were at that submit",
@@ -226,7 +228,7 @@ fn show_prints_every_field_the_verification_records_and_history_with_times() {
         item["verification"]["commit"].as_str().unwrap(),
         "refs/tracker/XX-1",
         "    criterion 2, passed in",
-        ": `true`\n",
+        &ran,
         // The history, with what the edit changed and the reopen's reason.
         "History, oldest first (8 entries):",
         "changed: kind, labels",
