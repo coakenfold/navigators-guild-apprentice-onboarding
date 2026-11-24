@@ -22,6 +22,9 @@ pub struct Env {
     pub home: TempDir,
     /// Project roots, a folder outside all of them, and `HOME`.
     pub work: TempDir,
+    /// The failing `tracker-judge` and `claude` that `guard_dir` names,
+    /// outside the work folder's repository.
+    pub guard: TempDir,
 }
 
 impl Env {
@@ -40,11 +43,28 @@ impl Env {
         let env = Env {
             home: TempDir::new().unwrap(),
             work: TempDir::new().unwrap(),
+            guard: TempDir::new().unwrap(),
         };
         fs::create_dir_all(env.outside()).unwrap();
         fs::create_dir_all(env.user_home()).unwrap();
+        write_guards(&env.guard_dir());
         git_init(env.work.path());
         env
+    }
+
+    /// The folder put first on `PATH` for every command a test runs. It
+    /// holds a `tracker-judge` and a `claude` that only fail, so a test that
+    /// leaves the judge command at its default, `tracker-judge`, never
+    /// reaches the installed one or the real `claude` (slice 13 review 2,
+    /// process 1). A test that needs a judge sets a fake as the command.
+    pub fn guard_dir(&self) -> PathBuf {
+        self.guard.path().to_path_buf()
+    }
+
+    /// `PATH` with `guard_dir` first.
+    pub fn guarded_path(&self) -> String {
+        let inherited = std::env::var("PATH").unwrap_or_default();
+        format!("{}:{inherited}", self.guard_dir().display())
     }
 
     /// What `HOME` points to, so that a test which unsets `TRACKER_HOME`, or
@@ -77,6 +97,7 @@ impl Env {
         let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_tracker"));
         cmd.env("TRACKER_HOME", self.home.path())
             .env("HOME", self.user_home())
+            .env("PATH", self.guarded_path())
             .current_dir(self.outside());
         without_colour_settings(&mut cmd);
         cmd
@@ -291,6 +312,7 @@ impl Env {
         cmd.env("TRACKER", env!("CARGO_BIN_EXE_tracker"))
             .env("TRACKER_HOME", self.home.path())
             .env("HOME", self.user_home())
+            .env("PATH", self.guarded_path())
             // A terminal that shows colour, wherever the tests run.
             .env("TERM", "xterm-256color")
             .current_dir(self.outside());
@@ -378,6 +400,24 @@ impl Env {
     pub fn read_store_file(&self, name: &str) -> Value {
         let text = fs::read_to_string(self.home.path().join(name)).unwrap();
         serde_json::from_str(&text).unwrap()
+    }
+}
+
+/// What the guards in `Env::guard_dir` say, on stderr, before they exit 1.
+pub const GUARD_MESSAGE: &str = "a test reached the real judge command";
+
+/// Writes the failing `tracker-judge` and `claude` into `dir`.
+fn write_guards(dir: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    fs::create_dir_all(dir).unwrap();
+    for name in ["tracker-judge", "claude"] {
+        let path = dir.join(name);
+        let script = format!(
+            "#!/bin/sh\ncat > /dev/null\necho \"{GUARD_MESSAGE}: {name} isn't a fake. Set the \
+             store's judge.command to one.\" >&2\nexit 1\n"
+        );
+        fs::write(&path, script).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
     }
 }
 

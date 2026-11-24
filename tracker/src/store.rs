@@ -93,6 +93,13 @@ impl Store {
         self.home.join("judge").join("cache")
     }
 
+    /// The failed judge requests counted for each item since its start
+    /// (T11), made by the first one counted or the first start with a
+    /// judge.
+    pub fn judge_failures_path(&self) -> PathBuf {
+        self.home.join("judge").join("failures.json")
+    }
+
     /// The item file for `id`. Anything that isn't an item ID, such as
     /// `../config`, is refused, so no ID can name a file outside `items/`.
     pub fn item_path(&self, id: &str) -> Result<PathBuf> {

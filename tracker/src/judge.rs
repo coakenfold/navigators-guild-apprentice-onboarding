@@ -176,6 +176,167 @@ pub fn check_inputs(criterion: &Criterion, root: &Path, key: &str) -> Result<(),
     Ok(())
 }
 
+/// Why criterion `n`, a judge of `item`, has nothing to grade at `start`,
+/// or `None` if it has something (§2.3.1, G1). A file input must exist and
+/// be readable, a `diff` input needs at least one item commit, and an
+/// `each` must match the inputs, once comments are stripped. Nothing is
+/// asked. The message is G1's, and says how to fix it.
+pub fn nothing_at_start(
+    item: &Item,
+    n: usize,
+    criterion: &Criterion,
+    root: &Path,
+) -> Option<String> {
+    let what = format!("Criterion {n}'s judge");
+    let id = &item.id;
+    let stub = format!(
+        "Commit what it grades, or a stub it can grade, as `test({id}): …` before start, and \
+         the judge should fail on it (§2.3.1)."
+    );
+    let mut inputs = Vec::new();
+    for input in &criterion.inputs {
+        let text = if input == "diff" {
+            match git::item_commits(root, id) {
+                Ok(shas) if shas.is_empty() => {
+                    return Some(format!(
+                        "{what} reads {id}'s diff, and {id} has no commits yet, so it has \
+                         nothing to grade. {stub}"
+                    ));
+                }
+                Ok(_) => read_diff(item, root),
+                Err(e) => Err(e.message),
+            }
+        } else {
+            read_file(root, input, &item.project)
+        };
+        match text {
+            Ok(text) => inputs.push((input.clone(), strip(criterion, input, &text))),
+            Err(why) => return Some(format!("{what} {why} {stub}")),
+        }
+    }
+    match excerpts(criterion, &inputs, 0) {
+        Ok(found) if found.is_empty() => {
+            let each = criterion.each.as_deref().unwrap_or_default();
+            Some(format!(
+                "{what} {} {stub}",
+                nothing_to_grade(each, &criterion.inputs)
+            ))
+        }
+        Ok(_) => None,
+        Err(why) => Some(format!("{what} {why}.")),
+    }
+}
+
+/// What `judge/failures.json` keeps for one item (T11, §4.1): the
+/// requests asked at its last `start`, and each run that failed a request
+/// since then, other than those.
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct ItemFailures {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    at_start: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    failed: Vec<FailedRun>,
+}
+
+/// One `gates` or `submit` run that failed new requests (T11), counted once:
+/// the fingerprints of those requests, and the refs of the questions that
+/// didn't pass.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FailedRun {
+    pub requests: Vec<String>,
+    pub refs: Vec<String>,
+}
+
+const FAILURES_FIX: &str = "It's JSON that tracker writes, counting failed judge requests for \
+                            T11 (§4.1). Fix it by hand. Removing it clears every \
+                            item's T11 count, so a human should decide.";
+
+fn read_failures(path: &Path) -> crate::error::Result<BTreeMap<String, ItemFailures>> {
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
+        Err(e) => return Err(crate::error::io("read", path, &e)),
+    };
+    serde_json::from_str(&text).map_err(|e| crate::error::parse(path, &e, FAILURES_FIX))
+}
+
+fn write_failures(
+    path: &Path,
+    failures: &BTreeMap<String, ItemFailures>,
+) -> crate::error::Result<()> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(|e| crate::error::io("create", dir, &e))?;
+    }
+    let text = serde_json::to_string_pretty(failures).expect("failures always serialize");
+    crate::store::write_file(path, &format!("{text}\n"))
+}
+
+/// Starts item `id`'s count of failed runs again, at `start`, keeping
+/// the fingerprint of every request its judges were asked then: failing
+/// at start is expected, so those never count (§2.4). Call it holding the
+/// store's lock, at `path`, `judge/failures.json`.
+pub fn record_start(path: &Path, id: &str, answers: &[Answered]) -> crate::error::Result<()> {
+    let mut failures = read_failures(path)?;
+    if answers.is_empty() && !failures.contains_key(id) {
+        return Ok(());
+    }
+    let mut at_start: Vec<String> = answers.iter().map(|a| a.request.clone()).collect();
+    at_start.dedup();
+    failures.insert(
+        id.to_string(),
+        ItemFailures {
+            at_start,
+            failed: Vec::new(),
+        },
+    );
+    write_failures(path, &failures)
+}
+
+/// Counts one failed run for item `id` (T11) if `answers` hold a request a judge
+/// failed, with an answer that isn't the passing one, a fail or unsure,
+/// that wasn't asked at start or counted before. The run counts once,
+/// however many new requests it failed, so one try at an `each` judge
+/// with three failing matches adds one. Unchanged work that fails the same
+/// way adds nothing. A call that failed has no answers, so it isn't
+/// counted. Call it holding the store's lock, only for an item in
+/// progress.
+pub fn record_failures(path: &Path, id: &str, answers: &[Answered]) -> crate::error::Result<()> {
+    if answers.iter().all(|a| a.outcome() == Outcome::Pass) {
+        return Ok(());
+    }
+    let mut failures = read_failures(path)?;
+    let item = failures.entry(id.to_string()).or_default();
+    let mut run = FailedRun {
+        requests: Vec::new(),
+        refs: Vec::new(),
+    };
+    for answered in answers.iter().filter(|a| a.outcome() != Outcome::Pass) {
+        let request = &answered.request;
+        let seen = item.at_start.contains(request)
+            || item.failed.iter().any(|f| f.requests.contains(request));
+        if seen {
+            continue;
+        }
+        if !run.requests.contains(request) {
+            run.requests.push(request.clone());
+        }
+        run.refs.push(answered.judge_ref.clone());
+    }
+    if run.requests.is_empty() {
+        return Ok(());
+    }
+    item.failed.push(run);
+    write_failures(path, &failures)
+}
+
+/// The runs counted against item `id` since its start (T11).
+pub fn failed_runs(path: &Path, id: &str) -> crate::error::Result<Vec<FailedRun>> {
+    Ok(read_failures(path)?
+        .remove(id)
+        .map(|item| item.failed)
+        .unwrap_or_default())
+}
+
 /// One judge question that was answered, for G3, T10 and the
 /// verification record.
 #[derive(Debug, Clone, PartialEq)]

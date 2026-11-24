@@ -11,7 +11,7 @@
       "$ref": "item.schema.json"
     },
     "warnings": {
-      "description": "Only for start, where it's always present: one message for each criterion check that already passed at start, before the work is done (DESIGN.md §2.4). The start still went ahead. item.started.checks has every check's result.",
+      "description": "Only for start, where it's always present: one message for each criterion check or judge that already passed at start, before the work is done, and for each judge that couldn't be graded then (DESIGN.md §2.4). The start still went ahead. item.started.checks has every check's and judge's result.",
       "type": "array",
       "items": { "type": "string", "minLength": 1 }
     }

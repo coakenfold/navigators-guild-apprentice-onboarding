@@ -2,8 +2,9 @@
 //! submitted. A gate never changes anything. It reports every reason it
 //! failed, and the command that ran it refuses with exit 2.
 //!
-//! This version has G1 (at `start`), and G2, G5, G6, G3 and G4 (at
-//! `submit`, `approve`, and in the `gates` dry run). G3 and G4 run checks
+//! This version has G1 (at `start`, where every judge must have something
+//! to grade), and G2, G5, G6, G3 and G4 (at `submit`, `approve`, and in
+//! the `gates` dry run). G3 and G4 run checks
 //! (`checks.rs`), G3 asks judges once every other gate has passed
 //! (`judge.rs`), and G5 reads git (`git.rs`). Shelving an in-progress item
 //! runs G5's clean-tree half and G4 (§2.8).
@@ -507,31 +508,7 @@ pub fn g3(item: &Item, config: &Config) -> Report {
 /// nothing to `ran`, since `g3` has already named G3.
 pub fn judges(item: &Item, config: &Config, cache: &Path) -> Report {
     let mut report = Report::default();
-    let judged: Vec<(usize, &crate::item::Criterion)> = item
-        .criteria
-        .iter()
-        .enumerate()
-        .filter(|(_, criterion)| criterion.is_judge())
-        .map(|(i, criterion)| (i + 1, criterion))
-        .collect();
-    if judged.is_empty() {
-        return report;
-    }
-    let root = match root(item, config) {
-        Ok(root) => root,
-        Err(why) => {
-            report.failures.push(Failure {
-                gate: "G3",
-                criterion: Some(judged[0].0),
-                message: format!("The judges can't read {}'s work: {why}.", item.id),
-                check: None,
-                judge: None,
-            });
-            return report;
-        }
-    };
-    for (n, criterion) in judged {
-        let graded = judge::grade(item, n, criterion, config, &root, cache);
+    for (n, graded) in grade_judges(item, config, cache) {
         for message in graded.failures {
             report.failures.push(Failure {
                 gate: "G3",
@@ -563,6 +540,72 @@ pub fn judges(item: &Item, config: &Config, cache: &Path) -> Report {
         }
     }
     report
+}
+
+/// Grades each judge criterion of `item` once, numbered from 1, for G3 and
+/// for `start` (§2.4). If the project's root can't be found, the first
+/// judge's grade says why, and no judge is asked.
+pub fn grade_judges(item: &Item, config: &Config, cache: &Path) -> Vec<(usize, judge::Graded)> {
+    let judged = judge_criteria(item);
+    if judged.is_empty() {
+        return Vec::new();
+    }
+    let root = match root(item, config) {
+        Ok(root) => root,
+        Err(why) => {
+            let graded = judge::Graded {
+                answers: Vec::new(),
+                failures: vec![format!("The judges can't read {}'s work: {why}.", item.id)],
+            };
+            return vec![(judged[0].0, graded)];
+        }
+    };
+    judged
+        .into_iter()
+        .map(|(n, criterion)| (n, judge::grade(item, n, criterion, config, &root, cache)))
+        .collect()
+}
+
+/// G1's judge half (§2.3.1): every judge criterion has something to grade
+/// at `start`. A `diff` judge needs an item commit, a file input must
+/// exist, and an `each` must match. Nothing is asked.
+pub fn g1_judges(item: &Item, config: &Config) -> Vec<Failure> {
+    let judged = judge_criteria(item);
+    if judged.is_empty() {
+        return Vec::new();
+    }
+    let failure = |n: usize, message: String| Failure {
+        gate: "G1",
+        criterion: Some(n),
+        message,
+        check: None,
+        judge: None,
+    };
+    let root = match root(item, config) {
+        Ok(root) => root,
+        Err(why) => {
+            return vec![failure(
+                judged[0].0,
+                format!("The judges can't read {}'s work: {why}.", item.id),
+            )];
+        }
+    };
+    judged
+        .into_iter()
+        .filter_map(|(n, criterion)| {
+            judge::nothing_at_start(item, n, criterion, &root).map(|message| failure(n, message))
+        })
+        .collect()
+}
+
+/// Each judge criterion, numbered from 1.
+fn judge_criteria(item: &Item) -> Vec<(usize, &crate::item::Criterion)> {
+    item.criteria
+        .iter()
+        .enumerate()
+        .filter(|(_, criterion)| criterion.is_judge())
+        .map(|(i, criterion)| (i + 1, criterion))
+        .collect()
 }
 
 /// G4: each of the project's checks, run in its root. Shelving an

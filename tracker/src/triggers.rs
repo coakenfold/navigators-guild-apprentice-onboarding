@@ -6,8 +6,9 @@
 //! dependency manifest), T4 (an existing test changed), T5 (the goalposts
 //! moved), T6 (a manual criterion), T7 (a large change), T8 (the design doc
 //! changed), T9 (the `needs-review` label), T10 (a judge answered unsure,
-//! or the project doesn't auto-verify judged work), T13 (a check passed
-//! before the work) and T14 (unscoped commits since start). T1 to T4, T7 and T8 read
+//! or the project doesn't auto-verify judged work), T11 (judges failed
+//! `max_failures` runs that failed new questions since start), T13 (a check or judge
+//! passed before the work) and T14 (unscoped commits since start). T1 to T4, T7 and T8 read
 //! the item's changed files (§2.1), and T14 reads the commits made since
 //! start. A trigger in the project's `review.disabled` doesn't run, except
 //! T6 and T10, which always do.
@@ -19,7 +20,7 @@ use crate::config::{self, Config, Review};
 use crate::error::{Error, Result};
 use crate::git;
 use crate::item::{Criterion, Hold, Item, Kind};
-use crate::judge::{Answered, Outcome};
+use crate::judge::{Answered, FailedRun, Outcome};
 use crate::states;
 use sha2::{Digest, Sha256};
 
@@ -115,8 +116,14 @@ pub fn changes(root: &Path, id: &str, started: Option<&str>) -> Result<Changes> 
 
 /// Runs every trigger on `item` that its project doesn't switch off, in
 /// order, and returns each one. `judges` is every judge question G3 asked
-/// (T10). Exits 3 if git can't say what the item's commits changed.
-pub fn run(item: &Item, config: &Config, judges: &[Answered]) -> Result<Vec<Ran>> {
+/// (T10), and `failed` every run in which judges failed new requests since start (T11).
+/// Exits 3 if git can't say what the item's commits changed.
+pub fn run(
+    item: &Item,
+    config: &Config,
+    judges: &[Answered],
+    failed: &[FailedRun],
+) -> Result<Vec<Ran>> {
     let project = config.projects.get(&item.project);
     let review = project.map(|project| project.review()).unwrap_or_default();
     let design = project.and_then(|project| project.design.clone());
@@ -157,6 +164,8 @@ pub fn run(item: &Item, config: &Config, judges: &[Answered]) -> Result<Vec<Ran>
     add("T9", (t9(item), Vec::new()));
     let auto_verify = project.is_none_or(|project| project.auto_verify());
     add("T10", (t10(judges, auto_verify), Vec::new()));
+    let max_failures = project.map_or(config::DEFAULT_MAX_FAILURES, |p| p.max_failures());
+    add("T11", (t11(failed, max_failures), Vec::new()));
     add("T13", (t13(item), Vec::new()));
     add("T14", (t14(&item.id, &unscoped), Vec::new()));
     Ok(ran)
@@ -494,28 +503,68 @@ fn t10(judges: &[Answered], auto_verify: bool) -> Option<String> {
     })
 }
 
+/// T11: judges failed new questions in `max` or more runs since start
+/// (§2.5), so the work may have been changed until a judge passed. A run
+/// counts once, however many questions it failed, and fails at start don't
+/// count. Each question is named once, with how many runs failed it.
+fn t11(failed: &[FailedRun], max: u64) -> Option<String> {
+    if failed.is_empty() || (failed.len() as u64) < max {
+        return None;
+    }
+    let mut refs: Vec<(&String, usize)> = Vec::new();
+    for run in failed {
+        for judge_ref in &run.refs {
+            match refs.iter_mut().find(|(seen, _)| *seen == judge_ref) {
+                Some(found) => found.1 += 1,
+                None => refs.push((judge_ref, 1)),
+            }
+        }
+    }
+    let refs: Vec<String> = refs
+        .iter()
+        .map(|(judge_ref, n)| match n {
+            1 => judge_ref.to_string(),
+            n => format!("{judge_ref} ({n} runs)"),
+        })
+        .collect();
+    Some(format!(
+        "judges failed new requests in {} runs since start, and judge.max_failures is {max}, so \
+         the work may have been changed until a judge passed: {}",
+        failed.len(),
+        file_list(&refs)
+    ))
+}
+
 /// T13: a criterion's script check already passed when it ran before the
-/// work, at `start` or when it was given after start (§2.4), so it can't be
-/// proving the work. A criterion with no entry in `started.checks`, such as
-/// one given a check while the item was in review, which isn't run then,
-/// counts as one whose check didn't pass. The change that gave it the
-/// check fired T5, which holds the item anyway.
+/// work, at `start` or when it was given after start (§2.4), or every
+/// answer of its judge did at `start`, so it can't be proving the work. A
+/// criterion with no entry in `started.checks`, such as one given a check
+/// while the item was in review, which isn't run then, or a judge after
+/// start, counts as one that didn't pass. The change that gave it the
+/// check or judge fired T5, which holds the item anyway.
 fn t13(item: &Item) -> Option<String> {
     let started = item.started.as_ref()?;
     let passed: Vec<String> = started
         .checks
         .iter()
         .filter(|check| check.passed)
-        .map(|check| check.criterion.to_string())
+        .map(|check| {
+            let judge = item
+                .criteria
+                .get(check.criterion.wrapping_sub(1))
+                .is_some_and(|criterion| criterion.is_judge());
+            let what = if judge { "judge" } else { "check" };
+            format!("criterion {}'s {what}", check.criterion)
+        })
         .collect();
     match passed.len() {
         0 => None,
         1 => Some(format!(
-            "criterion {}'s check already passed before the work, so it can't be proving it",
+            "{} already passed before the work, so it can't be proving it",
             passed[0]
         )),
         _ => Some(format!(
-            "criteria {}'s checks already passed before the work, so they can't be proving it",
+            "{} already passed before the work, so they can't be proving it",
             states::join(&passed, "and")
         )),
     }

@@ -246,6 +246,7 @@ fn submit_prints_the_shape_section_3_gives_it() {
                     { "trigger": "T8", "fired": false },
                     { "trigger": "T9", "fired": false },
                     { "trigger": "T10", "fired": false },
+                    { "trigger": "T11", "fired": false },
                     { "trigger": "T13", "fired": false },
                     { "trigger": "T14", "fired": false }
                 ],
