@@ -2,9 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tracker.invalid/schemas/gates.schema.json",
   "title": "tracker gates --json",
-  "description": "A gates dry run in which every gate passed (DESIGN.md §2.4, §3). It changes nothing. When a gate fails, it exits 2 and prints the error shape instead, with id, result, gates and failures.",
+  "description": "A gates dry run in which every gate passed (DESIGN.md §2.4, §3). It changes nothing. Once every gate passes, the triggers run, as on a submit (DESIGN.md §2.5), and holds lists the ones that would hold a submit now. When a gate fails, it exits 2 and prints the error shape instead, with id, result, gates and failures, and no trigger runs.",
   "type": "object",
-  "required": ["id", "status", "result", "gates"],
+  "required": ["id", "status", "result", "gates", "triggers", "holds"],
   "properties": {
     "id": {
       "description": "The item's ID.",
@@ -33,6 +33,32 @@
             "type": "integer",
             "minimum": 0
           }
+        },
+        "additionalProperties": false
+      }
+    },
+    "triggers": {
+      "description": "Every trigger that ran, with whether it fired. A trigger switched off in the project's review.disabled doesn't run and isn't listed.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["trigger", "fired"],
+        "properties": {
+          "trigger": { "type": "string", "pattern": "^T[0-9]+$" },
+          "fired": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "holds": {
+      "description": "Every trigger that fired, with the message saying why: what would hold a submit in review now. Empty when a submit would verify the item automatically. Each one is also in triggers, with fired true. Nothing is written: the item's own holds change only on a submit.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["trigger", "message"],
+        "properties": {
+          "trigger": { "type": "string", "pattern": "^T[0-9]+$" },
+          "message": { "type": "string", "minLength": 1 }
         },
         "additionalProperties": false
       }

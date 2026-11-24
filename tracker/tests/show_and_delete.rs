@@ -178,11 +178,21 @@ fn show_prints_every_field_the_verification_records_and_history_with_times() {
     env.add_criterion("XX-1");
     // So the design doc is committed, and XX-1 has a commit, for G5.
     env.commit_for("XX-1");
-    env.json(&["start", "XX-1"]);
-    env.json(&["submit", "XX-1"]);
-    env.json(&["reopen", "XX-1", "--reason", "The tag list is missing."]);
-    env.json(&["start", "XX-1"]);
-    env.json(&["submit", "XX-1"]);
+    // The manual criterion holds each submit under T6 (slice 9), so each
+    // record is a human's, made by `approve`, which needs a terminal.
+    for round in 0..2 {
+        if round == 1 {
+            env.json(&["reopen", "XX-1", "--reason", "The tag list is missing."]);
+        }
+        env.json(&["start", "XX-1"]);
+        assert_eq!(env.json(&["submit", "XX-1"])["result"], "held");
+        let Some((output, ok)) =
+            env.in_terminal_typing(&["approve", "XX-1"], "Type XX-1 to confirm", "XX-1", || {})
+        else {
+            return;
+        };
+        assert!(ok, "{output}");
+    }
     let item = env.item("XX-1");
 
     let shown = text(&env, &["show", "XX-1"]);
@@ -211,21 +221,24 @@ fn show_prints_every_field_the_verification_records_and_history_with_times() {
         "Verification:",
         "Previous verification",
         "numbered as they were at that submit",
-        "auto",
+        "human",
+        "T6  criterion 1 is manual",
         item["verification"]["commit"].as_str().unwrap(),
         "refs/tracker/XX-1",
         "    criterion 2, passed in",
         ": `true`\n",
         // The history, with what the edit changed and the reopen's reason.
-        "History, oldest first (6 entries):",
+        "History, oldest first (8 entries):",
         "changed: kind, labels",
         "kind before: capability",
         "labels removed: needs-review",
         "reason: The tag list is missing.",
         "open → in-progress",
-        "in-progress → done",
+        "in-progress → review",
+        "review → done",
         "stays open",
         "not from a terminal",
+        "from a terminal",
     ] {
         assert!(shown.contains(expected), "{expected:?} isn't in:\n{shown}");
     }

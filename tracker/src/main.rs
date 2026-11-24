@@ -23,6 +23,7 @@ use tracker::states;
 use tracker::store::{Skipped, Store};
 use tracker::styled::{self, Styled};
 use tracker::text::{self, check_printable};
+use tracker::triggers;
 use tracker::tty;
 
 #[derive(Parser)]
@@ -90,16 +91,18 @@ enum Command {
         /// The item's ID, such as BM-12
         id: String,
     },
-    /// Submit an in-progress item: → done
+    /// Submit an in-progress item: → done, or → review if a trigger holds it
     ///
     /// Gates G2, G5, G6, G3 and G4 run first, as `tracker gates` runs them:
     /// G5 needs a clean tree under the project's root and a commit scoped to
     /// the item, such as `feat(BM-12): …`, G3 runs each criterion's check,
     /// and G4 the project's checks. If any fails, submit is refused with
-    /// exit 2 and every reason, and nothing changes. An item that passes
-    /// goes to done, verified automatically against HEAD, with each check's
-    /// last lines of output, and the git ref refs/tracker/<ID> keeps that
-    /// commit
+    /// exit 2 and every reason, and nothing changes. Then the triggers run:
+    /// T6 holds an item with a manual criterion, and T9 one labelled
+    /// needs-review. A held item waits in review for a human to approve or
+    /// reject it. Otherwise it goes to done, verified automatically against
+    /// HEAD, with each check's last lines of output, and the git ref
+    /// refs/tracker/<ID> keeps that commit
     Submit {
         /// The item's ID, such as BM-12
         id: String,
@@ -108,7 +111,8 @@ enum Command {
     ///
     /// Says what would block a submit now: every gate that ran, and every
     /// reason one failed. Exits 2 if any failed, as submit would, and 0 if
-    /// they all passed
+    /// they all passed. Once they all pass, it also runs the triggers and
+    /// lists any hold that would keep a submit in review
     Gates {
         /// The item's ID, such as BM-12
         id: String,
@@ -180,6 +184,38 @@ enum Command {
     Show {
         /// The item's ID, such as BM-12
         id: String,
+        /// Also print the item's commits, the ones whose message is headed
+        /// `<type>(<ID>): …`, and each one's diff, to review its work
+        #[arg(long)]
+        diff: bool,
+    },
+    /// The inbox: every held item, in every project, with why it's held
+    ///
+    /// An item is held in review when a trigger fires at submit. It waits
+    /// there, pausing its project, until a human approves or rejects it
+    Review,
+    /// Approve a held item: review → done. Only from an interactive terminal
+    ///
+    /// Says what holds it, then asks for the ID to be typed back. Then the
+    /// gates submit runs run again. If they pass, the item is done,
+    /// verified by a human against HEAD, and refs/tracker/<ID> keeps that
+    /// commit. If one fails, it stays in review, with exit 2
+    Approve {
+        /// The item's ID, such as BM-12
+        id: String,
+    },
+    /// Reject a held item: review → in-progress. Only from an interactive terminal
+    ///
+    /// Asks for the ID to be typed back. The reason goes in the item's
+    /// history, for the agent working on it to read
+    #[command(override_usage = "tracker reject [OPTIONS] <ID> --reason <REASON>")]
+    Reject {
+        /// The item's ID, such as BM-12
+        id: String,
+        /// Why, kept in the item's history for the agent. Required: one
+        /// line, at most 500 characters
+        #[arg(long)]
+        reason: Option<String>,
     },
     /// Delete an item for good. Only from an interactive terminal
     ///
@@ -471,7 +507,10 @@ fn main() -> ExitCode {
             let state = Status::parse(&state).expect("clap only accepts state names");
             status(&store, &id, state, reason)
         }
-        Command::Show { id } => show(&store, &id),
+        Command::Show { id, diff } => show(&store, &id, diff),
+        Command::Review => review(&store),
+        Command::Approve { id } => approve(&store, &id),
+        Command::Reject { id, reason } => reject(&store, &id, reason),
         Command::Delete { id } => delete(&store, &id),
     });
 
@@ -892,6 +931,7 @@ fn create(store: &Store, args: CreateArgs) -> Result<Output> {
         started: None,
         verification: None,
         previous_verification: None,
+        holds: Vec::new(),
         history: Vec::new(),
         description,
     };
@@ -1776,8 +1816,10 @@ fn record_evidence(store: &Store, id: &str, n: usize, evidence: &str) -> Result<
 }
 
 /// `gates`: runs the gates `submit` runs, G2, G5, G6, G3 and G4, without
-/// changing anything (§2.4). Exits 2, listing every failure, if any fails,
-/// and 3 if the project's root isn't inside a git work tree (§4.4).
+/// changing anything (§2.4). Once they all pass, it runs the triggers and
+/// lists them and the holds a submit would get (§3). Exits 2, listing every
+/// failure, if any fails, and 3 if the project's root isn't inside a git
+/// work tree (§4.4).
 fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
     store.require_exists()?;
     let id = normalize_id(id);
@@ -1795,9 +1837,21 @@ fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
         "{id} passes the gates submit runs: {}.\n",
         states::join(&ran, "and")
     );
+    // Every gate passed, so the triggers run, as they would on a submit
+    // (§2.5), and say whether it would be held.
+    let triggers = triggers::run(&item);
+    let holds = triggers::holds(&triggers);
+    if !holds.is_empty() {
+        text.push_str("A submit would be held for review:\n");
+        text.push_str(&holds_text(&holds));
+    }
     if let Some(line) = gates::not_submittable(item.status) {
         text.push_str(&format!("{line}\n"));
     }
+    let triggers: Vec<Value> = triggers
+        .iter()
+        .map(|ran| json!({ "trigger": ran.trigger, "fired": ran.hold.is_some() }))
+        .collect();
     Ok(Output::plain(
         text,
         json!({
@@ -1805,6 +1859,8 @@ fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
             "status": item.status.as_str(),
             "result": "passed",
             "gates": report.gates_json(),
+            "triggers": triggers,
+            "holds": holds,
         }),
     ))
 }
@@ -2064,11 +2120,11 @@ fn move_item(store: &Store, id: &str, via: Via, reason: Option<String>) -> Resul
     let id = normalize_id(id);
     let lock = store.lock()?;
     let (item, file) = store.load_item_with_text(&id)?;
-    let Some(step) = states::find(via, item.status) else {
+    if !states::has_move(via, item.status) {
         return Err(states::not_from(&id, item.status, via));
-    };
+    }
     let reason = check_reason(&id, via, reason, &states::command(&id, via))?;
-    apply(store, lock, item, &file, step, reason)
+    apply(store, lock, item, &file, via, reason)
 }
 
 /// `status <id> <state>`: the alias that maps a state onto the command that
@@ -2078,27 +2134,27 @@ fn status(store: &Store, id: &str, to: Status, reason: Option<String>) -> Result
     let id = normalize_id(id);
     let lock = store.lock()?;
     let (item, file) = store.load_item_with_text(&id)?;
-    let step = match states::via_to(to) {
+    let via = match states::via_to(to) {
         // A held item is mine to decide, with approve or reject (§2.7).
         Some(_) if item.status == Status::Review => None,
-        Some(via) => states::find(via, item.status),
-        None => None,
+        Some(via) if states::has_move(via, item.status) => Some(via),
+        _ => None,
     };
-    let Some(step) = step else {
+    let Some(via) = via else {
         return Err(states::not_to(&id, item.status, to));
     };
 
     let state = to.as_str();
-    if reason.is_some() && !step.via.needs_reason() {
+    if reason.is_some() && !via.needs_reason() {
         return Err(Error::input(format!(
             "`status {id} {state}` runs `{}`, which takes no reason. Only a move to open or \
              shelved does. Run it without --reason.",
-            step.via.as_str()
+            via.as_str()
         )));
     }
     let how = format!("tracker status {id} {state} --reason \"…\"");
-    let reason = check_reason(&id, step.via, reason, &how)?;
-    apply(store, lock, item, &file, step, reason)
+    let reason = check_reason(&id, via, reason, &how)?;
+    apply(store, lock, item, &file, via, reason)
 }
 
 /// The longest reason a move takes, in characters. A reason is printed on
@@ -2117,6 +2173,7 @@ fn check_reason(id: &str, via: Via, reason: Option<String>, how: &str) -> Result
     if reason.is_empty() {
         let doing = match via {
             Via::Shelve => "Shelving",
+            Via::Reject => "Rejecting",
             _ => "Reopening",
         };
         return Err(Error::input(format!(
@@ -2134,35 +2191,44 @@ fn check_reason(id: &str, via: Via, reason: Option<String>, how: &str) -> Result
     Ok(Some(reason))
 }
 
-/// Makes `step` on `item`, which was read under `lock` from `file`, adds
-/// its history entry, and writes the item. A file from a newer tracker is
-/// refused first, with exit 3. A move that has gates runs them next, and
-/// refuses with exit 2, changing nothing, if any fails (§2.4): G1 for
-/// `start`, G2, G5, G6, G3 and G4 for `submit`, and G5's clean tree and G4
-/// for shelving an in-progress item (§2.8). Each of those, `start`
-/// included, exits 3 if the project's root isn't inside a git work tree
-/// (§4.4).
+/// Makes the move `via` makes from `item`'s state, where `item` was read
+/// under `lock` from `file`, adds its history entry, and writes the item.
+/// A file from a newer tracker is refused first, with exit 3. A move that
+/// has gates runs them next, and refuses with exit 2, changing nothing, if
+/// any fails (§2.4): G1 for `start`, G2, G5, G6, G3 and G4 for `submit`,
+/// and G5's clean tree and G4 for shelving an in-progress item (§2.8). Each
+/// of those, `start` included, exits 3 if the project's root isn't inside a
+/// git work tree (§4.4).
 ///
 /// Checks run without the lock (§4.4), since one can take minutes. Once
 /// they've run, G5 looks at the tree again, the lock is taken again, and
 /// the move is refused with exit 1 if the item's file changed meanwhile.
 /// `start` runs G1 again then, since another item in the project may have
-/// started while its checks ran. A passing submit creates the item's git
-/// ref only then, so a refused one leaves none (§2.7).
+/// started while its checks ran.
+///
+/// Once a submit's gates pass, the triggers decide where it goes (§2.5):
+/// to done, verified automatically, or to review, held with its reasons in
+/// `holds`. Only reaching done creates the item's git ref, so a held or
+/// refused submit leaves none (§2.7).
 fn apply(
     store: &Store,
     lock: std::fs::File,
     mut item: Item,
     file: &str,
-    step: states::Move,
+    via: Via,
     reason: Option<String>,
 ) -> Result<Output> {
     refuse_newer_file(store, &item.id, file)?;
-    let command = states::command(&item.id, step.via);
+    let command = states::command(&item.id, via);
+    let from = item.status;
+    // Every move but submit's from in-progress has one outcome. The
+    // triggers pick submit's below.
+    let mut to = states::only_move(via, from).map_or(Status::Done, |step| step.to);
     let mut report = None;
+    let mut triggers = Vec::new();
     let mut started = Vec::new();
     let mut head = None;
-    let _lock = match step.via {
+    let _lock = match via {
         Via::Start => {
             // A file that can't be read as an item can't say whether it's
             // in progress, so G1 fails on one in the item's project (§4.4).
@@ -2194,22 +2260,18 @@ fn apply(
             if !gates.passed() {
                 return Err(gates.refusal(&item.id, item.status, Run::Submit));
             }
-            // G5 passed, so the root is in a work tree and HEAD is the
-            // commit the checks ran against.
-            let (Ok(root), Some(sha)) = (gates::root(&item, &config), &gates.head) else {
-                return Err(Error::store(format!(
-                    "{}'s gates passed, but its project's root or HEAD can't be found now. \
-                     Nothing was changed.",
-                    item.id
-                )));
-            };
-            git::set_ref(&root, &item.id, sha)?;
+            triggers = triggers::run(&item);
+            if triggers::holds(&triggers).is_empty() {
+                set_ref_at_head(&item, &config, &gates)?;
+            } else {
+                to = Status::Review;
+            }
             report = Some(gates);
             lock
         }
         // An in-progress item frees its project when it's shelved, so it
         // must leave a tree the next item can build on (§2.8).
-        Via::Shelve if step.from == Status::InProgress => {
+        Via::Shelve if from == Status::InProgress => {
             let config = config::load(store)?;
             let mut gates = gates::g5(&item, &config, false)?;
             drop(lock);
@@ -2225,14 +2287,14 @@ fn apply(
     };
 
     let now = item::now();
-    item.status = step.to;
+    item.status = to;
     item.updated = now;
     let mut text = Styled::new();
-    text.push(&format!("{}: {} → ", item.id, step.from.as_str()));
-    text.push_styled(step.to.as_str(), styled::status(step.to));
+    text.push(&format!("{}: {} → ", item.id, from.as_str()));
+    text.push_styled(to.as_str(), styled::status(to));
     text.push("\n");
     let mut warnings = Vec::new();
-    if step.via == Via::Start {
+    if via == Via::Start {
         warnings = already_passing(&item, &started);
         item.started = Some(Started {
             at: now,
@@ -2249,57 +2311,54 @@ fn apply(
     // `verification` is only present while the item is done (§2.1). A file
     // written by slice 2 can still hold one on a shelved item, so this
     // doesn't check that the move starts from done.
-    if step.via == Via::Reopen
+    if via == Via::Reopen
         && let Some(record) = item.verification.take()
     {
         item.previous_verification = Some(record);
     }
-    if step.via == Via::Submit {
-        let checks = report
-            .as_ref()
-            .map(|report| report.checks.iter().map(check_record).collect())
-            .unwrap_or_default();
-        let commit = report.as_ref().and_then(|report| report.head.clone());
-        let git_ref = git::ref_name(&item.id);
-        text.push(&format!(
-            "Verified automatically: every gate passed at {}, and {git_ref} keeps that commit.\n",
-            commit.as_deref().map_or("", gates::short)
-        ));
-        item.verification = Some(Verification {
-            by: VerifiedBy::Auto,
-            at: now,
-            commit,
-            git_ref: Some(git_ref),
-            checks,
-            note: None,
-        });
+    let holds = triggers::holds(&triggers);
+    if via == Via::Submit {
+        if to == Status::Done {
+            let record = verification_record(VerifiedBy::Auto, &item, report.as_ref(), now);
+            text.push(&format!(
+                "Verified automatically: every gate passed at {}, and {} keeps that commit.\n",
+                record.commit.as_deref().map_or("", gates::short),
+                git::ref_name(&item.id)
+            ));
+            item.verification = Some(record);
+        } else {
+            text.push(&format!(
+                "Every gate passed, and {} is held for review:\n",
+                item.id
+            ));
+            text.push(&holds_text(&holds));
+            text.push(&format!(
+                "It waits in `tracker review` for a human to approve or reject it. `tracker show \
+                 {} --diff` shows its work.\n",
+                item.id
+            ));
+        }
+        item.holds = holds.clone();
     }
-    item.history.push(HistoryEntry {
-        at: now,
-        from: step.from,
-        to: step.to,
-        via: step.via,
-        interactive: tty::is_interactive(),
-        reason,
-        fields: Vec::new(),
-        kind_before: None,
-        labels_removed: Vec::new(),
-    });
+    push_move(&mut item, from, via, reason, now);
     store.update_item(&item)?;
-    let json = if step.via == Via::Submit {
-        // §3's shape for a submit. The triggers (slice 9) fill in
-        // `triggers` and `holds` and can make the result `held`.
+    let json = if via == Via::Submit {
+        // §3's shape for a submit.
         let gates = report.map_or(json!([]), |report| report.gates_json());
+        let triggers: Vec<Value> = triggers
+            .iter()
+            .map(|ran| json!({ "trigger": ran.trigger, "fired": ran.hold.is_some() }))
+            .collect();
         json!({
             "id": item.id,
-            "result": "done",
+            "result": if to == Status::Done { "done" } else { "held" },
             "status": item.status.as_str(),
             "gates": gates,
-            "triggers": [],
-            "holds": [],
+            "triggers": triggers,
+            "holds": holds,
             "item": item,
         })
-    } else if step.via == Via::Start {
+    } else if via == Via::Start {
         json!({ "item": item, "warnings": warnings })
     } else {
         json!({ "item": item })
@@ -2309,6 +2368,84 @@ fn apply(
         json,
         warnings,
     })
+}
+
+/// Adds the history entry for a move from `from` to the item's state now,
+/// made by `via` at `now`, with its reason, if it needs one.
+fn push_move(
+    item: &mut Item,
+    from: Status,
+    via: Via,
+    reason: Option<String>,
+    now: jiff::Timestamp,
+) {
+    item.history.push(HistoryEntry {
+        at: now,
+        from,
+        to: item.status,
+        via,
+        interactive: tty::is_interactive(),
+        reason,
+        fields: Vec::new(),
+        kind_before: None,
+        labels_removed: Vec::new(),
+    });
+}
+
+/// Points the item's git ref at `HEAD` as G5 saw it in `gates`, once every
+/// gate has passed and the item is reaching done (§2.7).
+fn set_ref_at_head(item: &Item, config: &config::Config, gates: &gates::Report) -> Result<()> {
+    // G5 passed, so the root is in a work tree and HEAD is the commit the
+    // checks ran against.
+    let (Ok(root), Some(sha)) = (gates::root(item, config), &gates.head) else {
+        return Err(Error::store(format!(
+            "{}'s gates passed, but its project's root or HEAD can't be found now. Nothing was \
+             changed.",
+            item.id
+        )));
+    };
+    git::set_ref(&root, &item.id, sha)
+}
+
+/// The verification record for an item reaching done at `now`, `by` its
+/// gates or by a human, from the gates' `report`: the commit G5 saw, the
+/// ref that keeps it, every check that ran, and, for a human record, the
+/// holds that were approved (§2.7).
+fn verification_record(
+    by: VerifiedBy,
+    item: &Item,
+    report: Option<&gates::Report>,
+    now: jiff::Timestamp,
+) -> Verification {
+    Verification {
+        by,
+        at: now,
+        commit: report.and_then(|report| report.head.clone()),
+        git_ref: Some(git::ref_name(&item.id)),
+        checks: report
+            .map(|report| report.checks.iter().map(check_record).collect())
+            .unwrap_or_default(),
+        triggers: if by == VerifiedBy::Human {
+            item.holds.clone()
+        } else {
+            Vec::new()
+        },
+        note: None,
+    }
+}
+
+/// Each hold on its own line, its trigger, then why, indented.
+fn holds_text(holds: &[item::Hold]) -> String {
+    holds
+        .iter()
+        .map(|hold| {
+            format!(
+                "  {}  {}\n",
+                hold.trigger,
+                text::for_terminal(&hold.message, false)
+            )
+        })
+        .collect()
 }
 
 /// `start`'s warning for each criterion check in `started` that already
@@ -2348,7 +2485,11 @@ fn check_record(ran: &gates::Ran) -> CheckRecord {
 /// It shows the item as this version reads it. A file from a newer tracker
 /// can hold fields this version doesn't know, so `show` names them, in the
 /// text and as `warning` beside `item`, rather than leave them out unsaid.
-fn show(store: &Store, id: &str) -> Result<Output> {
+///
+/// With `diff`, it adds the item's commits (§2.1) and each one's patch, so
+/// a held item can be reviewed without leaving the tool (§3). That reads
+/// git in the project's root, and exits 3 if it can't.
+fn show(store: &Store, id: &str, diff: bool) -> Result<Output> {
     store.require_exists()?;
     let id = normalize_id(id);
     let (item, file) = store.load_item_with_text(&id)?;
@@ -2503,7 +2644,46 @@ fn show(store: &Store, id: &str) -> Result<Output> {
         }
     }
 
+    if !item.holds.is_empty() {
+        section(&mut text, "Held for review", " by:");
+        text.push(&holds_text(&item.holds));
+    }
+
     let mut json = json!({ "item": item });
+    if diff {
+        let (commits, patches) = commits_and_patches(&item, &config)?;
+        if commits.is_empty() {
+            section(
+                &mut text,
+                "Commits:",
+                &format!(" none. No commit reachable from HEAD is headed `<type>({id}): …`."),
+            );
+        } else {
+            section(
+                &mut text,
+                "Commits,",
+                &format!(" newest first ({}):", commits.len()),
+            );
+            for (sha, header) in &commits {
+                text.push(&format!(
+                    "  {}  {}\n",
+                    gates::short(sha),
+                    text::for_terminal(header, false)
+                ));
+            }
+            section(&mut text, "Diff,", " oldest first:");
+            text.push(&text::for_terminal(&patches, true));
+            if !patches.ends_with('\n') {
+                text.push("\n");
+            }
+        }
+        let commits: Vec<Value> = commits
+            .iter()
+            .map(|(sha, header)| json!({ "sha": sha, "header": header }))
+            .collect();
+        json["commits"] = json!(commits);
+        json["diff"] = json!(patches);
+    }
     if !unknown.is_empty() {
         let warning = format!(
             "{id}'s file has fields this version of tracker doesn't know, or can't show in \
@@ -2518,6 +2698,35 @@ fn show(store: &Store, id: &str) -> Result<Output> {
         json,
         warnings: Vec::new(),
     })
+}
+
+/// The item's commits for `show --diff`, newest first, each with its
+/// header, and each one's patch, oldest first. Exits 3 if the project's
+/// root can't be found or isn't inside a git work tree (§4.4).
+fn commits_and_patches(
+    item: &Item,
+    config: &config::Config,
+) -> Result<(Vec<(String, String)>, String)> {
+    let root = gates::root(item, config).map_err(|why| {
+        Error::store(format!(
+            "Can't show {}'s commits: {why}. Nothing was changed.",
+            item.id
+        ))
+    })?;
+    if !git::is_work_tree(&root)? {
+        return Err(Error::store(format!(
+            "Can't show {id}'s commits: {key}'s root, {}, isn't inside a git work tree. Make it a \
+             repository with `git init`, or register {key} with a root that's inside one. \
+             Nothing was changed.",
+            root.display(),
+            id = item.id,
+            key = item.project,
+        )));
+    }
+    let commits = git::item_log(&root, &item.id)?;
+    let oldest_first: Vec<String> = commits.iter().rev().map(|(sha, _)| sha.clone()).collect();
+    let patches = git::patches(&root, &oldest_first)?;
+    Ok((commits, patches))
 }
 
 /// Starts a section of `show`: a blank line, then `heading` in bold and
@@ -2605,6 +2814,13 @@ fn verification_text(record: &Verification) -> Styled {
         rows.push(vec!["  note".to_string(), note.clone()]);
     }
     let mut text = Styled::from(table(&rows));
+    // The holds a human approved (§2.7).
+    if !record.triggers.is_empty() {
+        text.push("  approved, held by:\n");
+        for line in holds_text(&record.triggers).lines() {
+            text.push(&format!("  {line}\n"));
+        }
+    }
     if record.checks.is_empty() {
         return text;
     }
@@ -2661,7 +2877,7 @@ fn delete(store: &Store, id: &str) -> Result<Output> {
     }
     // Shelving is the agent's way to put an item aside, but only open and
     // in-progress items can be shelved (§2.8), so only they get that advice.
-    let otherwise = if states::find(Via::Shelve, item.status).is_some() {
+    let otherwise = if states::has_move(Via::Shelve, item.status) {
         format!(
             "Only a human deletes items. An item that shouldn't be done is shelved instead, \
              with `{}`, and a human decides whether to delete it.",
@@ -2789,6 +3005,231 @@ fn deletion_warning(item: &Item, has_ref: bool) -> String {
         text::for_terminal(&item.title, false),
         states::join(&lost, "and")
     )
+}
+
+/// `review`: the inbox (§3). Every held item, from every project, with the
+/// triggers that hold it, and how to see its work and decide it.
+fn review(store: &Store) -> Result<Output> {
+    store.require_exists()?;
+    // Like every command, it needs config.json to parse (§3).
+    config::load(store)?;
+    let (items, skipped) = store.load_items()?;
+    let mut held: Vec<&Item> = items
+        .iter()
+        .filter(|item| item.status == Status::Review)
+        .collect();
+    held.sort_by(|a, b| {
+        a.project
+            .cmp(&b.project)
+            .then(a.priority.rank().cmp(&b.priority.rank()))
+            .then(a.number().cmp(&b.number()))
+    });
+
+    let mut text = Styled::new();
+    if held.is_empty() {
+        text.push("Nothing needs you.\n");
+    } else {
+        let count = if held.len() == 1 {
+            "1 item is held for review".to_string()
+        } else {
+            format!("{} items are held for review", held.len())
+        };
+        text.push(&format!(
+            "{count}, waiting for you to approve or reject each one:\n"
+        ));
+        for item in &held {
+            let id = &item.id;
+            text.push("\n");
+            text.push_styled(
+                &format!("{id}  {}", text::for_terminal(&item.title, false)),
+                styled::HEADING,
+            );
+            text.push("\n");
+            if item.holds.is_empty() {
+                text.push("  No trigger is recorded: it was put in review by hand.\n");
+            }
+            text.push(&holds_text(&item.holds));
+            text.push(&format!(
+                "  See its work with `{}`, then run `{}` or `{}`.\n",
+                diff_command(id),
+                states::command(id, Via::Approve),
+                states::command(id, Via::Reject)
+            ));
+        }
+    }
+    if !skipped.is_empty() {
+        text.push(&format!("\n{}\n", skipped_note(&skipped, "listed")));
+    }
+    let held: Vec<Value> = held
+        .iter()
+        .map(|item| {
+            json!({
+                "id": item.id,
+                "project": item.project,
+                "title": item.title,
+                "holds": item.holds,
+                "diff": diff_command(&item.id),
+            })
+        })
+        .collect();
+    Ok(Output {
+        text,
+        json: json!({ "held": held, "skipped": skipped_json(&skipped) }),
+        warnings: skipped_warnings(&skipped),
+    })
+}
+
+/// How to review item `id`'s work: `tracker show <ID> --diff`.
+fn diff_command(id: &str) -> String {
+    format!("tracker show {id} --diff")
+}
+
+/// `approve`: moves a held item to done, from an interactive terminal only,
+/// after saying what holds it and asking for the ID (§2.7). It re-runs the
+/// gates submit runs, with the same second look at the tree after the
+/// checks. If one fails, the item stays in review, with exit 2. Otherwise
+/// it's verified by a human against the `HEAD` G5 saw now, not at the
+/// submit, and its git ref is set there.
+///
+/// The store isn't locked while I decide, or while the checks run, so the
+/// item is read again under the lock after each, and nothing is written,
+/// with exit 1, if it changed (§4.4).
+fn approve(store: &Store, id: &str) -> Result<Output> {
+    store.require_exists()?;
+    let id = normalize_id(id);
+    let (mut item, before) = store.load_item_with_text(&id)?;
+    refuse_newer_file(store, &id, &before)?;
+    if !states::has_move(Via::Approve, item.status) {
+        return Err(states::not_from(&id, item.status, Via::Approve));
+    }
+    let command = states::command(&id, Via::Approve);
+    tty::confirm(
+        &command,
+        &id,
+        &decision_warning(
+            &item,
+            &format!(
+                "Approving it runs the gates again, and if they pass, moves it to done, verified \
+                 by a human, with {} keeping the commit they ran against.",
+                git::ref_name(&id)
+            ),
+        ),
+        "Only a human approves a held item. It waits in `tracker review` until one approves or \
+         rejects it.",
+    )?;
+
+    let lock = store.lock_unchanged(&id, &before, &command)?;
+    let config = config::load(store)?;
+    let mut report = gates::statics(&item, &config)?;
+    drop(lock);
+    report.extend(gates::scripts(&item, &config));
+    gates::tree_after_checks(&item, &config, &mut report)?;
+    let _lock = store.lock_unchanged_after_checks(&id, &before, &command)?;
+    if !report.passed() {
+        return Err(report.refusal(&id, item.status, Run::Approve));
+    }
+    set_ref_at_head(&item, &config, &report)?;
+
+    let now = item::now();
+    let from = item.status;
+    item.status = Status::Done;
+    item.updated = now;
+    let record = verification_record(VerifiedBy::Human, &item, Some(&report), now);
+    let commit = record.commit.clone().unwrap_or_default();
+    item.verification = Some(record);
+    item.holds = Vec::new();
+    push_move(&mut item, from, Via::Approve, None, now);
+    store.update_item(&item)?;
+
+    let mut text = Styled::new();
+    text.push(&format!("{id}: {} → ", from.as_str()));
+    text.push_styled(item.status.as_str(), styled::status(item.status));
+    text.push(&format!(
+        "\nApproved: every gate passed again at {}, and {} keeps that commit.\n",
+        gates::short(&commit),
+        git::ref_name(&id)
+    ));
+    Ok(Output {
+        text,
+        json: json!({
+            "id": id,
+            "result": "approved",
+            "status": item.status.as_str(),
+            "gates": report.gates_json(),
+            "item": item,
+        }),
+        warnings: Vec::new(),
+    })
+}
+
+/// `reject`: sends a held item back to in-progress, from an interactive
+/// terminal only, after asking for the ID (§2.7). The reason goes in its
+/// history, for the agent to read, and its holds are cleared: the next
+/// submit works them out again (§2.5).
+fn reject(store: &Store, id: &str, reason: Option<String>) -> Result<Output> {
+    store.require_exists()?;
+    let id = normalize_id(id);
+    let (mut item, before) = store.load_item_with_text(&id)?;
+    refuse_newer_file(store, &id, &before)?;
+    if !states::has_move(Via::Reject, item.status) {
+        return Err(states::not_from(&id, item.status, Via::Reject));
+    }
+    let how = states::command(&id, Via::Reject);
+    let reason = check_reason(&id, Via::Reject, reason, &how)?;
+    let command = format!("tracker reject {id}");
+    tty::confirm(
+        &command,
+        &id,
+        &decision_warning(
+            &item,
+            &format!(
+                "Rejecting it sends it back to in-progress, with this reason in its history for \
+                 the agent: \"{}\"",
+                reason.as_deref().unwrap_or_default()
+            ),
+        ),
+        "Only a human rejects a held item. It waits in `tracker review` until one approves or \
+         rejects it.",
+    )?;
+
+    // The lock wasn't held while I decided, so nothing happens if the item
+    // changed meanwhile (§4.4).
+    let _lock = store.lock_unchanged(&id, &before, &command)?;
+    let now = item::now();
+    let from = item.status;
+    item.status = Status::InProgress;
+    item.updated = now;
+    item.holds = Vec::new();
+    push_move(&mut item, from, Via::Reject, reason, now);
+    store.update_item(&item)?;
+
+    let mut text = Styled::new();
+    text.push(&format!("{id}: {} → ", from.as_str()));
+    text.push_styled(item.status.as_str(), styled::status(item.status));
+    text.push("\nThe reason is in its history, for the agent working on it to read.\n");
+    Ok(Output {
+        text,
+        json: json!({ "item": item }),
+        warnings: Vec::new(),
+    })
+}
+
+/// What `approve` and `reject` say before asking for the ID: the item,
+/// what holds it, and `what` the command will do. `tty::confirm` escapes
+/// it, so the title and messages go in as they are.
+fn decision_warning(item: &Item, what: &str) -> String {
+    let id = &item.id;
+    let mut warning = format!("{id} \"{}\" is in review", item.title);
+    if item.holds.is_empty() {
+        warning.push_str(", with no trigger recorded.\n");
+    } else {
+        warning.push_str(", held by:\n");
+        for hold in &item.holds {
+            warning.push_str(&format!("  {}  {}\n", hold.trigger, hold.message));
+        }
+    }
+    warning.push_str(&format!("{what}\n`{}` shows its work.\n", diff_command(id)));
+    warning
 }
 
 /// An ID as typed, with its key in capitals, so `xx-1` finds XX-1.

@@ -58,6 +58,19 @@ fn git(root: &Path, args: &[&str]) -> Result<String> {
 /// Refuses, with exit 3, a project root that isn't inside a git work tree
 /// (§4.4). `key` names the project, and `id` the item, in the message.
 pub fn require_work_tree(root: &Path, key: &str, id: &str) -> Result<()> {
+    if is_work_tree(root)? {
+        return Ok(());
+    }
+    Err(Error::store(format!(
+        "{key}'s root, {}, isn't inside a git work tree, so tracker can't record or prove \
+         {id}'s work against a commit. Make it a repository with `git init`, or register \
+         {key} with a root that's inside one. Nothing was changed.",
+        root.display()
+    )))
+}
+
+/// Whether `root` is inside a git work tree. Exits 3 if git can't be run.
+pub fn is_work_tree(root: &Path) -> Result<bool> {
     let inside = Command::new("git")
         .current_dir(root)
         .args(["rev-parse", "--is-inside-work-tree"])
@@ -65,13 +78,7 @@ pub fn require_work_tree(root: &Path, key: &str, id: &str) -> Result<()> {
         .stderr(Stdio::null())
         .output();
     match inside {
-        Ok(output) if output.status.success() && output.stdout.starts_with(b"true") => Ok(()),
-        Ok(_) => Err(Error::store(format!(
-            "{key}'s root, {}, isn't inside a git work tree, so tracker can't record or prove \
-             {id}'s work against a commit. Make it a repository with `git init`, or register \
-             {key} with a root that's inside one. Nothing was changed.",
-            root.display()
-        ))),
+        Ok(output) => Ok(output.status.success() && output.stdout.starts_with(b"true")),
         Err(e) => Err(Error::store(format!(
             "Can't run git in {}: {e}. tracker needs git installed to prove work against a \
              commit. Nothing was changed.",
@@ -208,6 +215,13 @@ pub fn is_item_header(header: &str, id: &str) -> bool {
 /// `HEAD` whose header is scoped to it, newest first. None in a repository
 /// with no commits yet.
 pub fn item_commits(root: &Path, id: &str) -> Result<Vec<String>> {
+    let commits = item_log(root, id)?;
+    Ok(commits.into_iter().map(|(sha, _)| sha).collect())
+}
+
+/// Item `id`'s commits, as `item_commits` finds them, each with its
+/// header: the first line of its message.
+pub fn item_log(root: &Path, id: &str) -> Result<Vec<(String, String)>> {
     if head(root)?.is_none() {
         return Ok(Vec::new());
     }
@@ -219,10 +233,49 @@ pub fn item_commits(root: &Path, id: &str) -> Result<Vec<String>> {
             let mut lines = record.trim_start_matches('\n').lines();
             let sha = lines.next()?;
             let header = lines.next().unwrap_or_default();
-            is_item_header(header, id).then(|| sha.to_string())
+            is_item_header(header, id).then(|| (sha.to_string(), header.to_string()))
         })
         .collect();
     Ok(commits)
+}
+
+/// Each commit in `shas` with its patch, in the order given, as `git show`
+/// prints them, for `show --diff`. Every file a commit touched is shown,
+/// inside the project's root or not (§2.1). Bytes that aren't UTF-8, as in
+/// a file in another encoding, are shown as `�` rather than refused, since
+/// this is only for reading. External diff drivers and textconv filters,
+/// which `.git/config` can set without any commit showing it, are turned
+/// off, so the diff is what the commits hold.
+pub fn patches(root: &Path, shas: &[String]) -> Result<String> {
+    if shas.is_empty() {
+        return Ok(String::new());
+    }
+    let output = Command::new("git")
+        .current_dir(root)
+        .args([
+            "-c",
+            "log.showSignature=false",
+            "-c",
+            "core.quotePath=false",
+            "show",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--patch",
+            "--format=commit %H%n%s",
+        ])
+        .args(shas)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| Error::store(format!("Can't run git in {}: {e}.", root.display())))?;
+    if !output.status.success() {
+        return Err(Error::store(format!(
+            "`git show` failed in {}: {}",
+            root.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// The ref that keeps item `id`'s verified commit (§2.7).

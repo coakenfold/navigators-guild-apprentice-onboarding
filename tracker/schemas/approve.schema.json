@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracker.invalid/schemas/approve.schema.json",
+  "title": "tracker approve --json",
+  "description": "An approve that went ahead (DESIGN.md §2.7): from an interactive terminal, after the ID was typed and every gate passed again. The item is done, verified by a human. A refused or cancelled one prints the error shape instead, and a gate that fails leaves the item in review with exit 2.",
+  "type": "object",
+  "required": ["id", "result", "status", "gates", "item"],
+  "properties": {
+    "id": { "type": "string" },
+    "result": { "const": "approved" },
+    "status": { "const": "done" },
+    "gates": {
+      "description": "Every gate that ran again, all of which passed.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["gate", "ok"],
+        "properties": {
+          "gate": { "type": "string", "pattern": "^G[0-9]+$" },
+          "ok": { "const": true },
+          "secs": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "item": {
+      "description": "The item after the approve, exactly as its file holds it.",
+      "$ref": "item.schema.json"
+    }
+  },
+  "additionalProperties": false
+}

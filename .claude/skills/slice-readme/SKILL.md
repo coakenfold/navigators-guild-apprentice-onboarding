@@ -22,10 +22,10 @@ Developers who will build a later slice, or review this one, and who weren't in 
 
 ## Step 1: Read
 
-Read each of these **in full**, from first line to last, using several Read calls with `offset` if a file is long. Don't skim, grep or read only the slice's part. Later slices, integration risks and DESIGN.md's limits all bear on what this slice must say.
+Read these first. Later slices, integration risks and DESIGN.md's limits all bear on what this slice must say.
 
-- `tracker/docs/DESIGN.md`
-- `tracker/docs/PLAN.md`
+- `tracker/docs/PLAN.md`, **in full**, from first line to last. Don't skim, grep or read only the slice's part.
+- `tracker/docs/DESIGN.md` (about 140 KB), never whole. List its headings with `grep -n '^#'`, then read in full, with Read's `offset` and `limit`, each section slice N's _Prompt_ and _Done when_ name, each one the slice's diff changes, and §7, its honest limits.
 
 Then read:
 

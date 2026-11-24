@@ -308,7 +308,7 @@ $ tracker submit BM-12
 Nothing was changed.
 ```
 
-`tracker gates BM-12` runs the same gates without changing the item's status, so an agent can ask "what's left?" at any time. It runs the criterion and project checks for an item in any state, not only one in progress, so an agent can see its checks fail before `start`. For an item that can't be submitted, it says so under the reasons. It does record failed judge requests for T11, in the judge folder rather than the item file, so a dry run can't be used to try out rewordings for free.
+`tracker gates BM-12` runs the same gates without changing the item's status, so an agent can ask "what's left?" at any time. It runs the criterion and project checks for an item in any state, not only one in progress, so an agent can see its checks fail before `start`. For an item that can't be submitted, it says so under the reasons. Once every gate passes, it runs the triggers too and lists any hold a submit would get, so an agent learns before submitting that the item would wait in review. It does record failed judge requests for T11, in the judge folder rather than the item file, so a dry run can't be used to try out rewordings for free.
 
 ### 2.5 Review triggers: does it need a human?
 
@@ -357,7 +357,7 @@ It also lists every `edit` that removes the `needs-review` label or changes `kin
 
 These must come from an interactive terminal, and I confirm each one by typing the item ID, or `ack` for `digest ack`, which acts on a project rather than an item:
 
-- `tracker approve BM-14`: re-runs the gates, counting each judge question held under T10 or T12 as passed for this approval only, then moves the item to done with `verification.by` set to `"human"`. If the re-run fails, for example because the project now has uncommitted changes, the item stays in review and the exit code is `2`.
+- `tracker approve BM-14`: re-runs the gates, counting each judge question held under T10 or T12 as passed for this approval only, then moves the item to done with `verification.by` set to `"human"`. If the re-run fails, for example because the project now has uncommitted changes, the item stays in review and the exit code is `2`. A held submit records no commit and creates no ref, so the record's `commit` is the `HEAD` that approve's own G5 saw, and the ref is created there.
 - `tracker reject BM-14 --reason "…"`: sends it back to in-progress. The reason goes in history for the agent to read.
 - `tracker delete BM-12` (§2.8).
 - `tracker criterion accept BM-12`: after I edit a criterion by hand, records its new text in `written`, so T5 doesn't fire. It names each text it drops from `written`, so an agent's removal of another criterion isn't accepted along with my edit unseen.
@@ -456,7 +456,7 @@ The `criterion` commands and `evidence` work in any state but done, since a done
 | Command                                                                      | What it does                                                                                                                                                                                                                                                                                                  |
 | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tracker list [--project \| --all] [--status] [--priority] [--label]… [--kind] [--by]` | Lists items grouped by project and sorted by priority: the current project's inside a project root, and every project's outside one or with `--all`. The text says which after the rows, such as "XX only. `--all` for every project.", followed by which states are hidden, if `--status` and `--by` weren't given, and the filters used, and the JSON names it in `project`: the key, or `null` for every project. Without `--status`, it shows open, in-progress and review items, or done items when `--by` is given, since only done items have been verified. `--status` shows exactly the states named, such as `--status done` or `--status open,shelved`. `--by auto\|human\|unchecked` keeps done items verified that way. `--label` can be repeated, and keeps items that have every label named. The filters combine. |
-| `tracker show BM-12 [--diff]`                                                | Everything, including the verification record and history. `--diff` adds the item's commits (§2.1) and their combined diff, with the files that fired a trigger listed first, so I can review a hold without leaving the tool.                                                                                |
+| `tracker show BM-12 [--diff]`                                                | Everything, including the verification record and history. `--diff` adds the item's commits (§2.1) and their combined diff, with the files that fired a trigger listed first, so I can review a hold without leaving the tool. The diff is each commit's patch, oldest first, as `git show` prints it, since an item's commits needn't be next to each other in history, and a diff from the first to the last would include other items' work between them.                                                                                |
 | `tracker delete BM-12`                                                       | Any item, from an interactive terminal only, after a prompt that says what will be lost (§2.8).                                                                                                                                                                                                               |
 | `tracker audit`                                                              | Reports files that can't be read, status changes with no matching history, done items with no verification record, IDs used twice, and `deleted.json` lines whose ID is at or above its project's counter, which a forged line would be, and which make `create` refuse for that project.                                                                                                                                                                        |
 
@@ -633,8 +633,7 @@ Each item is one JSON file, and serde maps it to Rust structs and back. The tool
         "secs": 38
       }
     ],
-    "judges": [],
-    "triggers": []
+    "judges": []
   },
   "history": [
     {
@@ -684,6 +683,7 @@ Each item is one JSON file, and serde maps it to Rust structs and back. The tool
 - `verification.checks` has one entry per check the submit ran: the criteria's checks first, each naming its `criterion`, numbered from 1 as the criteria were at that submit, then the project's checks, which name none. A record is history, so unlike `started.checks` it's never renumbered: after a reopen, a `criterion remove` leaves the numbers in `previous_verification` as they were at that submit, where one may now name a different criterion or none. A reader matches its checks to today's criteria by `cmd`.
 - `verification.judges` has one entry per judge question: its ref, the model, the request hash, the answer and the reason.
 - `verification.note` explains a record that its other fields don't, such as an `unchecked` one, which has no `commit` or `ref`: "Submitted before tracker ran checks. Gates G2 and G6 passed, but nothing tested the work." It's in the past tense, since it stays in the file after later versions run checks.
+- `holds` lists each trigger that fired at the item's last submit as `{"trigger": "T6", "message": "…"}`, and is there only while the item is in review. `approve` moves it to `verification.triggers`, which a `human` record keeps and an `auto` one never has, and `reject` drops it, since the next submit works the triggers out again (§2.5).
 - A history entry's `reason` is the one given to `shelve`, `reopen` or `reject`, and it's left out for other moves. In the example, the agent shelved the item while it waited for BM-11, and I reopened it.
 - JSON has no date type, so timestamps are [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339) strings in UTC, which `jiff` reads and writes.
 - `description` is markdown stored as a JSON string, so its line breaks are written as `\n`. `tracker show` prints it as plain text, and `tracker edit --description` changes it, so it never needs editing in the file.

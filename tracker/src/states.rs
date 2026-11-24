@@ -17,30 +17,46 @@ const fn step(via: Via, from: Status, to: Status) -> Move {
     Move { via, from, to }
 }
 
-/// Every move in §2.2's diagram that this version has a command for, one
-/// row per arrow. `allowed_json` lists one entry per row (§3), so a command
-/// with two outcomes gets two rows. `submit`'s move to review, and
-/// `approve` and `reject`, arrive with the triggers in slice 9, and `find`
-/// must then stop assuming one row per command and state. `delete` isn't a
-/// move: the item is gone.
-pub const MOVES: [Move; 6] = [
+/// Every move in §2.2's diagram, one row per arrow. `allowed_json` lists
+/// one entry per row (§3), so `submit`, which has two outcomes, gets two
+/// rows: the triggers decide which one happens. `delete` isn't a move: the
+/// item is gone.
+pub const MOVES: [Move; 9] = [
     step(Via::Start, Status::Open, Status::InProgress),
     step(Via::Submit, Status::InProgress, Status::Done),
+    step(Via::Submit, Status::InProgress, Status::Review),
+    step(Via::Approve, Status::Review, Status::Done),
+    step(Via::Reject, Status::Review, Status::InProgress),
     step(Via::Shelve, Status::Open, Status::Shelved),
     step(Via::Shelve, Status::InProgress, Status::Shelved),
     step(Via::Reopen, Status::Done, Status::Open),
     step(Via::Reopen, Status::Shelved, Status::Open),
 ];
 
-/// The move `via` makes from `from`, if the diagram draws one.
-pub fn find(via: Via, from: Status) -> Option<Move> {
+/// Whether the diagram draws any move for `via` from `from`.
+pub fn has_move(via: Via, from: Status) -> bool {
     MOVES
+        .iter()
+        .any(|step| step.via == via && step.from == from)
+}
+
+/// Where `via` takes an item from `from`, for a command with one outcome
+/// there: every one but `submit` from in-progress, which the triggers
+/// decide. `None` if the diagram draws no such move.
+pub fn only_move(via: Via, from: Status) -> Option<Move> {
+    let mut moves = MOVES
         .into_iter()
-        .find(|step| step.via == via && step.from == from)
+        .filter(|step| step.via == via && step.from == from);
+    let first = moves.next()?;
+    match moves.next() {
+        None => Some(first),
+        Some(_) => None,
+    }
 }
 
 /// The command that `status <id> <to>` maps onto. `None` for review, which
-/// only `submit` reaches, when a trigger holds the item.
+/// only `submit` reaches, when a trigger holds the item. `status` never
+/// runs `approve` or `reject`, which are a human's (§3).
 pub fn via_to(to: Status) -> Option<Via> {
     match to {
         Status::Open => Some(Via::Reopen),
@@ -62,7 +78,7 @@ pub fn command(id: &str, via: Via) -> String {
 
 /// The moves allowed from `from`, for the `allowed` field of a refusal:
 /// each with its command, the state it leads to, and how to run it on `id`.
-/// Empty for review, which only approve and reject leave (slice 9).
+/// For review, approve and reject, which only a human runs.
 pub fn allowed_json(id: &str, from: Status) -> Value {
     let moves: Vec<Value> = MOVES
         .iter()
@@ -85,11 +101,12 @@ pub fn allowed(id: &str, from: Status) -> String {
         .filter(|step| step.from == from)
         .map(|step| format!("`{}` (to {})", command(id, step.via), step.to.as_str()))
         .collect();
-    if moves.is_empty() {
-        // Only review has no moves yet.
-        return "A held item waits for a human to approve or reject it, and this version of \
-                tracker can't do either yet."
-            .to_string();
+    if from == Status::Review {
+        return format!(
+            "A held item waits for a human, who either approves it with {} or rejects it with \
+             {}, from an interactive terminal.",
+            moves[0], moves[1]
+        );
     }
     if moves.len() == 1 {
         return format!("From {}, the only move is {}.", from.as_str(), moves[0]);
@@ -114,11 +131,13 @@ fn refusal(id: &str, from: Status, message: String) -> Error {
 /// The refusal for running `via` on an item in `from`, where the diagram
 /// draws no such move.
 pub fn not_from(id: &str, from: Status, via: Via) -> Error {
-    let starts: Vec<String> = MOVES
-        .iter()
-        .filter(|step| step.via == via)
-        .map(|step| step.from.phrase().to_string())
-        .collect();
+    let mut starts: Vec<String> = Vec::new();
+    for step in MOVES.iter().filter(|step| step.via == via) {
+        let phrase = step.from.phrase().to_string();
+        if !starts.contains(&phrase) {
+            starts.push(phrase);
+        }
+    }
     let message = format!(
         "{id} is {}, and `{}` only moves an item that is {}. {}",
         from.phrase(),

@@ -116,6 +116,8 @@ const START: &str = "tracker start XX-1";
 const SUBMIT: &str = "tracker submit XX-1";
 const SHELVE: &str = "tracker shelve XX-1 --reason \"…\"";
 const REOPEN: &str = "tracker reopen XX-1 --reason \"…\"";
+const APPROVE: &str = "tracker approve XX-1";
+const REJECT: &str = "tracker reject XX-1 --reason \"…\"";
 
 /// Sets XX-1's status by hand, for states no command can reach yet.
 fn set_status(env: &Env, status: &str) {
@@ -211,9 +213,9 @@ fn reopening_a_slice_2_file_moves_its_record_aside_too() {
 
 #[test]
 fn submit_prints_the_shape_section_3_gives_it() {
-    // The triggers (slice 9) only fill in these fields, so agents parsing
-    // `submit` now won't break when they arrive. The gates that passed are
-    // listed (slice 6).
+    // The triggers (slice 9) fill in `triggers` and `holds`, and agents
+    // parsing `submit` before them didn't break when they arrived. The
+    // gates that passed are listed (slice 6).
     let env = env_with_item();
     for args in [&["submit", "XX-1"][..], &["status", "XX-1", "done"]] {
         env.json(&["start", "XX-1"]);
@@ -232,7 +234,11 @@ fn submit_prints_the_shape_section_3_gives_it() {
                     { "gate": "G3", "ok": true, "secs": 0 },
                     { "gate": "G4", "ok": true, "secs": 0 }
                 ],
-                "triggers": [],
+                // Both of slice 9's triggers ran, and neither fired.
+                "triggers": [
+                    { "trigger": "T6", "fired": false },
+                    { "trigger": "T9", "fired": false }
+                ],
                 "holds": [],
                 "item": item,
             }),
@@ -407,7 +413,8 @@ fn every_move_the_diagram_doesnt_draw_is_refused() {
         assert_eq!(allowed(&env, args), [START, SHELVE], "{args:?}");
     }
 
-    // From in-progress: only submit and shelve.
+    // From in-progress: only submit, to done or to review (slice 9), and
+    // shelve.
     env.json(&["start", "XX-1"]);
     for args in [
         &["start", "XX-1"][..],
@@ -415,7 +422,7 @@ fn every_move_the_diagram_doesnt_draw_is_refused() {
         &["reopen", "XX-1", "--reason", "r"],
         &["status", "XX-1", "open", "--reason", "r"],
     ] {
-        assert_eq!(allowed(&env, args), [SUBMIT, SHELVE], "{args:?}");
+        assert_eq!(allowed(&env, args), [SUBMIT, SUBMIT, SHELVE], "{args:?}");
     }
 
     // From done: only reopen.
@@ -449,7 +456,7 @@ fn nothing_moves_an_item_to_review_by_hand() {
     env.json(&["start", "XX-1"]);
     assert_eq!(
         allowed(&env, &["status", "XX-1", "review"]),
-        [SUBMIT, SHELVE]
+        [SUBMIT, SUBMIT, SHELVE]
     );
 }
 
@@ -466,8 +473,9 @@ fn an_item_in_review_is_refused_by_every_move() {
         &["status", "XX-1", "open", "--reason", "r"],
         &["status", "XX-1", "in-progress"],
     ] {
-        // Only approve and reject (slice 9) move a held item.
-        assert!(allowed(&env, args).is_empty(), "{args:?}");
+        // Only approve and reject (slice 9) move a held item. Until slice
+        // 9, `allowed` was empty.
+        assert_eq!(allowed(&env, args), [APPROVE, REJECT], "{args:?}");
     }
 }
 

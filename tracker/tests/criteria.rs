@@ -423,7 +423,15 @@ fn criteria_can_change_before_and_after_start_but_not_once_done() {
     // After start too: slice 11's T5 is what notices (§3).
     env.json(&["criterion", "add", "XX-1", "more"]);
     env.json(&["evidence", "XX-1", "2", "here"]);
-    env.json(&["submit", "XX-1"]);
+    // The manual criterion holds the submit under T6 (slice 9), so a human
+    // approves it, which needs a terminal.
+    assert_eq!(env.json(&["submit", "XX-1"])["result"], "held");
+    let Some((output, ok)) =
+        env.in_terminal_typing(&["approve", "XX-1"], "Type XX-1 to confirm", "XX-1", || {})
+    else {
+        return;
+    };
+    assert!(ok, "{output}");
 
     for args in [
         &["criterion", "add", "XX-1", "x"][..],

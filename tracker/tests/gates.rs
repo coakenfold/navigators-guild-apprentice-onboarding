@@ -378,10 +378,11 @@ fn a_manual_criterion_with_no_evidence_fails_g2() {
     }
     assert_eq!(env.item("XX-1")["status"], "in-progress");
 
-    // With evidence it passes, and so does the submit.
+    // With evidence it passes, and so does the submit, which T6 holds for
+    // a human, since the criterion is manual (slice 9).
     env.json(&["evidence", "XX-1", "1", "the home page"]);
     env.json(&["gates", "XX-1"]);
-    assert_eq!(env.json(&["submit", "XX-1"])["status"], "done");
+    assert_eq!(env.json(&["submit", "XX-1"])["status"], "review");
 }
 
 #[test]
@@ -442,6 +443,12 @@ fn a_script_criterion_needs_no_evidence() {
                 { "gate": "G3", "ok": true, "secs": 0 },
                 { "gate": "G4", "ok": true, "secs": 0 }
             ],
+            // TR-29: once every gate passes, the triggers run too.
+            "triggers": [
+                { "trigger": "T6", "fired": false },
+                { "trigger": "T9", "fired": false }
+            ],
+            "holds": [],
         })
     );
 }

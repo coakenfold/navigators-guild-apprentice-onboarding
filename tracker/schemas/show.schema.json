@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tracker.invalid/schemas/show.schema.json",
   "title": "tracker show --json",
-  "description": "Everything about one item (DESIGN.md §3): its fields, verification records and history.",
+  "description": "Everything about one item (DESIGN.md §3): its fields, verification records and history, and with --diff its commits and their diff.",
   "type": "object",
   "required": ["item"],
   "properties": {
@@ -10,11 +10,29 @@
       "description": "The item as this version of tracker reads it. A file written by a newer tracker can hold more, which warning names.",
       "$ref": "item.schema.json"
     },
+    "commits": {
+      "description": "Only with --diff: the item's commits (DESIGN.md §2.1), the commits reachable from HEAD whose header is scoped to its ID, newest first. Empty when it has none.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sha", "header"],
+        "properties": {
+          "sha": { "$ref": "item.schema.json#/$defs/sha" },
+          "header": { "description": "The commit message's first line.", "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "diff": {
+      "description": "Only with --diff: each of the item's commits with its patch, oldest first, as git show prints them, including files outside the project's root. Empty when it has no commits.",
+      "type": "string"
+    },
     "warning": {
       "description": "Present only when the item's file holds top-level fields this version doesn't know or can't show in full, such as ones a newer tracker added. It names them, and item leaves them out or shows them changed.",
       "type": "string",
       "minLength": 1
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "dependentRequired": { "commits": ["diff"], "diff": ["commits"] }
 }

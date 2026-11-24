@@ -3,7 +3,7 @@
 //! failed, and the command that ran it refuses with exit 2.
 //!
 //! This version has G1 (at `start`), and G2, G5, G6, G3 and G4 (at
-//! `submit`, and in the `gates` dry run). G3 and G4 run checks
+//! `submit`, `approve`, and in the `gates` dry run). G3 and G4 run checks
 //! (`checks.rs`), and G5 reads git (`git.rs`). Shelving an in-progress item
 //! runs G5's clean-tree half and G4 (§2.8).
 
@@ -66,6 +66,8 @@ pub struct Ran {
 pub enum Run {
     Start,
     Submit,
+    /// `approve`, which re-runs submit's gates on a held item (§2.7).
+    Approve,
     /// `shelve` on an in-progress item, which needs a clean tree and
     /// passing project checks (§2.8).
     Shelve,
@@ -156,6 +158,10 @@ impl Report {
             Run::Submit => {
                 format!("{id} can't be submitted: {failed} failed. Nothing was changed.")
             }
+            Run::Approve => format!(
+                "{id} can't be approved: {failed} failed when the gates ran again, so it stays in \
+                 review. Nothing was changed."
+            ),
             Run::Shelve => format!(
                 "{id} can't be shelved while it's in progress: {failed} failed. The next item \
                  builds on this tree, so it must be clean and pass the project checks. Nothing \

@@ -17,6 +17,7 @@ This folder is part of the guild-portfolio git repo, not a repo of its own. Slic
 - Suggested modules: `src/main.rs` (clap), `src/store.rs` (paths, lock, atomic writes, counters), `src/item.rs` (serde structs), `src/config.rs`, `src/states.rs`, `src/gates.rs`, `src/triggers.rs`, `src/git.rs`, `src/judge.rs` and `src/bin/tracker-judge.rs`.
 - Integration tests go in `tests/`.
 - Never read `src/main.rs` whole: it's about 2,500 lines (96 KB). Search it with Grep, or `git diff` for what changed, then Read only the lines you need with `offset` and `limit`.
+- Never read `docs/DESIGN.md` whole: it's about 850 lines (140 KB). List its headings with `grep -n '^#' docs/DESIGN.md` or search it with Grep, then Read only the lines you need with `offset` and `limit`.
 - §4.2's example `risky_paths` already name `src/store.rs` and `src/gates.rs`.
 
 ## Conventions

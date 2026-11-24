@@ -45,6 +45,12 @@ pub struct Item {
     /// reopened. Each reopen from done replaces it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous_verification: Option<Verification>,
+    /// The triggers that fired at the last submit, while the item waits in
+    /// review for a human to approve or reject it (§2.5). Present only
+    /// while it's in review: approve moves them to its verification record,
+    /// and reject clears them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub holds: Vec<Hold>,
     /// One entry per move between states (§2.2) or `edit`, oldest first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub history: Vec<HistoryEntry>,
@@ -116,9 +122,21 @@ pub struct Verification {
     /// project's, in order (§4.3).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub checks: Vec<CheckRecord>,
+    /// For a `human` record, the triggers that held the item, which I
+    /// accepted by approving it (§2.7). Empty for an `auto` one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub triggers: Vec<Hold>,
     /// Why the record says what it does, such as that no gates ran.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+}
+
+/// One trigger that fired (§2.5): its name, such as `T6`, and the message
+/// saying why it holds the item.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Hold {
+    pub trigger: String,
+    pub message: String,
 }
 
 /// One check in a verification record: the criterion it came from, its
@@ -179,7 +197,7 @@ pub struct HistoryEntry {
     /// Whether stdin was a terminal, which is how the digest tells my moves
     /// from an agent's (§2.6).
     pub interactive: bool,
-    /// Why, for the moves that need a reason: shelve and reopen.
+    /// Why, for the moves that need a reason: shelve, reopen and reject.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     /// For an entry that doesn't change the state, such as an `edit`, the
@@ -205,6 +223,10 @@ pub struct HistoryEntry {
 pub enum Via {
     Start,
     Submit,
+    /// Moves a held item to done, from my terminal (§2.7).
+    Approve,
+    /// Sends a held item back to in-progress, from my terminal (§2.7).
+    Reject,
     Shelve,
     Reopen,
     /// Changes an item's details without moving it, so no move has it.
@@ -213,7 +235,7 @@ pub enum Via {
     /// the item, so no move has it.
     #[serde(rename = "criterion-accept")]
     CriterionAccept,
-    /// A command this version doesn't know, such as `approve`, in a file
+    /// A command this version doesn't know, such as `archive`, in a file
     /// written by a newer tracker. The file still loads and lists, but the
     /// command's name is lost, so `Store::update_item` refuses to write the
     /// file back. No move has it.
@@ -227,6 +249,8 @@ impl Via {
         match self {
             Via::Start => "start",
             Via::Submit => "submit",
+            Via::Approve => "approve",
+            Via::Reject => "reject",
             Via::Shelve => "shelve",
             Via::Reopen => "reopen",
             Via::Edit => "edit",
@@ -237,7 +261,7 @@ impl Via {
 
     /// Whether the move needs `--reason` (§2.2).
     pub fn needs_reason(self) -> bool {
-        matches!(self, Via::Shelve | Via::Reopen)
+        matches!(self, Via::Shelve | Via::Reopen | Via::Reject)
     }
 }
 
