@@ -7,7 +7,9 @@ import { cases } from "./cases.mjs";
 
 const [model] = process.argv.slice(2);
 if (!model) { console.error("usage: node run.mjs <model>   (a full model name, such as claude-haiku-5-5)"); process.exit(1); }
-const adapterPath = new URL("./adapters/claude.mjs", import.meta.url).pathname;
+// The judge command the tracker runs by default (DESIGN.md §2.3.1), found on PATH, so the eval
+// measures exactly what the tracker runs. `cargo install --path .` in tracker/ installs it.
+const JUDGE = "tracker-judge";
 
 const casesHash = createHash("sha256").update(readFileSync(new URL("./cases.mjs", import.meta.url))).digest("hex").slice(0, 12);
 console.log(`${model}, ${cases.length} cases (case set ${casesHash})\n`);
@@ -21,12 +23,13 @@ for (const c of cases) {
   const started = Date.now();
   let answer = null, reason = null, cost = null, error = null;
   try {
-    const out = JSON.parse(execFileSync("node", [adapterPath], { input: JSON.stringify(request), timeout: 120_000, stdio: ["pipe", "pipe", "pipe"] }));
+    const out = JSON.parse(execFileSync(JUDGE, [], { input: JSON.stringify(request), timeout: 120_000, stdio: ["pipe", "pipe", "pipe"] }));
     ({ answer, reason } = out.answers.q);
     cost = out.cost_usd;
     adapter = out.adapter;
   } catch (e) {
-    error = (e.stderr?.toString() || e.message).trim();
+    error = e.code === "ENOENT" ? `can't find ${JUDGE} on PATH; run \`cargo install --path .\` in tracker/`
+      : (e.stderr?.toString() || e.message).trim();
   }
   const secs = (Date.now() - started) / 1000;
 
