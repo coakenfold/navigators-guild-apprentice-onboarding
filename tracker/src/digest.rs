@@ -246,14 +246,15 @@ pub fn build(project: &str, items: &[Item], deleted: &[Value], ack: Option<&Ack>
 }
 
 /// The question each of the record's judge answers was for, found by its
-/// ref `c<n>:<id>` in the item's criteria. An answer whose question is gone
+/// ref `c<n>:<id>`, or `c<n>:<at>:<id>` for an `each` judge, in the item's criteria. An answer whose question is gone
 /// from the item is left out.
 fn asked(item: &Item, record: &Verification) -> Vec<Asked> {
     let mut out = Vec::new();
     for judge in &record.judges {
-        let Some((criterion, id)) = judge.judge_ref.split_once(':') else {
+        let Some((front, id)) = judge.judge_ref.rsplit_once(':') else {
             continue;
         };
+        let criterion = front.split(':').next().unwrap_or(front);
         let Some(n) = criterion
             .strip_prefix('c')
             .and_then(|n| n.parse::<usize>().ok())
