@@ -24,10 +24,13 @@ const render = (v) => (typeof v === "string" ? v : JSON.stringify(v, null, 2));
 const state = typeof req.state === "string" ? req.state
   : Object.entries(req.state).map(([k, v]) => `[${k}]\n${render(v)}`).join("\n\n");
 
+// A </material> in the excerpt would close the tag as the model reads it, so it's escaped (tracker-judge does the same).
+const material = state.replaceAll("</material>", "<\\/material>");
+
 function prompt(q) {
   const yes = q.criteria?.true ? `\nYes means: ${q.criteria.true}` : "";
   const no = q.criteria?.false ? `\nNo means: ${q.criteria.false}` : "";
-  return `<material>\n${state}\n</material>\n\nQuestion: ${q.instructions}${yes}${no}\n\n`
+  return `<material>\n${material}\n</material>\n\nQuestion: ${q.instructions}${yes}${no}\n\n`
     + "Answer yes or no, with a one-sentence reason. Answer unsure only if the material doesn't show enough to decide.";
 }
 

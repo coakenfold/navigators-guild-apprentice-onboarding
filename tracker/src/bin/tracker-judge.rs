@@ -114,6 +114,9 @@ fn prompt(state: &str, id: &str, question: &Value) -> Result<String, String> {
     let instructions = question["instructions"]
         .as_str()
         .ok_or_else(|| format!("question {id} has no instructions"))?;
+    // A `</material>` in the excerpt would close the tag as the model reads
+    // it, so it's escaped (judge-eval's adapter does the same).
+    let state = state.replace("</material>", "<\\/material>");
     let mut prompt = format!("<material>\n{state}\n</material>\n\nQuestion: {instructions}");
     for (key, label) in [("true", "Yes means"), ("false", "No means")] {
         if let Some(meaning) = question["criteria"][key].as_str().filter(|m| !m.is_empty()) {
@@ -187,8 +190,12 @@ fn ask(model: &str, prompt: &str, folder: &Path) -> Result<Answered, String> {
             .as_str()
             .filter(|said| !said.is_empty())
             .or(out["subtype"].as_str())
-            .unwrap_or("");
-        return Err(format!("claude: {}", first_line(said)));
+            .map(first_line)
+            .unwrap_or_default();
+        if said.is_empty() {
+            return Err("claude reported an error and said nothing".to_string());
+        }
+        return Err(format!("claude: {said}"));
     }
     let answered: Vec<&str> = out["modelUsage"]
         .as_object()
