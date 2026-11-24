@@ -131,12 +131,17 @@ pub struct Verification {
     pub note: Option<String>,
 }
 
-/// One trigger that fired (§2.5): its name, such as `T6`, and the message
-/// saying why it holds the item.
+/// One trigger that fired (§2.5): its name, such as `T6`, the message
+/// saying why it holds the item, and the changed files that fired it, if
+/// it's about files, which `show --diff` lists first.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Hold {
     pub trigger: String,
     pub message: String,
+    /// Each file's path relative to the project's root. Left out for a
+    /// trigger that isn't about files, and in holds written before TR-6.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
 }
 
 /// One check in a verification record: the criterion it came from, its

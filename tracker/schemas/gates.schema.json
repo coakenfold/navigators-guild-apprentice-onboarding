@@ -53,15 +53,7 @@
     "holds": {
       "description": "Every trigger that fired, with the message saying why: what would hold a submit in review now. Empty when a submit would verify the item automatically. Each one is also in triggers, with fired true. Nothing is written: the item's own holds change only on a submit.",
       "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["trigger", "message"],
-        "properties": {
-          "trigger": { "type": "string", "pattern": "^T[0-9]+$" },
-          "message": { "type": "string", "minLength": 1 }
-        },
-        "additionalProperties": false
-      }
+      "items": { "$ref": "item.schema.json#/$defs/hold" }
     }
   },
   "additionalProperties": false

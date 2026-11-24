@@ -1,0 +1,58 @@
+{
+  "id": "XX-22",
+  "title": "Add fuzzy search",
+  "project": "XX",
+  "kind": "change",
+  "status": "review",
+  "priority": "medium",
+  "created": "2026-11-22T00:33:31Z",
+  "updated": "2026-11-22T00:33:31Z",
+  "criteria": [
+    {
+      "text": "fuzzy search finds near misses",
+      "check": "true"
+    }
+  ],
+  "started": {
+    "at": "2026-11-22T00:33:31Z",
+    "head": "c94635214748e8d81b660876ba1d3921262057e4",
+    "checks": [
+      {
+        "criterion": 1,
+        "passed": true
+      }
+    ]
+  },
+  "holds": [
+    {
+      "trigger": "T3",
+      "message": "dependency manifest changed: Cargo.toml",
+      "files": [
+        "Cargo.toml"
+      ]
+    },
+    {
+      "trigger": "T4",
+      "message": "existing test file modified: tests/list.rs",
+      "files": [
+        "tests/list.rs"
+      ]
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-11-22T00:33:31Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-22T00:33:31Z",
+      "from": "in-progress",
+      "to": "review",
+      "via": "submit",
+      "interactive": false
+    }
+  ]
+}

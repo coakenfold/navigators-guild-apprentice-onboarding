@@ -98,9 +98,11 @@ enum Command {
     /// the item, such as `feat(BM-12): …`, G3 runs each criterion's check,
     /// and G4 the project's checks. If any fails, submit is refused with
     /// exit 2 and every reason, and nothing changes. Then the triggers run:
-    /// T6 holds an item with a manual criterion, and T9 one labelled
-    /// needs-review. A held item waits in review for a human to approve or
-    /// reject it. Otherwise it goes to done, verified automatically against
+    /// T1 holds a capability or a new source file, T2 a risky path, T3 a
+    /// dependency manifest, T4 an existing test changed, T6 a manual
+    /// criterion, T7 a large change, T8 the design doc, and T9 the label
+    /// needs-review. The project's review settings in config.json tune them.
+    /// A held item waits in review for a human to approve or reject it. Otherwise it goes to done, verified automatically against
     /// HEAD, with each check's last lines of output, and the git ref
     /// refs/tracker/<ID> keeps that commit
     Submit {
@@ -196,10 +198,12 @@ enum Command {
     Review,
     /// Approve a held item: review → done. Only from an interactive terminal
     ///
-    /// Says what holds it, then asks for the ID to be typed back. Then the
-    /// gates submit runs run again. If they pass, the item is done,
-    /// verified by a human against HEAD, and refs/tracker/<ID> keeps that
-    /// commit. If one fails, it stays in review, with exit 2
+    /// Runs the triggers again at HEAD and says what holds it there, marking
+    /// holds that are new since the submit, then asks for the ID to be typed
+    /// back. Then the gates submit runs run again. If they pass, the item is
+    /// done, verified by a human against that HEAD, and refs/tracker/<ID>
+    /// keeps that commit. If one fails, it stays in review, with exit 2, and
+    /// if HEAD moved while it asked, nothing changes, with exit 1
     Approve {
         /// The item's ID, such as BM-12
         id: String,
@@ -681,6 +685,8 @@ fn project_add(
         design,
         checks: Vec::new(),
         check_timeout_secs: None,
+        review: None,
+        judge: None,
     };
     let _lock = store.lock()?;
     // Two projects with one root would leave `create` guessing which one the
@@ -1839,7 +1845,7 @@ fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
     );
     // Every gate passed, so the triggers run, as they would on a submit
     // (§2.5), and say whether it would be held.
-    let triggers = triggers::run(&item);
+    let triggers = triggers::run(&item, &config)?;
     let holds = triggers::holds(&triggers);
     if !holds.is_empty() {
         text.push_str("A submit would be held for review:\n");
@@ -2260,7 +2266,7 @@ fn apply(
             if !gates.passed() {
                 return Err(gates.refusal(&item.id, item.status, Run::Submit));
             }
-            triggers = triggers::run(&item);
+            triggers = triggers::run(&item, &config)?;
             if triggers::holds(&triggers).is_empty() {
                 set_ref_at_head(&item, &config, &gates)?;
             } else {
@@ -2652,6 +2658,17 @@ fn show(store: &Store, id: &str, diff: bool) -> Result<Output> {
     let mut json = json!({ "item": item });
     if diff {
         let (commits, patches) = commits_and_patches(&item, &config)?;
+        // The files a reviewer should look at first (§3).
+        let fired = trigger_files(&item);
+        if !fired.is_empty() {
+            section(&mut text, "Files that fired a trigger:", "");
+            for (trigger, file) in fired {
+                text.push(&format!(
+                    "  {trigger}  {}\n",
+                    text::for_terminal(&file, false)
+                ));
+            }
+        }
         if commits.is_empty() {
             section(
                 &mut text,
@@ -2698,6 +2715,27 @@ fn show(store: &Store, id: &str, diff: bool) -> Result<Output> {
         json,
         warnings: Vec::new(),
     })
+}
+
+/// The files that fired a trigger, each with its trigger, for `show
+/// --diff` to list before the diff: from the holds on an item in review,
+/// or the holds approved on a done one.
+fn trigger_files(item: &Item) -> Vec<(String, String)> {
+    let holds = if item.holds.is_empty() {
+        item.verification
+            .as_ref()
+            .map_or(&[][..], |record| &record.triggers[..])
+    } else {
+        &item.holds[..]
+    };
+    holds
+        .iter()
+        .flat_map(|hold| {
+            hold.files
+                .iter()
+                .map(|file| (hold.trigger.clone(), file.clone()))
+        })
+        .collect()
 }
 
 /// The item's commits for `show --diff`, newest first, each with its
@@ -3085,11 +3123,14 @@ fn diff_command(id: &str) -> String {
 }
 
 /// `approve`: moves a held item to done, from an interactive terminal only,
-/// after saying what holds it and asking for the ID (§2.7). It re-runs the
-/// gates submit runs, with the same second look at the tree after the
-/// checks. If one fails, the item stays in review, with exit 2. Otherwise
-/// it's verified by a human against the `HEAD` G5 saw now, not at the
-/// submit, and its git ref is set there.
+/// after saying what holds it and asking for the ID (§2.7). The holds it
+/// shows are the triggers run again at the `HEAD` it names, with the ones
+/// that are new since the submit marked, and the record keeps them. It
+/// re-runs the gates submit runs, with the same second look at the tree
+/// after the checks. If one fails, the item stays in review, with exit 2,
+/// and if G5's `HEAD` isn't the one named, nothing is written, with exit 1.
+/// Otherwise it's verified by a human against that `HEAD`, not the
+/// submit's, and its git ref is set there.
 ///
 /// The store isn't locked while I decide, or while the checks run, so the
 /// item is read again under the lock after each, and nothing is written,
@@ -3103,14 +3144,25 @@ fn approve(store: &Store, id: &str) -> Result<Output> {
         return Err(states::not_from(&id, item.status, Via::Approve));
     }
     let command = states::command(&id, Via::Approve);
+    // The triggers run again before asking, at the HEAD the question names,
+    // so a commit made since the submit is shown with every hold it fires
+    // (slice 9 review 1, design 1).
+    let config = config::load(store)?;
+    let root = gates::root(&item, &config)
+        .map_err(|why| Error::store(format!("Can't approve {id}: {why}. Nothing was changed.")))?;
+    git::require_work_tree(&root, &item.project, &id)?;
+    let head = git::head(&root)?;
+    let holds = triggers::holds(&triggers::run(&item, &config)?);
     tty::confirm(
         &command,
         &id,
         &decision_warning(
             &item,
+            &holds,
             &format!(
-                "Approving it runs the gates again, and if they pass, moves it to done, verified \
-                 by a human, with {} keeping the commit they ran against.",
+                "Approving it runs the gates again at {}, and if they pass, moves it to done, \
+                 verified by a human, with {} keeping that commit.",
+                head.as_deref().map_or("HEAD", gates::short),
                 git::ref_name(&id)
             ),
         ),
@@ -3119,7 +3171,6 @@ fn approve(store: &Store, id: &str) -> Result<Output> {
     )?;
 
     let lock = store.lock_unchanged(&id, &before, &command)?;
-    let config = config::load(store)?;
     let mut report = gates::statics(&item, &config)?;
     drop(lock);
     report.extend(gates::scripts(&item, &config));
@@ -3128,12 +3179,25 @@ fn approve(store: &Store, id: &str) -> Result<Output> {
     if !report.passed() {
         return Err(report.refusal(&id, item.status, Run::Approve));
     }
+    // The holds shown were worked out at `head`, so a commit made while I
+    // decided could fire one I wasn't shown.
+    if report.head != head {
+        return Err(Error::input(format!(
+            "HEAD moved from {} to {} while {id}'s approval waited, so the holds shown may not be \
+             the ones at the commit it would be verified against. Nothing was changed. Run \
+             `{command}` again to see them at the new HEAD.",
+            head.as_deref().map_or("nothing", gates::short),
+            report.head.as_deref().map_or("nothing", gates::short),
+        )));
+    }
     set_ref_at_head(&item, &config, &report)?;
 
     let now = item::now();
     let from = item.status;
     item.status = Status::Done;
     item.updated = now;
+    // The record keeps the holds I was shown and approved.
+    item.holds = holds;
     let record = verification_record(VerifiedBy::Human, &item, Some(&report), now);
     let commit = record.commit.clone().unwrap_or_default();
     item.verification = Some(record);
@@ -3182,6 +3246,7 @@ fn reject(store: &Store, id: &str, reason: Option<String>) -> Result<Output> {
         &id,
         &decision_warning(
             &item,
+            &item.holds,
             &format!(
                 "Rejecting it sends it back to in-progress, with this reason in its history for \
                  the agent: \"{}\"",
@@ -3215,18 +3280,38 @@ fn reject(store: &Store, id: &str, reason: Option<String>) -> Result<Output> {
 }
 
 /// What `approve` and `reject` say before asking for the ID: the item,
-/// what holds it, and `what` the command will do. `tty::confirm` escapes
-/// it, so the title and messages go in as they are.
-fn decision_warning(item: &Item, what: &str) -> String {
+/// the `holds` on it, and `what` the command will do. A hold that isn't
+/// among the submit's, in `item.holds`, is marked new. `tty::confirm`
+/// escapes it, so the title and messages go in as they are. A hold of the
+/// submit's that no longer fires is listed as such.
+fn decision_warning(item: &Item, holds: &[item::Hold], what: &str) -> String {
     let id = &item.id;
     let mut warning = format!("{id} \"{}\" is in review", item.title);
-    if item.holds.is_empty() {
-        warning.push_str(", with no trigger recorded.\n");
+    // Holds from the submit that nothing fires now, such as one whose
+    // trigger was switched off while it waited.
+    let gone: Vec<&item::Hold> = item
+        .holds
+        .iter()
+        .filter(|old| !holds.iter().any(|hold| hold.trigger == old.trigger))
+        .collect();
+    if holds.is_empty() {
+        warning.push_str(", and nothing holds it now.\n");
     } else {
         warning.push_str(", held by:\n");
-        for hold in &item.holds {
-            warning.push_str(&format!("  {}  {}\n", hold.trigger, hold.message));
+        for hold in holds {
+            let new = if item.holds.contains(hold) {
+                ""
+            } else {
+                " (new since the submit)"
+            };
+            warning.push_str(&format!("  {}  {}{new}\n", hold.trigger, hold.message));
         }
+    }
+    for hold in gone {
+        warning.push_str(&format!(
+            "  {}  {} (no longer fires)\n",
+            hold.trigger, hold.message
+        ));
     }
     warning.push_str(&format!("{what}\n`{}` shows its work.\n", diff_command(id)));
     warning

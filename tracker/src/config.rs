@@ -1,8 +1,9 @@
 //! `config.json` (§4.2): the registered projects.
 //!
-//! So far the tool reads each project's name, root, design, checks and check
-//! timeout. serde skips the other settings when reading, and `add_project` edits the file as
-//! plain JSON, so settings added by hand survive.
+//! So far the tool reads each project's name, root, design, checks, check
+//! timeout, `review` and `judge` settings. A key under a project that isn't
+//! one of these is refused, and `add_project` edits the file as plain JSON,
+//! so settings added by hand survive.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -20,6 +21,7 @@ pub struct Config {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Project {
     pub name: String,
     pub root: String,
@@ -33,6 +35,121 @@ pub struct Project {
     /// seconds. `DEFAULT_CHECK_TIMEOUT_SECS` when it isn't set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub check_timeout_secs: Option<u64>,
+    /// What the triggers look for (§2.5, §4.2). Set by hand in
+    /// `config.json`; each setting left out takes its default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review: Option<Review>,
+    /// The project's judge settings (§4.2). Slice 12 reads them, and
+    /// they're kept as written until then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub judge: Option<serde_json::Value>,
+}
+
+/// A project's `review` settings (§4.2). Each glob is matched against a
+/// changed file's path relative to the project's root, and `*` doesn't
+/// match `/`, so `*.js` names only files at the top of the root.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Review {
+    /// Files whose change holds an item (T2). None by default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub risky_paths: Option<Vec<String>>,
+    /// What counts as a source file (§2.1), minus `test_paths`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_paths: Option<Vec<String>>,
+    /// What counts as a test file (T4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test_paths: Option<Vec<String>>,
+    /// Dependency manifests and lockfiles (T3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifests: Option<Vec<String>>,
+    /// More changed lines than this hold an item (T7).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_diff_lines: Option<u64>,
+    /// Triggers switched off for this project, such as `["T8"]`. T6, T10
+    /// and T12 stay on whatever it says.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disabled: Vec<String>,
+    /// How often the digest is due, such as `{"every_days": 7}` (§4.2).
+    /// Slice 16 reads it, and it's kept as written until then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest: Option<serde_json::Value>,
+}
+
+/// `source_paths` when the project doesn't set it (§4.2).
+pub const DEFAULT_SOURCE_PATHS: &[&str] = &["src/**"];
+/// `test_paths` when the project doesn't set it.
+pub const DEFAULT_TEST_PATHS: &[&str] = &["tests/**"];
+/// `manifests` when the project doesn't set it: the usual dependency
+/// manifests and lockfiles, at any depth under the root (§2.5).
+pub const DEFAULT_MANIFESTS: &[&str] = &[
+    "**/Cargo.toml",
+    "**/Cargo.lock",
+    "**/package.json",
+    "**/package-lock.json",
+    "**/npm-shrinkwrap.json",
+    "**/yarn.lock",
+    "**/pnpm-lock.yaml",
+    "**/go.mod",
+    "**/go.sum",
+    "**/pyproject.toml",
+    "**/requirements.txt",
+    "**/Gemfile",
+    "**/Gemfile.lock",
+];
+/// `max_diff_lines` when the project doesn't set it, as in §4.2.
+pub const DEFAULT_MAX_DIFF_LINES: u64 = 300;
+/// The triggers `review.disabled` can't switch off, since each would
+/// otherwise let unchecked work reach done (§2.5).
+pub const ALWAYS_ON: &[&str] = &["T6", "T10", "T12"];
+
+impl Review {
+    pub fn risky_paths(&self) -> Vec<String> {
+        self.risky_paths.clone().unwrap_or_default()
+    }
+
+    pub fn source_paths(&self) -> Vec<String> {
+        or_default(&self.source_paths, DEFAULT_SOURCE_PATHS)
+    }
+
+    pub fn test_paths(&self) -> Vec<String> {
+        or_default(&self.test_paths, DEFAULT_TEST_PATHS)
+    }
+
+    pub fn manifests(&self) -> Vec<String> {
+        or_default(&self.manifests, DEFAULT_MANIFESTS)
+    }
+
+    pub fn max_diff_lines(&self) -> u64 {
+        self.max_diff_lines.unwrap_or(DEFAULT_MAX_DIFF_LINES)
+    }
+
+    /// Whether `trigger` runs for this project: it isn't in `disabled`,
+    /// or it's one that can't be switched off.
+    pub fn runs(&self, trigger: &str) -> bool {
+        ALWAYS_ON.contains(&trigger) || !self.disabled.iter().any(|name| name == trigger)
+    }
+}
+
+fn or_default(globs: &Option<Vec<String>>, default: &[&str]) -> Vec<String> {
+    match globs {
+        Some(globs) => globs.clone(),
+        None => default.iter().map(|glob| glob.to_string()).collect(),
+    }
+}
+
+/// The globs `globs`, as one set, matched as `Review` says. Fails with
+/// the glob that isn't valid.
+pub fn glob_set(globs: &[String]) -> std::result::Result<globset::GlobSet, String> {
+    let mut set = globset::GlobSetBuilder::new();
+    for glob in globs {
+        let glob = globset::GlobBuilder::new(glob)
+            .literal_separator(true)
+            .build()
+            .map_err(|e| format!("\"{glob}\" isn't a valid glob: {e}"))?;
+        set.add(glob);
+    }
+    set.build().map_err(|e| e.to_string())
 }
 
 /// How long a check may run when the project doesn't say, as in §4.2.
@@ -56,6 +173,12 @@ impl Project {
             .check_timeout_secs
             .unwrap_or(DEFAULT_CHECK_TIMEOUT_SECS);
         std::time::Duration::from_secs(secs)
+    }
+
+    /// The project's `review` settings, with a default for each one left
+    /// out (§4.2).
+    pub fn review(&self) -> Review {
+        self.review.clone().unwrap_or_default()
     }
 }
 
@@ -94,6 +217,24 @@ pub fn load(store: &Store) -> Result<Config> {
                 path.display(),
                 project.root
             )));
+        }
+    }
+    // A glob that can't be read would leave a trigger unable to run, so
+    // it's refused here, as a key or root is, rather than at a submit.
+    for (key, project) in &config.projects {
+        let review = project.review();
+        for globs in [
+            review.risky_paths(),
+            review.source_paths(),
+            review.test_paths(),
+            review.manifests(),
+        ] {
+            if let Err(why) = glob_set(&globs) {
+                return Err(Error::store(format!(
+                    "{} gives {key} a review setting that can't be used: {why}. Fix it there.",
+                    path.display()
+                )));
+            }
         }
     }
     Ok(config)

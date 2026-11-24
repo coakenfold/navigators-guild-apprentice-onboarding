@@ -429,3 +429,37 @@ fn slice_9s_held_and_approved_fixtures_come_back_byte_for_byte() {
         check_schema("item", &serde_json::from_str(&text).unwrap());
     }
 }
+
+/// TR-6: XX-22 was written by slice 10's binary. It's held in review by T3
+/// and T4, triggers that read the item's changed files, so each hold names
+/// the files that fired it in `files`, after its message. Holds written by
+/// slice 9, as in XX-20, have no `files`.
+#[test]
+fn slice_10s_held_fixture_names_the_files_that_fired_each_hold() {
+    assert_eq!(names_in("slice-10"), ["XX-22.json"]);
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/slice-10/XX-22.json");
+    let text = fs::read_to_string(&path).unwrap();
+    let file: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(file["status"], "review");
+    assert_eq!(
+        file["holds"],
+        json!([
+            {
+                "trigger": "T3",
+                "message": "dependency manifest changed: Cargo.toml",
+                "files": ["Cargo.toml"]
+            },
+            {
+                "trigger": "T4",
+                "message": "existing test file modified: tests/list.rs",
+                "files": ["tests/list.rs"]
+            }
+        ])
+    );
+
+    let item = tracker::item::from_json(&text).unwrap();
+    assert_eq!(tracker::item::to_json(&item), text);
+    let lost = tracker::item::lost_on_rewrite(&text).unwrap();
+    assert!(lost.is_empty(), "{lost:?}");
+    check_schema("item", &file);
+}

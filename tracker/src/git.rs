@@ -245,7 +245,7 @@ pub fn item_log(root: &Path, id: &str) -> Result<Vec<(String, String)>> {
 /// a file in another encoding, are shown as `�` rather than refused, since
 /// this is only for reading. External diff drivers and textconv filters,
 /// which `.git/config` can set without any commit showing it, are turned
-/// off, so the diff is what the commits hold.
+/// off, and so is `diff.relative`, so the diff is what the commits hold.
 pub fn patches(root: &Path, shas: &[String]) -> Result<String> {
     if shas.is_empty() {
         return Ok(String::new());
@@ -261,6 +261,7 @@ pub fn patches(root: &Path, shas: &[String]) -> Result<String> {
             "--no-color",
             "--no-ext-diff",
             "--no-textconv",
+            "--no-relative",
             "--patch",
             "--format=commit %H%n%s",
         ])
@@ -276,6 +277,104 @@ pub fn patches(root: &Path, shas: &[String]) -> Result<String> {
         )));
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// The project root's path from the top of its repository, with a
+/// trailing `/`, such as `tracker/`, or empty when the root is the top.
+pub fn prefix(root: &Path) -> Result<String> {
+    Ok(git(root, &["rev-parse", "--show-prefix"])?
+        .trim_end()
+        .to_string())
+}
+
+/// One file one commit touched, for the triggers (§2.1, §2.5).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FileChange {
+    /// The commit that touched it, as a full SHA.
+    pub sha: String,
+    /// The file's path from the top of the repository.
+    pub path: String,
+    /// Git's status letter: `A` added, `D` deleted, `M` modified, `T` its
+    /// type changed. Renames show as a delete and an add.
+    pub status: char,
+    /// Lines added and removed, or `None` for a binary file.
+    pub lines: Option<(u64, u64)>,
+}
+
+/// Every file each commit in `shas` touched, inside the project's root or
+/// not, in the order given, as git names them from the top of the
+/// repository. A merge is compared with its first parent, and a root
+/// commit with nothing.
+pub fn changes(root: &Path, shas: &[String]) -> Result<Vec<FileChange>> {
+    if shas.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut args = vec![
+        "-c",
+        "log.showRoot=true",
+        "show",
+        "-z",
+        "--no-renames",
+        "--diff-merges=first-parent",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--no-relative",
+        "--format=%x01%H",
+        "--raw",
+        "--numstat",
+    ];
+    args.extend(shas.iter().map(|sha| sha.as_str()));
+    let text = git(root, &args)?;
+    // With `-z`, each commit starts with `\x01<sha>`, then each file's raw
+    // line, such as `:100644 100644 <old> <new> M`, is followed by its
+    // path, and then each file's numstat entry is `<added>\t<removed>\t<path>`,
+    // where `-` counts mean a binary file.
+    let mut all = Vec::new();
+    let mut commit: Vec<FileChange> = Vec::new();
+    let mut sha = String::new();
+    let mut tokens = text.split('\0');
+    while let Some(token) = tokens.next() {
+        let token = token.trim_start_matches('\n');
+        if token.starts_with('\x01') {
+            all.append(&mut commit);
+            sha = token.trim_start_matches('\x01').to_string();
+        } else if token.starts_with(':') {
+            let status = token
+                .split_whitespace()
+                .last()
+                .and_then(|field| field.chars().next())
+                .unwrap_or('M');
+            let path = tokens.next().unwrap_or_default().to_string();
+            commit.push(FileChange {
+                sha: sha.clone(),
+                path,
+                status,
+                lines: None,
+            });
+        } else if let [added, removed, path] = token.splitn(3, '\t').collect::<Vec<_>>()[..] {
+            let lines = added.parse().ok().zip(removed.parse().ok());
+            if let Some(change) = commit.iter_mut().find(|change| change.path == path) {
+                change.lines = lines;
+            }
+        }
+    }
+    all.append(&mut commit);
+    Ok(all)
+}
+
+/// The commits `HEAD` reaches that `base` doesn't, as full SHAs.
+pub fn since(root: &Path, base: &str) -> Result<Vec<String>> {
+    let range = format!("{base}..HEAD");
+    Ok(git(root, &["rev-list", &range])?
+        .lines()
+        .map(str::to_string)
+        .collect())
+}
+
+/// Whether `path`, from the top of the repository, is a file at commit
+/// `sha`.
+pub fn exists_at(root: &Path, sha: &str, path: &str) -> bool {
+    git(root, &["cat-file", "-e", &format!("{sha}:{path}")]).is_ok()
 }
 
 /// The ref that keeps item `id`'s verified commit (§2.7).

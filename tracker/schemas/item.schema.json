@@ -111,12 +111,18 @@
     },
     "state": { "enum": ["open", "in-progress", "review", "done", "shelved"] },
     "hold": {
-      "description": "One trigger that fired (DESIGN.md §2.5): its name, such as T6, and the message saying why it holds the item.",
+      "description": "One trigger that fired (DESIGN.md §2.5): its name, such as T6, the message saying why it holds the item, and the files that fired it, if it is about files.",
       "type": "object",
       "required": ["trigger", "message"],
       "properties": {
         "trigger": { "type": "string", "pattern": "^T[0-9]+$" },
-        "message": { "type": "string", "minLength": 1 }
+        "message": { "type": "string", "minLength": 1 },
+        "files": {
+          "description": "For a trigger about changed files, such as T4, the files that fired it, each relative to the project's root. show --diff lists them before the diff. Left out for a trigger that isn't about files, and in holds written before TR-6.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        }
       },
       "additionalProperties": false
     },

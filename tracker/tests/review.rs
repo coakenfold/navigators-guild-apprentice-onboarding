@@ -200,7 +200,13 @@ mod criterion_1 {
         assert_eq!(
             output["triggers"],
             json!([
+                { "trigger": "T1", "fired": false },
+                { "trigger": "T2", "fired": false },
+                { "trigger": "T3", "fired": false },
+                { "trigger": "T4", "fired": false },
                 { "trigger": "T6", "fired": false },
+                { "trigger": "T7", "fired": false },
+                { "trigger": "T8", "fired": false },
                 { "trigger": "T9", "fired": false }
             ])
         );
@@ -242,7 +248,13 @@ mod criterion_2 {
                         { "gate": "G4", "ok": true, "secs": 0 }
                     ],
                     "triggers": [
+                        { "trigger": "T1", "fired": false },
+                        { "trigger": "T2", "fired": false },
+                        { "trigger": "T3", "fired": false },
+                        { "trigger": "T4", "fired": false },
                         { "trigger": "T6", "fired": true },
+                        { "trigger": "T7", "fired": false },
+                        { "trigger": "T8", "fired": false },
                         { "trigger": "T9", "fired": true }
                     ],
                     "holds": holds,
@@ -793,7 +805,13 @@ mod tr_29 {
         assert_eq!(
             output["triggers"],
             json!([
+                { "trigger": "T1", "fired": false },
+                { "trigger": "T2", "fired": false },
+                { "trigger": "T3", "fired": false },
+                { "trigger": "T4", "fired": false },
                 { "trigger": "T6", "fired": true },
+                { "trigger": "T7", "fired": false },
+                { "trigger": "T8", "fired": false },
                 { "trigger": "T9", "fired": false }
             ]),
             "{output}"
@@ -835,7 +853,13 @@ mod tr_29 {
         assert_eq!(
             output["triggers"],
             json!([
+                { "trigger": "T1", "fired": false },
+                { "trigger": "T2", "fired": false },
+                { "trigger": "T3", "fired": false },
+                { "trigger": "T4", "fired": false },
                 { "trigger": "T6", "fired": false },
+                { "trigger": "T7", "fired": false },
+                { "trigger": "T8", "fired": false },
                 { "trigger": "T9", "fired": false }
             ]),
             "{output}"
