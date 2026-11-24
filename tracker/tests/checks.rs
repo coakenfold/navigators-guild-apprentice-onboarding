@@ -1,0 +1,707 @@
+//! Slice 7 (TR-1): running script checks, as DESIGN.md §2.4 and §4.2
+//! describe. G3 runs each criterion's check and G4 the project's checks,
+//! each in the project's root, stopped after `check_timeout_secs`. `start`
+//! runs each criterion check once and records the results.
+//!
+//! TR-2: a check given to a criterion after `start`, by `criterion add` or
+//! `criterion set`, runs once then too, as §2.4 says.
+//!
+//! TR-3: `criterion remove` after `start` drops the removed criterion's
+//! `started.checks` entry and renumbers the later ones to match.
+//!
+//! TR-13 to TR-18: the fixes from slice 7's first review.
+
+mod common;
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+use common::Env;
+use serde_json::{Value, json};
+
+/// A store with project XX, whose root is `<work>/xx`, and that root.
+fn env_with_project() -> (Env, PathBuf) {
+    let env = Env::new();
+    let root = env.add_project("XX", "xx");
+    (env, root)
+}
+
+/// Sets `field` of project `key` in `config.json` by hand, as §4.2 says
+/// settings other than name, root and design are set.
+fn set_project(env: &Env, key: &str, field: &str, value: Value) {
+    let path = env.home.path().join("config.json");
+    let mut config: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    config["projects"][key][field] = value;
+    fs::write(&path, serde_json::to_string_pretty(&config).unwrap() + "\n").unwrap();
+}
+
+/// Adds a criterion to `id` with the check `check`.
+fn add_check(env: &Env, id: &str, text: &str, check: &str) {
+    env.json(&["criterion", "add", id, text, "--check", check]);
+}
+
+/// A check that prints `line 1` to `line 30`, one per line.
+const THIRTY_LINES: &str = "for i in $(seq 1 30); do echo line $i; done";
+
+/// `line 11` to `line 30`: the last 20 lines of `THIRTY_LINES`.
+fn last_twenty() -> String {
+    (11..=30)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Runs `tracker <args> --json`, expects exit 2, and returns the error
+/// object and stderr.
+fn refused(env: &Env, args: &[&str]) -> (Value, String) {
+    let output = env
+        .cmd()
+        .args(args)
+        .arg("--json")
+        .assert()
+        .code(2)
+        .get_output()
+        .clone();
+    let error = common::parse(&output.stdout);
+    common::check_schema("error", &error);
+    (error, String::from_utf8_lossy(&output.stderr).into_owned())
+}
+
+/// The failures from gate `gate`.
+fn failures_from(error: &Value, gate: &str) -> Vec<Value> {
+    error["failures"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["gate"] == gate)
+        .cloned()
+        .collect()
+}
+
+/// Whether gate `gate` is listed in `gates` with `ok`.
+fn gate_ok(gates: &Value, gate: &str) -> Option<bool> {
+    gates
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|g| g["gate"] == gate)
+        .map(|g| g["ok"].as_bool().unwrap())
+}
+
+#[test]
+fn a_failing_check_shows_its_command_exit_code_and_last_lines_of_output() {
+    let (env, _) = env_with_project();
+    env.create_bare("XX", "a");
+    let check = format!("{THIRTY_LINES}; exit 3");
+    add_check(&env, "XX-1", "it works", &check);
+
+    // As JSON: the failure names the criterion, and has the command, its
+    // exit code and its last 20 lines of output as fields of their own.
+    let (error, stderr) = refused(&env, &["gates", "XX-1"]);
+    assert_eq!(gate_ok(&error["gates"], "G3"), Some(false), "{error}");
+    let g3 = failures_from(&error, "G3");
+    assert_eq!(g3.len(), 1, "{error}");
+    let failure = &g3[0];
+    assert_eq!(failure["criterion"], 1, "{failure}");
+    assert_eq!(failure["cmd"], check.as_str(), "{failure}");
+    assert_eq!(failure["exit_code"], 3, "{failure}");
+    assert_eq!(failure["timed_out"], false, "{failure}");
+    assert_eq!(failure["output"], last_twenty().as_str(), "{failure}");
+    let message = failure["message"].as_str().unwrap();
+    assert!(message.contains(&check), "{message}");
+    assert!(message.contains("exit 3"), "{message}");
+    // The command is printed before it runs, on stderr, so the JSON on
+    // stdout stays one object.
+    assert!(stderr.contains(&check), "{stderr}");
+
+    // As text, from a submit: the command, the exit code, and the last
+    // lines, each on a line of its own.
+    env.json(&["start", "XX-1"]);
+    let output = env
+        .cmd()
+        .args(["submit", "XX-1"])
+        .assert()
+        .code(2)
+        .get_output()
+        .clone();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains(&check), "{stderr}");
+    assert!(stderr.contains("exit 3"), "{stderr}");
+    let lines: Vec<&str> = stderr.lines().map(str::trim).collect();
+    for i in 11..=30 {
+        let line = format!("line {i}");
+        assert!(lines.contains(&line.as_str()), "no {line:?} in:\n{stderr}");
+    }
+    assert!(!lines.contains(&"line 10"), "more than 20 lines:\n{stderr}");
+    assert_eq!(env.item("XX-1")["status"], "in-progress");
+}
+
+#[test]
+fn a_check_running_longer_than_its_timeout_is_stopped_and_fails() {
+    let (env, _) = env_with_project();
+    set_project(&env, "XX", "check_timeout_secs", json!(1));
+    env.create_bare("XX", "a");
+    // `sleep` runs as a child of the shell, so stopping only the shell
+    // would leave it holding the output open for 30 seconds.
+    let check = "echo before; sleep 30; echo after";
+    add_check(&env, "XX-1", "it works", check);
+
+    let began = Instant::now();
+    let (error, _) = refused(&env, &["gates", "XX-1"]);
+    let took = began.elapsed();
+    assert!(took < Duration::from_secs(15), "took {took:?}");
+
+    let g3 = failures_from(&error, "G3");
+    assert_eq!(g3.len(), 1, "{error}");
+    let failure = &g3[0];
+    assert_eq!(failure["criterion"], 1, "{failure}");
+    assert_eq!(failure["cmd"], check, "{failure}");
+    assert_eq!(failure["timed_out"], true, "{failure}");
+    assert_eq!(failure["exit_code"], Value::Null, "{failure}");
+    assert_eq!(failure["output"], "before", "{failure}");
+    let message = failure["message"].as_str().unwrap();
+    assert!(message.contains("stopped"), "{message}");
+    assert!(message.contains("check_timeout_secs"), "{message}");
+}
+
+#[test]
+fn a_broken_project_check_fails_g4_even_when_every_criterion_check_passes() {
+    let (env, root) = env_with_project();
+    // The criterion check passes only in the project's root.
+    fs::write(root.join("marker"), "").unwrap();
+    let broken = "no-such-command-for-tracker-tests";
+    set_project(&env, "XX", "checks", json!(["test -f marker", broken]));
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "it works", "test -f marker");
+
+    let (error, stderr) = refused(&env, &["gates", "XX-1"]);
+    assert_eq!(gate_ok(&error["gates"], "G3"), Some(true), "{error}");
+    assert_eq!(gate_ok(&error["gates"], "G4"), Some(false), "{error}");
+    let failures = error["failures"].as_array().unwrap();
+    assert_eq!(failures.len(), 1, "{error}");
+    let failure = &failures[0];
+    assert_eq!(failure["gate"], "G4", "{failure}");
+    assert_eq!(failure.get("criterion"), None, "{failure}");
+    assert_eq!(failure["cmd"], broken, "{failure}");
+    assert_eq!(failure["exit_code"], 127, "{failure}");
+    assert!(stderr.contains(broken), "{stderr}");
+
+    // Fixed, every gate passes.
+    set_project(&env, "XX", "checks", json!(["test -f marker"]));
+    let passed = env.json(&["gates", "XX-1"]);
+    assert_eq!(gate_ok(&passed["gates"], "G3"), Some(true), "{passed}");
+    assert_eq!(gate_ok(&passed["gates"], "G4"), Some(true), "{passed}");
+}
+
+#[test]
+fn start_records_a_check_that_fails_and_warns_about_one_that_already_passes() {
+    let (env, _) = env_with_project();
+    env.add_project("YY", "yy");
+    for key in ["XX", "YY"] {
+        let id = env.create_bare(key, "a");
+        add_check(&env, &id, "not yet", "false");
+        add_check(&env, &id, "already", "true");
+        env.json(&["criterion", "add", &id, "looks right"]);
+    }
+    let expected = json!([
+        { "criterion": 1, "passed": false },
+        { "criterion": 2, "passed": true },
+    ]);
+
+    // As JSON: the start goes ahead, records both, and warns about 2.
+    let started = env.json(&["start", "XX-1"]);
+    assert_eq!(started["item"]["status"], "in-progress", "{started}");
+    assert_eq!(started["item"]["started"]["checks"], expected, "{started}");
+    assert_eq!(env.item("XX-1")["started"]["checks"], expected);
+    let warnings = started["warnings"].as_array().unwrap();
+    assert_eq!(warnings.len(), 1, "{started}");
+    let warning = warnings[0].as_str().unwrap();
+    assert!(warning.contains("Criterion 2"), "{warning}");
+    assert!(warning.contains("already passes"), "{warning}");
+
+    // As text, a warning on stderr about criterion 2 alone.
+    let output = env
+        .cmd()
+        .args(["start", "YY-1"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let warnings: Vec<&str> = stderr
+        .lines()
+        .filter(|line| line.starts_with("warning:"))
+        .collect();
+    assert_eq!(warnings.len(), 1, "{stderr}");
+    assert!(warnings[0].contains("Criterion 2"), "{stderr}");
+    assert_eq!(env.item("YY-1")["started"]["checks"], expected);
+}
+
+#[test]
+fn a_passing_checks_last_20_lines_are_kept() {
+    let (env, _) = env_with_project();
+    set_project(&env, "XX", "checks", json!(["echo project check"]));
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "it works", THIRTY_LINES);
+    env.json(&["start", "XX-1"]);
+
+    let submitted = env.json(&["submit", "XX-1"]);
+    let checks = submitted["item"]["verification"]["checks"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(checks.len(), 2, "{submitted}");
+    assert_eq!(checks[0]["cmd"], THIRTY_LINES, "{submitted}");
+    assert_eq!(checks[0]["ok"], true, "{submitted}");
+    assert!(checks[0]["secs"].is_u64(), "{submitted}");
+    assert_eq!(checks[0]["output"], last_twenty().as_str(), "{submitted}");
+    assert_eq!(checks[1]["cmd"], "echo project check", "{submitted}");
+    assert_eq!(checks[1]["output"], "project check", "{submitted}");
+    // The file keeps them too, for `show`.
+    assert_eq!(env.item("XX-1")["verification"]["checks"], json!(checks));
+}
+
+/// A check that adds a line to `runs`, in the project's root, each time it
+/// runs, and fails, as a check should before the work is done.
+const COUNTED: &str = "echo ran >> runs; false";
+
+/// How many times a `COUNTED` check has run in `root`.
+fn runs(root: &Path) -> usize {
+    fs::read_to_string(root.join("runs")).map_or(0, |text| text.lines().count())
+}
+
+#[test]
+fn check_given_after_start_by_add_runs_once_and_is_recorded() {
+    let (env, root) = env_with_project();
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "first", "false");
+    // Before start, a check is only stored: start runs it.
+    add_check(&env, "XX-1", "second", COUNTED);
+    assert_eq!(runs(&root), 0);
+    env.json(&["start", "XX-1"]);
+    assert_eq!(runs(&root), 1);
+
+    // After start, `criterion add` runs the new check once, and records it
+    // alongside the ones start ran.
+    let added = env.json(&["criterion", "add", "XX-1", "third", "--check", COUNTED]);
+    assert_eq!(runs(&root), 2);
+    let expected = json!([
+        { "criterion": 1, "passed": false },
+        { "criterion": 2, "passed": false },
+        { "criterion": 3, "passed": false },
+    ]);
+    assert_eq!(added["item"]["started"]["checks"], expected, "{added}");
+    assert_eq!(env.item("XX-1")["started"]["checks"], expected);
+    assert_eq!(added["warnings"], json!([]), "{added}");
+
+    // A manual criterion has nothing to run.
+    env.json(&["criterion", "add", "XX-1", "looks right"]);
+    assert_eq!(runs(&root), 2);
+    assert_eq!(env.item("XX-1")["started"]["checks"], expected);
+}
+
+#[test]
+fn check_given_after_start_by_set_runs_once_and_is_recorded() {
+    let (env, root) = env_with_project();
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "first", "true");
+    env.json(&["criterion", "add", "XX-1", "second"]);
+    env.json(&["start", "XX-1"]);
+    assert_eq!(
+        env.item("XX-1")["started"]["checks"],
+        json!([{ "criterion": 1, "passed": true }])
+    );
+
+    // A manual criterion given a check runs it once, and joins the record.
+    let set = env.json(&["criterion", "set", "XX-1", "2", "--check", COUNTED]);
+    assert_eq!(runs(&root), 1);
+    assert_eq!(
+        set["item"]["started"]["checks"],
+        json!([
+            { "criterion": 1, "passed": true },
+            { "criterion": 2, "passed": false },
+        ]),
+        "{set}"
+    );
+
+    // A new check for a criterion that had one replaces its result, rather
+    // than adding a second.
+    let set = env.json(&["criterion", "set", "XX-1", "1", "--check", COUNTED]);
+    assert_eq!(runs(&root), 2);
+    let expected = json!([
+        { "criterion": 1, "passed": false },
+        { "criterion": 2, "passed": false },
+    ]);
+    assert_eq!(set["item"]["started"]["checks"], expected, "{set}");
+    assert_eq!(env.item("XX-1")["started"]["checks"], expected);
+
+    // The same check again changes nothing, so nothing runs.
+    env.json(&["criterion", "set", "XX-1", "1", "--check", COUNTED]);
+    assert_eq!(runs(&root), 2);
+}
+
+#[test]
+fn check_given_after_start_that_already_passes_is_warned_about() {
+    let (env, _) = env_with_project();
+    env.add_project("YY", "yy");
+    // The warning start gives for a check that already passes.
+    env.create_bare("YY", "a");
+    add_check(&env, "YY-1", "not yet", "false");
+    add_check(&env, "YY-1", "already", "true");
+    let started = env.json(&["start", "YY-1"]);
+    let from_start = started["warnings"][0]
+        .as_str()
+        .unwrap()
+        .replace("YY-1", "XX-1");
+
+    // The same check, given after start, gets the same warning.
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "not yet", "false");
+    env.json(&["start", "XX-1"]);
+    let added = env.json(&["criterion", "add", "XX-1", "already", "--check", "true"]);
+    assert_eq!(added["warnings"], json!([from_start]), "{added}");
+    assert_eq!(
+        added["item"]["started"]["checks"],
+        json!([
+            { "criterion": 1, "passed": false },
+            { "criterion": 2, "passed": true },
+        ]),
+        "{added}"
+    );
+
+    // As text, from `criterion set`: one warning on stderr.
+    env.json(&["criterion", "add", "XX-1", "later"]);
+    let output = env
+        .cmd()
+        .args(["criterion", "set", "XX-1", "3", "--check", "true"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let warnings: Vec<&str> = stderr
+        .lines()
+        .filter(|line| line.starts_with("warning:"))
+        .collect();
+    assert_eq!(warnings.len(), 1, "{stderr}");
+    assert!(warnings[0].contains("Criterion 3"), "{stderr}");
+    assert!(warnings[0].contains("already passes"), "{stderr}");
+}
+
+#[test]
+fn criterion_remove_after_start_keeps_started_checks_on_their_criteria() {
+    let (env, _) = env_with_project();
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "first", "true");
+    add_check(&env, "XX-1", "second", "false");
+    env.json(&["criterion", "add", "XX-1", "third"]);
+    add_check(&env, "XX-1", "fourth", "true");
+    // Before start there's no record, and removing one doesn't make one.
+    env.json(&["criterion", "add", "XX-1", "fifth"]);
+    let removed = env.json(&["criterion", "remove", "XX-1", "5"]);
+    assert_eq!(removed["item"].get("started"), None, "{removed}");
+
+    env.json(&["start", "XX-1"]);
+    assert_eq!(
+        env.item("XX-1")["started"]["checks"],
+        json!([
+            { "criterion": 1, "passed": true },
+            { "criterion": 2, "passed": false },
+            { "criterion": 4, "passed": true },
+        ])
+    );
+
+    // Removing criterion 2 drops its entry, and "fourth" moves up to 3.
+    let removed = env.json(&["criterion", "remove", "XX-1", "2"]);
+    let expected = json!([
+        { "criterion": 1, "passed": true },
+        { "criterion": 3, "passed": true },
+    ]);
+    assert_eq!(removed["item"]["started"]["checks"], expected, "{removed}");
+    assert_eq!(env.item("XX-1")["started"]["checks"], expected);
+
+    // Removing a manual criterion, which has no entry, still moves the
+    // later entries up.
+    env.json(&["criterion", "remove", "XX-1", "2"]);
+    assert_eq!(
+        env.item("XX-1")["started"]["checks"],
+        json!([
+            { "criterion": 1, "passed": true },
+            { "criterion": 2, "passed": true },
+        ])
+    );
+}
+
+#[test]
+fn a_timed_out_check_with_an_escaped_process_fails_soon_after_its_timeout() {
+    // TR-13: a process that calls `setsid` leaves the check's process
+    // group, so stopping the group misses it, and it still holds the
+    // output open. `tracker` mustn't wait for it to end.
+    let (env, root) = env_with_project();
+    set_project(&env, "XX", "check_timeout_secs", json!(1));
+    env.create_bare("XX", "a");
+    let check = "perl -e 'use POSIX; POSIX::setsid(); open(F, \">escaped.pid\"); print F $$; \
+                 close F; sleep 30' & echo before; sleep 30";
+    add_check(&env, "XX-1", "it works", check);
+
+    let began = Instant::now();
+    let (error, _) = refused(&env, &["gates", "XX-1"]);
+    let took = began.elapsed();
+
+    // The escaped process is stopped here, so it doesn't outlive the test.
+    if let Ok(pid) = fs::read_to_string(root.join("escaped.pid")) {
+        let _ = std::process::Command::new("kill")
+            .args(["-KILL", pid.trim()])
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+    assert!(took < Duration::from_secs(10), "took {took:?}");
+    let g3 = failures_from(&error, "G3");
+    assert_eq!(g3.len(), 1, "{error}");
+    let failure = &g3[0];
+    assert_eq!(failure["timed_out"], true, "{failure}");
+    assert_eq!(failure["output"], "before", "{failure}");
+    let message = failure["message"].as_str().unwrap();
+    assert!(message.contains("check_timeout_secs"), "{message}");
+}
+
+#[test]
+fn criterion_add_and_set_refuse_a_newer_trackers_file_before_running_a_check() {
+    // TR-14: `started.head`, as slice 8 will write it, is a field this
+    // version doesn't know, so it can't rewrite the file, and mustn't run
+    // a check for a change it will then refuse.
+    let (env, root) = env_with_project();
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "first", "false");
+    env.json(&["criterion", "add", "XX-1", "second"]);
+    env.json(&["start", "XX-1"]);
+    let mut item = env.item("XX-1");
+    item["started"]["head"] = json!("abc1234");
+    let newer = serde_json::to_string_pretty(&item).unwrap() + "\n";
+    fs::write(env.item_path("XX-1"), &newer).unwrap();
+
+    for args in [
+        &["criterion", "add", "XX-1", "third", "--check", "touch ran"][..],
+        &["criterion", "set", "XX-1", "2", "--check", "touch ran"],
+    ] {
+        let message = env.error(args, 3);
+        assert!(message.contains("newer tracker"), "{args:?}: {message}");
+        assert!(!root.join("ran").exists(), "{args:?} ran the check");
+        assert_eq!(fs::read_to_string(env.item_path("XX-1")).unwrap(), newer);
+    }
+}
+
+#[test]
+fn a_kept_line_longer_than_the_limit_is_cut_and_marked() {
+    // TR-15: one long line, such as minified test output, mustn't make the
+    // item file hundreds of kilobytes long.
+    let (env, _) = env_with_project();
+    env.create_bare("XX", "a");
+    let check = "printf '%2000s\\n' '' | tr ' ' x; echo short";
+    add_check(&env, "XX-1", "it works", check);
+    env.json(&["start", "XX-1"]);
+    env.json(&["submit", "XX-1"]);
+
+    let output = env.item("XX-1")["verification"]["checks"][0]["output"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let lines: Vec<&str> = output.lines().collect();
+    assert_eq!(lines.len(), 2, "{output}");
+    assert_eq!(lines[0].chars().count(), 500, "{output}");
+    assert_eq!(lines[0], "x".repeat(499) + "…");
+    assert_eq!(lines[1], "short");
+}
+
+#[test]
+fn verification_checks_name_the_criterion_each_came_from() {
+    // TR-16: the same command as a criterion check and as a project check,
+    // which only `criterion` tells apart. A manual criterion between them
+    // has no entry, so the numbers aren't just the entries' order.
+    let (env, root) = env_with_project();
+    fs::write(root.join("marker"), "").unwrap();
+    set_project(&env, "XX", "checks", json!(["test -f marker"]));
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "first", "test -f marker");
+    env.json(&["criterion", "add", "XX-1", "second"]);
+    env.json(&["evidence", "XX-1", "2", "See the readme."]);
+    add_check(&env, "XX-1", "third", "true");
+    env.json(&["start", "XX-1"]);
+
+    let submitted = env.json(&["submit", "XX-1"]);
+    let checks = submitted["item"]["verification"]["checks"].clone();
+    let shape: Vec<(Option<u64>, &str)> = checks
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|check| {
+            (
+                check.get("criterion").map(|n| n.as_u64().unwrap()),
+                check["cmd"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        shape,
+        [
+            (Some(1), "test -f marker"),
+            (Some(3), "true"),
+            (None, "test -f marker"),
+        ],
+        "{submitted}"
+    );
+    assert_eq!(env.item("XX-1")["verification"]["checks"], checks);
+}
+
+/// A check that changes item `id` while it runs, as another agent could,
+/// then fails. The check inherits `TRACKER_HOME`, so it edits this test's
+/// store.
+fn check_that_edits(id: &str) -> String {
+    format!(
+        "'{}' edit {id} --priority high; false",
+        env!("CARGO_BIN_EXE_tracker")
+    )
+}
+
+#[test]
+fn start_refuses_when_the_item_changed_while_its_checks_ran() {
+    // TR-18: `start` writes nothing over a change made while its checks
+    // ran, so the edit isn't lost.
+    let (env, _) = env_with_project();
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "it works", &check_that_edits("XX-1"));
+
+    let message = env.error(&["start", "XX-1"], 1);
+    assert!(
+        message.contains("changed while its checks ran"),
+        "{message}"
+    );
+    let item = env.item("XX-1");
+    assert_eq!(item["status"], "open", "{item}");
+    assert_eq!(item["priority"], "high", "{item}");
+    assert_eq!(item.get("started"), None, "{item}");
+}
+
+#[test]
+fn criterion_add_after_start_refuses_when_the_item_changed_while_its_check_ran() {
+    // TR-18: the same for a check given after start (TR-2).
+    let (env, _) = env_with_project();
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "first", "false");
+    env.json(&["start", "XX-1"]);
+
+    let check = check_that_edits("XX-1");
+    let message = env.error(
+        &["criterion", "add", "XX-1", "second", "--check", &check],
+        1,
+    );
+    assert!(
+        message.contains("changed while its checks ran"),
+        "{message}"
+    );
+    let item = env.item("XX-1");
+    assert_eq!(item["priority"], "high", "{item}");
+    assert_eq!(item["criteria"].as_array().unwrap().len(), 1, "{item}");
+    assert_eq!(
+        item["started"]["checks"],
+        json!([{ "criterion": 1, "passed": false }]),
+        "{item}"
+    );
+}
+
+#[test]
+fn control_characters_in_a_checks_output_are_escaped_in_the_text_output() {
+    // TR-18: an escape that clears the line, and a mark that reverses the
+    // text after it, are written out rather than sent to the terminal.
+    let (env, _) = env_with_project();
+    env.create_bare("XX", "a");
+    add_check(
+        &env,
+        "XX-1",
+        "it works",
+        "printf 'a\\033[2Kb\\342\\200\\256c'; exit 1",
+    );
+
+    let output = env
+        .cmd()
+        .args(["gates", "XX-1"])
+        .assert()
+        .code(2)
+        .get_output()
+        .clone();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains('\u{1b}'), "{stderr:?}");
+    assert!(!stderr.contains('\u{202e}'), "{stderr:?}");
+    assert!(stderr.contains("a\\u{1b}[2Kb\\u{202e}c"), "{stderr}");
+}
+
+#[test]
+fn a_background_process_a_timed_out_check_started_is_stopped() {
+    // TR-18: the subshell is in the check's process group, so the timeout
+    // stops it before it can touch `late`. A project check that ends at
+    // once leaves one behind too, which is stopped once its shell ends.
+    let (env, root) = env_with_project();
+    set_project(&env, "XX", "check_timeout_secs", json!(1));
+    set_project(
+        &env,
+        "XX",
+        "checks",
+        json!(["(sleep 3; touch later) & true"]),
+    );
+    env.create_bare("XX", "a");
+    add_check(&env, "XX-1", "it works", "(sleep 3; touch late) & sleep 30");
+
+    let (error, _) = refused(&env, &["gates", "XX-1"]);
+    let g3 = failures_from(&error, "G3");
+    assert_eq!(g3.len(), 1, "{error}");
+    assert_eq!(g3[0]["timed_out"], true, "{error}");
+    std::thread::sleep(Duration::from_secs(4));
+    assert!(
+        !root.join("late").exists(),
+        "the timed-out check's subshell ran on"
+    );
+    assert!(
+        !root.join("later").exists(),
+        "the project check's subshell ran on"
+    );
+}
+
+#[test]
+fn a_passing_check_with_an_escaped_process_finishes_soon_and_passes() {
+    // TR-20: TR-13's fix waits only briefly for the output once the check's
+    // shell has ended, too. A test runner that exits 0 and leaves a
+    // detached server holding the output open is the common case.
+    let (env, root) = env_with_project();
+    env.create_bare("XX", "a");
+    let check = "perl -e 'use POSIX; POSIX::setsid(); open(F, \">escaped.pid\"); print F $$; \
+                 close F; sleep 30' & echo ok";
+    add_check(&env, "XX-1", "it works", check);
+
+    let began = Instant::now();
+    let output = env
+        .cmd()
+        .args(["gates", "XX-1", "--json"])
+        .output()
+        .unwrap();
+    let took = began.elapsed();
+
+    // The escaped process is stopped here, so it doesn't outlive the test.
+    if let Ok(pid) = fs::read_to_string(root.join("escaped.pid")) {
+        let _ = std::process::Command::new("kill")
+            .args(["-KILL", pid.trim()])
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+    assert!(took < Duration::from_secs(10), "took {took:?}");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let passed = common::parse(&output.stdout);
+    common::check_schema("gates", &passed);
+    assert_eq!(passed["result"], "passed", "{passed}");
+    assert_eq!(gate_ok(&passed["gates"], "G3"), Some(true), "{passed}");
+}

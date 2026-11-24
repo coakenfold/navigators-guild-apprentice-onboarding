@@ -1,0 +1,61 @@
+{
+  "id": "XX-16",
+  "title": "Checks run at start",
+  "project": "XX",
+  "kind": "change",
+  "status": "open",
+  "priority": "medium",
+  "created": "2026-11-21T05:29:15Z",
+  "updated": "2026-11-21T05:29:15Z",
+  "written": [
+    "Searching finds a bookmark by tag"
+  ],
+  "criteria": [
+    {
+      "text": "Searching finds a bookmark by tag",
+      "check": "false"
+    },
+    {
+      "text": "Old searches still work",
+      "check": "true"
+    }
+  ],
+  "started": {
+    "at": "2026-11-21T05:29:15Z",
+    "checks": [
+      {
+        "criterion": 1,
+        "passed": false
+      },
+      {
+        "criterion": 2,
+        "passed": true
+      }
+    ]
+  },
+  "history": [
+    {
+      "at": "2026-11-21T05:29:15Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-21T05:29:15Z",
+      "from": "in-progress",
+      "to": "shelved",
+      "via": "shelve",
+      "interactive": false,
+      "reason": "x"
+    },
+    {
+      "at": "2026-11-21T05:29:15Z",
+      "from": "shelved",
+      "to": "open",
+      "via": "reopen",
+      "interactive": false,
+      "reason": "x"
+    }
+  ]
+}

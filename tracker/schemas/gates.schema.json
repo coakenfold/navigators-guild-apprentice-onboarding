@@ -27,7 +27,12 @@
         "required": ["gate", "ok"],
         "properties": {
           "gate": { "type": "string", "pattern": "^G[0-9]+$" },
-          "ok": { "const": true }
+          "ok": { "const": true },
+          "secs": {
+            "description": "For G3 and G4, which run checks: how long their checks took together, in seconds.",
+            "type": "integer",
+            "minimum": 0
+          }
         },
         "additionalProperties": false
       }

@@ -358,7 +358,12 @@ fn a_manual_criterion_with_no_evidence_fails_g2() {
         let error = refused_by_gate(&env, args);
         assert_eq!(
             error["gates"],
-            json!([{ "gate": "G2", "ok": false }, { "gate": "G6", "ok": true }]),
+            json!([
+                { "gate": "G2", "ok": false },
+                { "gate": "G6", "ok": true },
+                { "gate": "G3", "ok": true, "secs": 0 },
+                { "gate": "G4", "ok": true, "secs": 0 }
+            ]),
             "{args:?}"
         );
         assert_eq!(error["failures"][0]["gate"], "G2");
@@ -392,7 +397,12 @@ fn an_item_with_no_criteria_fails_g2() {
         let error = refused_by_gate(&env, args);
         assert_eq!(
             error["gates"],
-            json!([{ "gate": "G2", "ok": false }, { "gate": "G6", "ok": true }]),
+            json!([
+                { "gate": "G2", "ok": false },
+                { "gate": "G6", "ok": true },
+                { "gate": "G3", "ok": true, "secs": 0 },
+                { "gate": "G4", "ok": true, "secs": 0 }
+            ]),
             "{args:?}"
         );
         let failures = error["failures"].as_array().unwrap();
@@ -420,7 +430,12 @@ fn a_script_criterion_needs_no_evidence() {
             "id": "XX-1",
             "status": "open",
             "result": "passed",
-            "gates": [{ "gate": "G2", "ok": true }, { "gate": "G6", "ok": true }],
+            "gates": [
+                { "gate": "G2", "ok": true },
+                { "gate": "G6", "ok": true },
+                { "gate": "G3", "ok": true, "secs": 0 },
+                { "gate": "G4", "ok": true, "secs": 0 }
+            ],
         })
     );
 }
@@ -474,7 +489,12 @@ fn a_design_naming_a_missing_section_fails_g6() {
             let error = refused_by_gate(&env, args);
             assert_eq!(
                 error["gates"],
-                json!([{ "gate": "G2", "ok": true }, { "gate": "G6", "ok": false }]),
+                json!([
+                    { "gate": "G2", "ok": true },
+                    { "gate": "G6", "ok": false },
+                    { "gate": "G3", "ok": true, "secs": 0 },
+                    { "gate": "G4", "ok": true, "secs": 0 }
+                ]),
                 "{design}"
             );
             let message = error["failures"][0]["message"].as_str().unwrap();
@@ -606,7 +626,12 @@ fn gates_lists_every_failure_and_leaves_the_item_file_unchanged() {
             "id": "XX-1",
             "status": "in-progress",
             "result": "refused",
-            "gates": [{ "gate": "G2", "ok": false }, { "gate": "G6", "ok": false }],
+            "gates": [
+                { "gate": "G2", "ok": false },
+                { "gate": "G6", "ok": false },
+                { "gate": "G3", "ok": true, "secs": 0 },
+                { "gate": "G4", "ok": true, "secs": 0 }
+            ],
             "failures": [
                 { "gate": "G2", "criterion": 1, "message": error["failures"][0]["message"] },
                 { "gate": "G2", "criterion": 2, "message": error["failures"][1]["message"] },
@@ -614,10 +639,15 @@ fn gates_lists_every_failure_and_leaves_the_item_file_unchanged() {
             ],
         })
     );
-    // The text says the same, on stderr, one reason per line.
+    // The text says the same, on stderr, one reason per line, after the
+    // line slice 7 prints before running criterion 3's check.
     let output = env.cmd().args(["gates", "XX-1"]).assert().code(2);
     let stderr = String::from_utf8_lossy(&output.get_output().stderr).to_string();
-    assert_eq!(stderr.lines().count(), 4, "{stderr}");
+    let (running, reasons): (Vec<&str>, Vec<&str>) = stderr
+        .lines()
+        .partition(|line| line.starts_with("Running "));
+    assert_eq!(running, ["Running criterion 3's check: `true`"], "{stderr}");
+    assert_eq!(reasons.len(), 4, "{stderr}");
     assert!(stderr.contains("  G2  Criterion 1, \"first\""), "{stderr}");
     assert!(stderr.contains("  G2  Criterion 2, \"second\""), "{stderr}");
     assert!(
@@ -651,13 +681,16 @@ fn gates_says_when_the_item_isnt_ready_to_submit() {
     let text = String::from_utf8_lossy(&output.get_output().stdout).to_string();
     assert_eq!(
         text,
-        "XX-1 passes the gates submit runs: G2 and G6.\nIt's open, and only an in-progress \
+        "XX-1 passes the gates submit runs: G2, G6, G3 and G4.\nIt's open, and only an in-progress \
          item can be submitted.\n"
     );
     env.json(&["start", "XX-1"]);
     let output = env.cmd().args(["gates", "XX-1"]).assert().success();
     let text = String::from_utf8_lossy(&output.get_output().stdout).to_string();
-    assert_eq!(text, "XX-1 passes the gates submit runs: G2 and G6.\n");
+    assert_eq!(
+        text,
+        "XX-1 passes the gates submit runs: G2, G6, G3 and G4.\n"
+    );
 }
 
 #[test]

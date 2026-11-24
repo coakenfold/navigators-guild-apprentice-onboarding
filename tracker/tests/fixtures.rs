@@ -10,7 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use common::{Env, check_schema};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// Every fixture file, sorted, across every slice's folder.
 fn fixture_files() -> Vec<PathBuf> {
@@ -197,6 +197,72 @@ fn slice_6_wrote_three_fixtures_with_criteria() {
     assert_eq!(item["verification"]["by"], "unchecked");
     let note = item["verification"]["note"].as_str().unwrap();
     assert!(note.starts_with("No checks ran"), "{note}");
+}
+
+/// The item file after slice 7 adds `started` and the checks in a
+/// verification record. XX-16 was started with one check failing and one
+/// already passing, then shelved and reopened, so it's open and still has
+/// what its start recorded. XX-17 is done, unchecked, after its criterion
+/// check, which printed 25 lines, and a project check passed. XX-18, written
+/// after TR-16, is checked below.
+#[test]
+fn slice_7_wrote_three_fixtures_with_check_results() {
+    assert_eq!(
+        names_in("slice-7"),
+        ["XX-16.json", "XX-17.json", "XX-18.json"]
+    );
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/slice-7");
+    let read = |name: &str| -> Value {
+        serde_json::from_str(&fs::read_to_string(root.join(name)).unwrap()).unwrap()
+    };
+
+    let item = read("XX-16.json");
+    assert_eq!(item["status"], "open");
+    assert_eq!(
+        item["started"]["checks"],
+        serde_json::json!([
+            { "criterion": 1, "passed": false },
+            { "criterion": 2, "passed": true },
+        ])
+    );
+
+    let item = read("XX-17.json");
+    assert_eq!(item["status"], "done");
+    assert_eq!(item["started"]["checks"][0]["passed"], false);
+    let checks = item["verification"]["checks"].as_array().unwrap();
+    assert_eq!(checks.len(), 2);
+    let output = checks[0]["output"].as_str().unwrap();
+    assert_eq!(output.lines().count(), 20);
+    assert!(output.starts_with("line 6\n"), "{output}");
+    assert_eq!(checks[1]["output"], "all 3 tests passed");
+}
+
+/// TR-20: XX-18 was written after TR-16 gave each criterion's check record
+/// its `criterion`, so it keeps that shape for later slices to read. It's
+/// done, unchecked, after the checks of criteria 1 and 3, with a manual
+/// criterion 2 between them, and a project check, which names none.
+#[test]
+fn slice_7s_xx_18_names_each_checks_criterion_and_comes_back_byte_for_byte() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/slice-7/XX-18.json");
+    let text = fs::read_to_string(&path).unwrap();
+    let file: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(file["status"], "done");
+    let criteria: Vec<Value> = file["verification"]["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|check| check["criterion"].clone())
+        .collect();
+    assert_eq!(criteria, [json!(1), json!(3), Value::Null]);
+    assert_eq!(
+        file["verification"]["checks"][1]["output"],
+        "parsed 3 lines"
+    );
+
+    let item = tracker::item::from_json(&text).unwrap();
+    assert_eq!(tracker::item::to_json(&item), text);
+    let lost = tracker::item::lost_on_rewrite(&text).unwrap();
+    assert!(lost.is_empty(), "{lost:?}");
 }
 
 #[test]

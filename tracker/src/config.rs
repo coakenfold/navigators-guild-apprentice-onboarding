@@ -1,7 +1,7 @@
 //! `config.json` (§4.2): the registered projects.
 //!
-//! So far the tool reads only each project's name, root and design. serde
-//! skips the other settings when reading, and `add_project` edits the file as
+//! So far the tool reads each project's name, root, design, checks and check
+//! timeout. serde skips the other settings when reading, and `add_project` edits the file as
 //! plain JSON, so settings added by hand survive.
 
 use std::collections::BTreeMap;
@@ -25,7 +25,18 @@ pub struct Project {
     pub root: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub design: Option<String>,
+    /// The project checks, each a line of `sh` run in the root, that G4
+    /// runs on every submit (§2.4). Set by hand in `config.json`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub checks: Vec<String>,
+    /// How long a check may run before it's stopped and fails, in
+    /// seconds. `DEFAULT_CHECK_TIMEOUT_SECS` when it isn't set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check_timeout_secs: Option<u64>,
 }
+
+/// How long a check may run when the project doesn't say, as in §4.2.
+pub const DEFAULT_CHECK_TIMEOUT_SECS: u64 = 300;
 
 impl Project {
     /// The root as a path, with a leading `~/` expanded to the home folder,
@@ -37,6 +48,14 @@ impl Project {
             return PathBuf::from(home).join(rest);
         }
         PathBuf::from(&self.root)
+    }
+
+    /// How long one of the project's checks may run (§4.2).
+    pub fn check_timeout(&self) -> std::time::Duration {
+        let secs = self
+            .check_timeout_secs
+            .unwrap_or(DEFAULT_CHECK_TIMEOUT_SECS);
+        std::time::Duration::from_secs(secs)
     }
 }
 

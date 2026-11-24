@@ -225,7 +225,12 @@ fn submit_prints_the_shape_section_3_gives_it() {
                 "id": "XX-1",
                 "result": "done",
                 "status": "done",
-                "gates": [{ "gate": "G2", "ok": true }, { "gate": "G6", "ok": true }],
+                "gates": [
+                    { "gate": "G2", "ok": true },
+                    { "gate": "G6", "ok": true },
+                    { "gate": "G3", "ok": true, "secs": 0 },
+                    { "gate": "G4", "ok": true, "secs": 0 }
+                ],
                 "triggers": [],
                 "holds": [],
                 "item": item,
@@ -594,8 +599,8 @@ fn the_text_output_names_the_move() {
     assert!(stdout.starts_with("XX-1: in-progress → done\n"), "{stdout}");
     assert!(
         stdout.contains(
-            "Unchecked. Submitted before tracker ran checks. Gates G2 and G6 passed, but \
-             nothing tested the work.\n"
+            "Unchecked. Submitted before tracker ran checks against a recorded commit. Gates \
+             G2, G6, G3 and G4 passed, but no commit ties the checks to the work.\n"
         ),
         "{stdout}"
     );
