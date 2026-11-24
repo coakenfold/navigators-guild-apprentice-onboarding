@@ -71,6 +71,9 @@ pub struct Changes {
 /// that holds `root` (§2.1). Paths are made relative to the root, and a
 /// file outside it counts only toward `lines`.
 pub fn changes(root: &Path, id: &str, started: Option<&str>) -> Result<Changes> {
+    if let Some(head) = started {
+        git::require_started_head(root, id, head)?;
+    }
     let prefix = git::prefix(root)?;
     let mut shas = git::item_commits(root, id)?;
     shas.reverse();

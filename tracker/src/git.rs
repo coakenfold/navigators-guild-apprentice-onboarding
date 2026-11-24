@@ -377,6 +377,22 @@ pub fn changes(root: &Path, shas: &[String]) -> Result<Vec<FileChange>> {
     Ok(all)
 }
 
+/// Fails with exit 3, naming `base` and how to start item `id` over, if git
+/// no longer has the commit `id` started at (after a gc of a rewritten
+/// branch, say). A lost base can't show every commit since start, so T4 and
+/// T14 stay fail-closed (§2.4).
+pub fn require_started_head(root: &Path, id: &str, base: &str) -> Result<()> {
+    if git(root, &["cat-file", "-e", &format!("{base}^{{commit}}")]).is_ok() {
+        return Ok(());
+    }
+    let short: String = base.chars().take(7).collect();
+    Err(Error::store(format!(
+        "Git no longer has commit {short}, where {id} started, so it can't show every commit \
+         made since. To start {id} over, shelve it, reopen it, then start it again (if it's in \
+         review, it has to be rejected first)."
+    )))
+}
+
 /// The commits `HEAD` reaches that `base` doesn't, as full SHAs.
 pub fn since(root: &Path, base: &str) -> Result<Vec<String>> {
     Ok(git(root, &["rev-list", &since_range(base)])?
