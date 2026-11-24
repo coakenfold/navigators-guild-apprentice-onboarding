@@ -2,14 +2,14 @@
 
 `tracker` is a command-line work tracker, written in Rust, that keeps one central list of work items across many projects and decides when an item is really done. This document covers **slice 16**, the last of the 16 in [PLAN.md](PLAN.md): what it built, how it works, and how to test it. The earlier readmes cover the rest: [slice 1](slice-1-readme.md) the store, `create` and `list`, [slice 2](slice-2-readme.md) the states and `history`, [slice 3](slice-3-readme.md) priority, kind, labels, `edit` and `list`'s filters, [slice 4](slice-4-readme.md) `show` and `delete`, [slice 5](slice-5-readme.md) bad data and polish, [slice 6](slice-6-readme.md) criteria and gates G1, G2 and G6, [slice 7](slice-7-readme.md) running checks, with gates G3 and G4 and `started.checks`, [slice 8](slice-8-readme.md) G5, the `auto` record and `refs/tracker/<ID>`, [slice 9](slice-9-readme.md) the inbox, `approve`, `reject` and triggers T6 and T9, [slice 10](slice-10-readme.md) triggers T1, T2, T3, T4, T7 and T8, [slice 11](slice-11-readme.md) triggers T5, T13 and T14 and the criteria fingerprint, [slice 12](slice-12-readme.md) judge criteria, G3's judge half and trigger T10, with a fake judge command, [slice 13](slice-13-readme.md) `tracker-judge`, the real judge command, [slice 14](slice-14-readme.md) judges that must fail first, trigger T11 and `judge/failures.json`, and [slice 15](slice-15-readme.md) disputes, trigger T12 and `held_questions`.
 
-After slice 16 you can **audit what the tool verified without you**. `digest` lists, for each project, every item auto-verified since you last acknowledged it, and every shelve and human action. `digest ack` acknowledges one from a terminal, `review` flags a digest that has waited too long, `audit` reports signs that the store was edited by hand, and `judges` shows how you've decided each judge question. The spec is [DESIGN.md](DESIGN.md). This slice implements [§2.6](DESIGN.md#26-digest-auditing-the-auto-verifications) (the digest), `digest ack` in [§2.7](DESIGN.md#27-human-actions), `tracker judges` in [§2.3.2](DESIGN.md#232-when-a-judge-is-wrong), and `digest`, `audit` and `judges` in [§3](DESIGN.md#3-interface). It also changes [§6](DESIGN.md#6-what-im-trusting-and-what-checks-it) and [§7](DESIGN.md#7-honest-limits) to say what these commands catch and don't. The slice is tracked in `tracker` itself as item TR-12, with the binary installed from slice 15 ([Tracking TR-12](#tracking-tr-12)). There's no review of it yet, so this document has no "Fixes after review" section.
+After slice 16 you can **audit what the tool verified without you**. `digest` lists, for each project, every item auto-verified since you last acknowledged it, and every shelve and human action. `digest ack` acknowledges one from a terminal, `review` flags a digest that has waited too long, `audit` reports signs that the store was edited by hand, and `judges` shows how you've decided each judge question. The spec is [DESIGN.md](DESIGN.md). This slice implements [§2.6](DESIGN.md#26-digest-auditing-the-auto-verifications) (the digest), `digest ack` in [§2.7](DESIGN.md#27-human-actions), `tracker judges` in [§2.3.2](DESIGN.md#232-when-a-judge-is-wrong), and `digest`, `audit` and `judges` in [§3](DESIGN.md#3-interface). It also changes [§6](DESIGN.md#6-what-im-trusting-and-what-checks-it) and [§7](DESIGN.md#7-honest-limits) to say what these commands catch and don't. The slice is tracked in `tracker` itself as item TR-12, with the binary installed from slice 15 ([Tracking TR-12](#tracking-tr-12)). [Review 1](reviews/slice-16-review-1.md) found no blocker, and its fixes, built as item TR-55, are in [Fixes after review 1](#fixes-after-review-1).
 
 | | |
 | --- | --- |
-| Status | Every _Done when_ check has a test, and every test passes, as does the test command (`cargo fmt --check`, `cargo clippy -- -D warnings` and `cargo test` were run on the finished branch, at `93637e2`, whose code is `ccb8d13`'s). TR-12 is `done`, but it wasn't auto-verified. It has eleven criteria: 1 to 6 are PLAN.md's _Done when_ bullets as written, which TR-12 was created with, and 7 is PLAN.md's later bullet on `audit` checking `refs/tracker/<ID>`, which was added to PLAN.md after TR-12 was created and which the orchestrator added to the item before `start`, 8 and 9 are DESIGN.md wording the orchestrator added before `start` from [slice 15's review 2](reviews/slice-15-review-2.md) (design 1 and design 3), and 10 and 11 are the builder's, added before `start`: an overdue digest in `review`, and `--help` text and empty states. All eleven checks failed at `start`, at `a877beb`. Criterion 9's test, `tr12_c9_a_dispute_beside_a_missing_input_is_refused_for_g3`, passed before the work, since the code was already right, so its check failed through its `grep` of DESIGN.md. The installed slice 15 binary held the submit under T1 (it's a capability), T7 (2595 lines changed) and T8 (DESIGN.md changed). T4 stayed quiet: the only existing test file changed is `tests/common/mod.rs`, which gained four match arms and lost nothing. The user read the diff and approved it from a terminal: `verification.by` is `human`, at `93637e2`, with `refs/tracker/TR-12`, and the three holds are recorded in `verification.triggers`. Before the approve, the orchestrator checked by hand that the six written criteria are unchanged, that all eleven checks failed at `start`, and that every commit since `start` is scoped to TR-12. **Not checked by hand yet:** one `tracker digest ack` typed in a real terminal (typing `ack` acknowledges, and typing the project key cancels), and reading `tracker digest` and `tracker judges` on the real store. Both wait for slice 16's binary to be installed ([Still open](#still-open)). PLAN.md has slice 16 as `in review`. The branch isn't merged into `main`, and neither are slices 7 to 15, which it's stacked on |
-| Branch | `feat/tracker/slice-16`, stacked on `feat/tracker/slice-15` at `2468127`. Slice 15 isn't merged into `main`, so this slice's commits are `git log --oneline --reverse feat/tracker/slice-15..feat/tracker/slice-16`. In order, all scoped to TR-12: `a877beb` (the tests and schemas, committed before `tracker start TR-12`), `8b8670c` (PLAN.md: slice 16 in progress), `ccb8d13` (the code: `src/audit.rs`, `src/decisions.rs` and `src/digest.rs`), `d997b33` (DESIGN.md) and `93637e2` (PLAN.md: slice 16 in review). That is 5 commits, all TR-12's. The commit that adds this readme belongs to no item |
-| Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/`. All three pass at `93637e2` |
-| Tests | 559: 46 in `tests/risky_changes.rs`, 42 in `tests/judges.rs`, 39 in `tests/create_and_list.rs`, 36 in `tests/commits.rs`, 34 in `tests/organise.rs`, 29 in `tests/judges_first.rs`, 29 in `tests/disputes.rs`, 28 in `tests/review.rs`, 27 in `tests/states.rs`, 25 in `tests/show_and_delete.rs`, 23 in `tests/criteria.rs`, 22 in `tests/gates.rs`, 21 in `tests/tampered_proof.rs`, 18 in `tests/checks.rs`, 16 in `tests/fixtures.rs`, 14 in `tests/item_files.rs`, 13 in `tests/bad_data.rs`, 12 in `tests/tracker_judge.rs`, 11 in `tests/docs_links.rs`, 10 in `tests/digest.rs`, 9 in `tests/polish.rs`, 8 in `tests/audit.rs`, 6 in `tests/output.rs`, 6 in `tests/t5_and_fingerprint.rs`, 5 in `tests/schemas.rs`, 4 in `tests/store_writes.rs`, 4 in `tests/judge_report.rs`, 3 in `tests/refusal_wording.rs`, 2 in `tests/item_ids.rs`, 1 each in `tests/harness_check.rs`, `tests/judge_add_message.rs` and `tests/submit_help.rs`, 12 unit tests in the library (4 in `src/gates.rs`, 4 in `src/judge.rs`, 2 in `src/git.rs`, 1 each in `src/store.rs` and `src/checks.rs`) and 2 in `src/main.rs`. That is 22 more than slice 15's 537, all in the three new files: 10 in `tests/digest.rs`, 8 in `tests/audit.rs` and 4 in `tests/judge_report.rs`. No unit test was added |
+| Status | Every _Done when_ check has a test, and every test passes, as does the test command (`cargo fmt --check`, `cargo clippy -- -D warnings` and `cargo test` were run on the branch at `8b84977`, the last commit of review 1's fixes, whose code is `8b84977`'s. The first `cargo test` run failed once, on the flaky `tracker_judge::c5_a_judge_timeout_stops_the_claude_that_tracker_judge_started` that TR-56 tracks, and a rerun passed all of them). TR-12 is `done`, but it wasn't auto-verified. It has eleven criteria: 1 to 6 are PLAN.md's _Done when_ bullets as written, which TR-12 was created with, and 7 is PLAN.md's later bullet on `audit` checking `refs/tracker/<ID>`, which was added to PLAN.md after TR-12 was created and which the orchestrator added to the item before `start`, 8 and 9 are DESIGN.md wording the orchestrator added before `start` from [slice 15's review 2](reviews/slice-15-review-2.md) (design 1 and design 3), and 10 and 11 are the builder's, added before `start`: an overdue digest in `review`, and `--help` text and empty states. All eleven checks failed at `start`, at `a877beb`. Criterion 9's test, `tr12_c9_a_dispute_beside_a_missing_input_is_refused_for_g3`, passed before the work, since the code was already right, so its check failed through its `grep` of DESIGN.md. The installed slice 15 binary held the submit under T1 (it's a capability), T7 (2595 lines changed) and T8 (DESIGN.md changed). T4 stayed quiet: the only existing test file changed is `tests/common/mod.rs`, which gained four match arms and lost nothing. The user read the diff and approved it from a terminal: `verification.by` is `human`, at `93637e2`, with `refs/tracker/TR-12`, and the three holds are recorded in `verification.triggers`. Before the approve, the orchestrator checked by hand that the six written criteria are unchanged, that all eleven checks failed at `start`, and that every commit since `start` is scoped to TR-12. **Not checked by hand yet:** one `tracker digest ack` typed in a real terminal (typing `ack` acknowledges, and typing the project key cancels), and reading `tracker digest` and `tracker judges` on the real store. Both wait for slice 16's binary to be installed ([Still open](#still-open)). **Review 1's fixes are in:** TR-55, one `fix` item with six criteria, is `done`. It was held under T7 (315 lines), T8 and T13, and the user approved it from a terminal at the second try, `human` at `8b84977`, with `refs/tracker/TR-55` ([Fixes after review 1](#fixes-after-review-1)). **Still open:** the rest of review 1's test gap 3, TR-56 (the flaky test) and TR-39, TR-44, TR-47, TR-48 and TR-50, plus the real-terminal checks above ([Still open](#still-open)). PLAN.md has slice 16 as `in review`. The branch isn't merged into `main`, and neither are slices 7 to 15, which it's stacked on |
+| Branch | `feat/tracker/slice-16`, stacked on `feat/tracker/slice-15` at `2468127`. Slice 15 isn't merged into `main`, so this slice's commits are `git log --oneline --reverse feat/tracker/slice-15..feat/tracker/slice-16`. In order, the first five are scoped to TR-12: `a877beb` (the tests and schemas, committed before `tracker start TR-12`), `8b8670c` (PLAN.md: slice 16 in progress), `ccb8d13` (the code: `src/audit.rs`, `src/decisions.rs` and `src/digest.rs`), `d997b33` (DESIGN.md) and `93637e2` (PLAN.md: slice 16 in review). That is 5 commits, all TR-12's. After them come `c160cfb` (this readme), `224012e` ([review 1](reviews/slice-16-review-1.md)), and TR-55's `dc9a2ef` (the tests, committed before `tracker start TR-55`), `0bfd2a9` (DESIGN.md) and `8b84977` (the code and schemas). The commits that update this readme and add review 1's Outcome belong to no item |
+| Test command | `cargo fmt --check && cargo clippy -- -D warnings && cargo test`, run in `tracker/`. All three pass at `8b84977` |
+| Tests | 565: 46 in `tests/risky_changes.rs`, 42 in `tests/judges.rs`, 39 in `tests/create_and_list.rs`, 36 in `tests/commits.rs`, 34 in `tests/organise.rs`, 29 in `tests/judges_first.rs`, 29 in `tests/disputes.rs`, 28 in `tests/review.rs`, 27 in `tests/states.rs`, 25 in `tests/show_and_delete.rs`, 23 in `tests/criteria.rs`, 22 in `tests/gates.rs`, 21 in `tests/tampered_proof.rs`, 18 in `tests/checks.rs`, 16 in `tests/fixtures.rs`, 16 in `tests/digest.rs`, 14 in `tests/item_files.rs`, 13 in `tests/bad_data.rs`, 12 in `tests/tracker_judge.rs`, 11 in `tests/docs_links.rs`, 9 in `tests/polish.rs`, 8 in `tests/audit.rs`, 6 in `tests/output.rs`, 6 in `tests/t5_and_fingerprint.rs`, 5 in `tests/schemas.rs`, 4 in `tests/store_writes.rs`, 4 in `tests/judge_report.rs`, 3 in `tests/refusal_wording.rs`, 2 in `tests/item_ids.rs`, 1 each in `tests/harness_check.rs`, `tests/judge_add_message.rs` and `tests/submit_help.rs`, 12 unit tests in the library (4 in `src/gates.rs`, 4 in `src/judge.rs`, 2 in `src/git.rs`, 1 each in `src/store.rs` and `src/checks.rs`) and 2 in `src/main.rs`. That is 28 more than slice 15's 537, all in three files: `tests/digest.rs` (10 from TR-12 and 6 from TR-55), 8 in `tests/audit.rs` and 4 in `tests/judge_report.rs`. No unit test was added |
 
 ## Contents
 
@@ -22,6 +22,7 @@ After slice 16 you can **audit what the tool verified without you**. `digest` li
 - [Code tour](#code-tour)
 - [Testing](#testing)
 - [Decisions worth knowing](#decisions-worth-knowing)
+- [Fixes after review 1](#fixes-after-review-1)
 - [Still open](#still-open)
 - [Limits, and what later slices change](#limits-and-what-later-slices-change)
 
@@ -29,30 +30,32 @@ After slice 16 you can **audit what the tool verified without you**. `digest` li
 
 **Built:**
 
-- **`digest [--project KEY] [--all]`.** Each project's digest lists every item auto-verified since that project's last ack, the ones a judge passed first, with their criteria, each judge answer (ref, answer, reason) and each check that ran. Then, oldest first, it lists every shelve, `approve`, `reject`, `criterion accept` and `delete` since the ack, mine included, and every `edit` whose history entry shows it removed `needs-review` or changed kind away from `capability`. Each line says whether it came from an interactive terminal. Inside a project root it shows that project's digest, and outside every root, or with `--all`, every project's.
-- **`digest ack [--project KEY]`.** From a terminal only, it shows the project's digest, asks for `ack` to be typed (not an ID), then, under the lock, builds the digest again. If it differs from the one it showed, it records nothing and exits 1. Otherwise it writes the project's entry in `digests.json` ([What digests.json holds](#what-digestsjson-holds)). Outside every root it needs `--project`, so one command can't acknowledge every project.
-- **`review` flags an overdue digest.** A project's digest whose oldest entry is at least `review.digest.every_days` old (7 by default) is listed under the inbox, with the command to read it and to acknowledge it. An empty digest is never overdue.
-- **`audit`.** It covers every project and reports a status that doesn't match the last move in the item's history, a done item with no verification record, a done `auto` or `human` item whose `refs/tracker/<ID>` is missing or doesn't point at the record's `commit`, holds or held questions on an item that isn't in review (and a T12 hold with no disputed question, or the other way round), an ID used twice, and a `deleted.json` line whose ID is at or above its project's counter. It changes nothing and exits 0 whatever it finds. It doesn't read `judge/` ([§7](DESIGN.md#7-honest-limits)).
+- **`digest [--project KEY] [--all]`.** Each project's digest lists every item auto-verified since that project's last ack, the ones a judge passed first, with their criteria, each judge answer (ref, answer, reason) and each check that ran. Then, oldest first, it lists every shelve, `approve`, `reject`, `criterion accept` and `delete` since the ack, mine included, and every `edit` whose history entry shows it removed `needs-review` or changed kind away from `capability`. Each line says whether it came from an interactive terminal, and a judge-passed item shows the question each judge was asked. The digest starts by naming the project's last ack: its time, whether it came from a terminal, and how many items and actions it covered. Inside a project root it shows that project's digest, and outside every root, or with `--all`, every project's.
+- **`digest ack [--project KEY]`.** From a terminal only, it shows the project's digest, asks for `ack` to be typed (not an ID), then, under the lock, builds the digest again. If it differs from the one it showed, it records nothing and exits 1. Otherwise it writes the project's entry in `digests.json` ([What digests.json holds](#what-digestsjson-holds)). Outside every root it needs `--project`, so one command can't acknowledge every project. It refuses first, with exit 3 and before it asks, while an item file named for the project can't be read, since that file may be an auto-verified item the digest would leave out unseen.
+- **`review` flags an overdue digest.** A project's digest whose oldest entry is at least `review.digest.every_days` old (7 by default) is listed under the inbox, with the command to read it and to acknowledge it. An empty digest is never overdue. The line also names the last ack, as `digest` does.
+- **`audit`.** It covers every project and reports a status that doesn't match the last move in the item's history, a done item with no verification record, a done `auto` or `human` item whose `refs/tracker/<ID>` is missing or doesn't point at the record's `commit`, holds or held questions on an item that isn't in review (and a T12 hold with no disputed question, or the other way round), an ID used twice, and a `deleted.json` line whose ID is at or above its project's counter. It changes nothing and exits 0 whatever it finds. It doesn't read `judge/` ([§7](DESIGN.md#7-honest-limits)). Its heading says each problem is "a sign that the store was edited by hand, or something audit couldn't check", since a project root that has moved makes `refs/tracker/<ID>` impossible to check and isn't a hand edit.
 - **`judges`.** For each judge question, grouped by its `ask` within a project, it shows how often you approved and how often you rejected the items it held, split by the held question's trigger and answer: a disputed fail (T12), an unsure answer (T10), or a pass held because the project sets `"auto_verify": false` (T10). It reads the `held_questions` of every `approve` and `reject` in every item's history, and counts each decision once per question, trigger and answer, however many `each` matches it held.
 - **`--help` text and empty states** for `review`, `approve`, `reject`, `digest`, `digest ack`, `audit` and `judges`, to slice 5's standard. `digest`, `audit` and `judges` print an empty state when they've nothing to report.
-- **DESIGN.md says it.** §2.6 says when a digest is overdue, §2.3.2 says `judges` splits its counts and what it reads, §3's `audit` and `judges` rows say what each covers, §6's two rows on vague judge questions and wrong disputes say `judges` shows them, §7 says what `audit` and the digest don't see, and §2.3.2 says any G3 failure without a judge answer skips the dispute check ([Decisions](#decisions-worth-knowing)).
+- **DESIGN.md says it.** §2.6 says when a digest is overdue, §2.3.2 says `judges` splits its counts and what it reads, §3's `audit` and `judges` rows say what each covers, §6's two rows on vague judge questions and wrong disputes say `judges` shows them, §7 says what `audit` and the digest don't see, and §2.3.2 says any G3 failure without a judge answer skips the dispute check ([Decisions](#decisions-worth-knowing)). Review 1's fixes changed three more lines: §2.6 names the commit an item was verified at and says done items with no verification record never appear in a digest, §3 says `review` shows whether a digest is overdue, and §7 says `digest ack` run under `script` acknowledges like a human and overwrites the last ack.
 - **Slice 15's "Slice 16 must decide" points**, from [review 1](reviews/slice-15-review-1.md#slice-16-must-decide) and [review 2](reviews/slice-15-review-2.md#slice-16-must-decide): see [Decisions](#decisions-worth-knowing).
 
 **Not built yet:**
 
 - **Nothing in PLAN.md.** Slice 16 is the last slice. [Limits](#limits-and-what-later-slices-change) lists what's left open across the plan.
 - **`audit` of `judge/failures.json` and `judge/cache/`.** It doesn't read either, so a T11 count or a cached answer changed by hand isn't reported ([§7](DESIGN.md#7-honest-limits)).
+- **A digest entry for a done item with no verification record.** TR's 18 early `unchecked` items never appear, by design: no gate ran on them and none was auto-verified (§2.6).
 - **A digest entry for a refused dispute or a `gates` run.** Their only trace is T11's count in `judge/failures.json`, which `start` empties.
 - **Saved rulings, mutation testing, and a branch or worktree per item** (PLAN.md's "Deferred / out of scope", [§7](DESIGN.md#7-honest-limits)).
-- **TR-39, TR-44, TR-47, TR-48 and TR-50**, all open ([Still open](#still-open)).
+- **TR-39, TR-44, TR-47, TR-48, TR-50 and TR-56**, all open ([Still open](#still-open)).
 
 ## Try it
 
 Always set `TRACKER_HOME` while developing. Without it, the tool uses your real store at `~/.tracker`.
 
-**This demo never calls the real `claude` or `tracker-judge`.** Its judge command is a shell script that reads the request and prints whatever is in `reply.json`, as `tests/judge_report.rs` does, and a small `reply` script writes that file, as slice 15's demo does. The project BM is a folder in one throwaway repository. It has four items: BM-1 has a judge criterion and is auto-verified on a judge's pass, BM-2 is auto-verified on a script check, BM-3 has its kind changed from `capability` to `change`, and BM-4 is shelved. All of them are changed from piped stdin, so the digest marks each one "not from a terminal". The demo then shows what `digest ack`, `audit`, `judges` and `review` say, with each refusal, and ends with two hand edits to the throwaway store that `audit` finds.
+**This demo never calls the real `claude` or `tracker-judge`.** Its judge command is a shell script that reads the request and prints whatever is in `reply.json`, as `tests/judge_report.rs` does, and a small `reply` script writes that file, as slice 15's demo does. The project BM is a folder in one throwaway repository. It has five items: BM-1 has a judge criterion and is auto-verified on a judge's pass, BM-2 is auto-verified on a script check, BM-3 has its kind changed from `capability` to `change`, BM-4 is shelved, and BM-5 has a judge criterion and is shelved after `start`. All of them are changed from piped stdin, so the digest marks each one "not from a terminal". The demo then shows what `digest ack`, `audit`, `judges` and `review` say, with each refusal, and ends with two hand edits to the throwaway store and a moved repository, all of which `audit` finds.
 
-- **`digest ack` and `judges` with decisions can't be shown going ahead.** `digest ack` needs a terminal, and `judges` only counts decisions made at one (`approve` and `reject`), so the demo shows `judges`' empty state and its refusals only. [Testing](#testing) says which tests run them under `script`. Typed at a terminal, `digest ack --project BM` would print the digest above, then "Acknowledging it records that you've read BM's digest…", ask for `ack`, and print "Acknowledged BM's digest at <time>: 2 items auto-verified and 2 actions."
+- **`digest ack` and `judges` with decisions can't be shown going ahead.** `digest ack` needs a terminal, and `judges` only counts decisions made at one (`approve` and `reject`), so the demo shows `judges`' empty state and its refusals only. [Testing](#testing) says which tests run them under `script`. Typed at a terminal, `digest ack --project BM` would print the digest above, then "Acknowledging it records that you've read BM's digest…", ask for `ack`, and print "Acknowledged BM's digest at <time>: 2 items auto-verified and 3 actions."
+- **The last ack is written by hand.** `digest ack` can't run here, so the demo writes BM's entry in `digests.json` itself, dated 2020 and with `interactive` false, to show how `digest` and `review` name it. A real ack from a terminal records `interactive` true.
 - **The overdue digest is made by hand.** The demo sets BM's `review.digest.every_days` to 0 in the throwaway config, so a digest with entries is overdue straight away. At the default of 7 days the line wouldn't appear until the oldest entry was a week old.
 
 ```sh
@@ -80,6 +83,7 @@ EOF
 chmod +x $DEMO/judge/reply
 export PATH=$DEMO/judge:$PATH
 printf '%s\n' '{"text":"The code does the work","inputs":["src/lib.rs"],"ask":[{"id":"works","ask":"Does this code do the work?"}]}' > $DEMO/judge/lib.json
+printf '%s\n' '{"text":"The code is finished later","inputs":["src/lib.rs"],"ask":[{"id":"later","ask":"Is this code finished?"}]}' > $DEMO/judge/later.json
 cd $DEMO/repo && git init --quiet -b main
 mkdir -p bm/src && printf 'fn run() {\n    todo!()\n}\n' > bm/src/lib.rs
 git add -A && git commit --quiet -m "chore: set up"
@@ -113,6 +117,11 @@ tracker create "Try a thing" --project BM --kind capability
 tracker edit BM-3 --kind change
 tracker create "Park it" --project BM
 tracker shelve BM-4 --reason "Not needed yet."
+tracker create "Judge it later" --project BM
+tracker criterion add BM-5 --judge $DEMO/judge/later.json
+reply later=no
+tracker start BM-5
+tracker shelve BM-5 --reason "Waiting on a design."
 tracker digest
 echo ack | tracker digest ack --project BM      # exit 1: needs a terminal
 tracker digest ack --project NOPE      # exit 1: no such project
@@ -120,10 +129,16 @@ tracker digest --project BM --all      # exit 1: --project and --all conflict
 tracker judges
 jq '.projects.BM.review = {digest: {every_days: 0}}' $TRACKER_HOME/config.json > $DEMO/config.new && mv $DEMO/config.new $TRACKER_HOME/config.json
 tracker review
+printf '{"BM":{"at":"2020-01-01T00:00:00Z","interactive":false,"verified":1,"actions":0}}\n' > $TRACKER_HOME/digests.json
+tracker digest | sed -n 1p
+tracker review
 tracker audit
 jq '.status = "done"' $TRACKER_HOME/items/BM-4.json > $DEMO/item.new && mv $DEMO/item.new $TRACKER_HOME/items/BM-4.json
 printf '{"id":"BM-9","title":"Forged","status":"open","at":"2026-11-23T00:00:00Z","interactive":false}\n' >> $TRACKER_HOME/deleted.json
 tracker audit
+mv $DEMO/repo $DEMO/repo-moved
+tracker audit
+mv $DEMO/repo-moved $DEMO/repo
 tracker digest ack --help | sed -n 1p
 tracker list --all --status open,in-progress,review,done,shelved
 ```
@@ -153,7 +168,7 @@ $ reply works=yes
 $ tracker submit BM-1
 Asking criterion 1's judge 1 question: `$DEMO/judge/fake`
 BM-1: in-progress → done
-Verified automatically: every gate passed at 4d629e9, and refs/tracker/BM-1 keeps that commit.
+Verified automatically: every gate passed at 2d90aaf, and refs/tracker/BM-1 keeps that commit.
 $ tracker create "Write notes" --project BM
 Created BM-2: Write notes
 $ tracker criterion add BM-2 "There are notes" --check "test -f NOTES.md"
@@ -166,7 +181,7 @@ $ git add -A && git commit --quiet -m "feat(BM-2): add notes"
 $ tracker submit BM-2
 Running criterion 1's check: `test -f NOTES.md`
 BM-2: in-progress → done
-Verified automatically: every gate passed at 28001e1, and refs/tracker/BM-2 keeps that commit.
+Verified automatically: every gate passed at 1a4432b, and refs/tracker/BM-2 keeps that commit.
 $ tracker create "Try a thing" --project BM --kind capability
 Created BM-3: Try a thing
 $ tracker edit BM-3 --kind change
@@ -175,22 +190,36 @@ $ tracker create "Park it" --project BM
 Created BM-4: Park it
 $ tracker shelve BM-4 --reason "Not needed yet."
 BM-4: open → shelved
+$ tracker create "Judge it later" --project BM
+Created BM-5: Judge it later
+$ tracker criterion add BM-5 --judge $DEMO/judge/later.json
+Added criterion 1 to BM-5, a judge: The code is finished later
+Its question is asked at start, and at submit once every other gate passes.
+$ reply later=no
+$ tracker start BM-5
+Asking criterion 1's judge 1 question: `$DEMO/judge/fake`
+BM-5: open → in-progress
+$ tracker shelve BM-5 --reason "Waiting on a design."
+BM-5: in-progress → shelved
 $ tracker digest
 BM's digest, never acknowledged
 Auto-verified (2), the ones a judge passed first:
   BM-1  Say hello
-    verified at 4d629e9 on 2026-11-23T23:01:33Z
+    verified at 2d90aaf on 2026-11-24T02:45:34Z
     1. The code does the work
-    judge c1:works answered yes: "The fake says yes to works."
+    judge c1:works asked "Does this code do the work?" answered yes: "The fake says yes to works."
   BM-2  Write notes
-    verified at 28001e1 on 2026-11-23T23:01:34Z
+    verified at 1a4432b on 2026-11-24T02:45:35Z
     1. There are notes
     criterion 1's check passed: `test -f NOTES.md` (0s)
-Shelves, human actions and edits that switch off a trigger (2), oldest first. Check that you made each one marked from a terminal:
-  2026-11-23T23:01:34Z  BM-3  Try a thing
+Shelves, human actions and edits that switch off a trigger (3), oldest first. Check that you made each one marked from a terminal:
+  2026-11-24T02:45:35Z  BM-3  Try a thing
     edit changed kind away from capability, not from a terminal
-  2026-11-23T23:01:34Z  BM-4  Park it
+  2026-11-24T02:45:35Z  BM-4  Park it
     shelve, not from a terminal: "Not needed yet."
+  2026-11-24T02:45:35Z  BM-5  Judge it later
+    shelve, not from a terminal: "Waiting on a design."
+    It has a judge criterion, and starting it again empties its T11 count, so look in `tracker show BM-5` for a reopen and start after this.
 Reopen anything that looks wrong with `tracker reopen <ID> --reason "…"`. Once you've read it all, run `tracker digest ack --project BM`.
 $ echo ack | tracker digest ack --project BM      # exit 1: needs a terminal
 error: `tracker digest ack --project BM` needs a human at an interactive terminal, who types ack to confirm it, and stdin here isn't a terminal. Nothing was changed. Only a human acknowledges a digest, after reading it with `tracker digest --project BM`.
@@ -211,25 +240,42 @@ $ jq '.projects.BM.review = {digest: {every_days: 0}}' $TRACKER_HOME/config.json
 $ tracker review
 No items are held for review.
 
-BM's digest is overdue: 4 entries, the oldest from 2026-11-23T23:01:33Z, never acknowledged. Read it with `tracker digest --project BM`, then run `tracker digest ack --project BM`.
+BM's digest is overdue: 5 entries, the oldest from 2026-11-24T02:45:34Z, never acknowledged. Read it with `tracker digest --project BM`, then run `tracker digest ack --project BM`.
+$ printf '{"BM":{"at":"2020-01-01T00:00:00Z","interactive":false,"verified":1,"actions":0}}\n' > $TRACKER_HOME/digests.json
+$ tracker digest | sed -n 1p
+BM's digest, last acknowledged at 2020-01-01T00:00:00Z, not from a terminal, with 1 item and 0 actions
+$ tracker review
+No items are held for review.
+
+BM's digest is overdue: 5 entries, the oldest from 2026-11-24T02:45:34Z, last acknowledged at 2020-01-01T00:00:00Z, not from a terminal, with 1 item and 0 actions. Read it with `tracker digest --project BM`, then run `tracker digest ack --project BM`.
 $ tracker audit
-No problems found in 4 items, counters.json and deleted.json.
+No problems found in 5 items, counters.json and deleted.json.
 $ jq '.status = "done"' $TRACKER_HOME/items/BM-4.json > $DEMO/item.new && mv $DEMO/item.new $TRACKER_HOME/items/BM-4.json
 $ printf '{"id":"BM-9","title":"Forged","status":"open","at":"2026-11-23T00:00:00Z","interactive":false}\n' >> $TRACKER_HOME/deleted.json
 $ tracker audit
-3 problems found in 4 items, counters.json and deleted.json, each a sign that the store was edited by hand:
+3 problems found in 5 items, counters.json and deleted.json, each a sign that the store was edited by hand, or something audit couldn't check:
   BM-4  BM-4 is done, but the last move in its history left it shelved, so its status was edited by hand.
   BM-4  BM-4 is done but has no verification record, so nothing says how it reached done.
-  BM-9  Line 1 of deleted.json deletes BM-9, but counters.json's next BM number is 5, so BM-9 was never handed out and the line was written by hand. `tracker create` refuses BM until its counter in counters.json is above 9.
+  BM-9  Line 1 of deleted.json deletes BM-9, but counters.json's next BM number is 6, so BM-9 was never handed out and the line was written by hand. `tracker create` refuses BM until its counter in counters.json is above 9.
+$ mv $DEMO/repo $DEMO/repo-moved
+$ tracker audit
+5 problems found in 5 items, counters.json and deleted.json, each a sign that the store was edited by hand, or something audit couldn't check:
+  BM-1  refs/tracker/BM-1 can't be checked: BM's root, $DEMO/repo/bm, can't be read: No such file or directory (os error 2).
+  BM-2  refs/tracker/BM-2 can't be checked: BM's root, $DEMO/repo/bm, can't be read: No such file or directory (os error 2).
+  BM-4  BM-4 is done, but the last move in its history left it shelved, so its status was edited by hand.
+  BM-4  BM-4 is done but has no verification record, so nothing says how it reached done.
+  BM-9  Line 1 of deleted.json deletes BM-9, but counters.json's next BM number is 6, so BM-9 was never handed out and the line was written by hand. `tracker create` refuses BM until its counter in counters.json is above 9.
+$ mv $DEMO/repo-moved $DEMO/repo
 $ tracker digest ack --help | sed -n 1p
 Record that you've read a project's digest. Only from an interactive terminal
 $ tracker list --all --status open,in-progress,review,done,shelved
-  ID    PRIORITY  KIND    STATUS  TITLE
+  ID    PRIORITY  KIND    STATUS   TITLE
 BM  bm
-  BM-1  medium    change  done    Say hello
-  BM-2  medium    change  done    Write notes
-  BM-3  medium    change  open    Try a thing
-  BM-4  medium    change  done    Park it
+  BM-1  medium    change  done     Say hello
+  BM-2  medium    change  done     Write notes
+  BM-3  medium    change  open     Try a thing
+  BM-4  medium    change  done     Park it
+  BM-5  medium    change  shelved  Judge it later
 
 Every project.
 Filters: status open, in-progress, review, done or shelved.
@@ -238,11 +284,12 @@ Filters: status open, in-progress, review, done or shelved.
 Notes on the output:
 
 - **The first three commands are the empty states.** BM has no items, so `digest`, `audit` and `judges` each say so in one line. `audit` counts the items it read, and `judges` says which holds record questions.
-- **The digest lists BM-1 before BM-2,** because a judge passed it, though BM-2 was verified a moment later. Each item shows its commit, time and criteria, then each judge answer (`c1:works`) or check that ran. The actions come after, oldest first, and each says "not from a terminal". Items and actions with the same second keep the items' order, since `digest::build` sorts stably.
+- **The digest lists BM-1 before BM-2,** because a judge passed it, though BM-2 was verified a moment later. Each item shows its commit, time and criteria, then each judge answer (`c1:works`, with the question it was asked) or check that ran. The actions come after, oldest first, and each says "not from a terminal". Items and actions with the same second keep the items' order, since `digest::build` sorts stably.
 - **BM-3's line is the edit.** The digest lists an `edit` only if its history entry shows `needs-review` was removed or kind was changed away from `capability`. An edit that only adds a label isn't listed.
 - **The three refusals are three kinds of error.** A piped stdin is refused by the shared confirmation (exit 1, nothing changed). An unknown `--project` exits 1 and names the registered ones. `--project` with `--all` is clap's own error, which the tool also exits 1 for ([§3](DESIGN.md#3-interface)).
-- **`review` has no held item but flags BM.** With every item auto-verified, nothing is held, so it prints "No items are held for review." and then the overdue digest, with its entry count, its oldest entry and the two commands. It prints "Nothing needs you." only when there's neither.
-- **`audit` found three things from two edits.** Setting BM-4's `status` to `done` by hand breaks two checks: the history's last move left it `shelved`, and a done item needs a verification record. The line appended to `deleted.json` names BM-9, which was never handed out: counters.json's next BM number is 5. The message says what `create` does about it. The `audit` before the edits found nothing. It exits 0 either way.
+- **`review` has no held item but flags BM.** With every item auto-verified, nothing is held, so it prints "No items are held for review." and then the overdue digest, with its entry count, its oldest entry, its last ack when there is one, and the two commands. The first `review` says "never acknowledged". After the hand-written ack it says when, "not from a terminal", and its counts.
+- **BM-5's shelve carries a warning.** It has a judge criterion, so the digest says starting it again empties its T11 count, and points at `tracker show BM-5` for a reopen and `start`, since the digest never lists those. It prints "Nothing needs you." only when there's neither.
+- **`audit` found three things from two edits.** Setting BM-4's `status` to `done` by hand breaks two checks: the history's last move left it `shelved`, and a done item needs a verification record. The line appended to `deleted.json` names BM-9, which was never handed out: counters.json's next BM number is 5. The message says what `create` does about it. The `audit` before the edits found nothing. It exits 0 either way. The last `audit` runs with the repository moved aside: BM-1 and BM-2 can't have their `refs/tracker/<ID>` checked, and the heading says each problem is "a sign that the store was edited by hand, or something audit couldn't check", since a moved repository isn't an edit.
 - **`--help`.** `digest ack --help` starts with its one-line summary. [Commands](#commands) lists each command's.
 - **Nothing in the demo shows a `--json` output.** [JSON output](#json-output) says what each prints.
 
@@ -250,14 +297,14 @@ Notes on the output:
 
 | Command | What it does |
 | --- | --- |
-| `digest [--project KEY] [--all]` | Prints each covered project's digest: auto-verified items since its last ack, judge-passed first, then shelves, human actions and trigger-switching edits, oldest first. Inside a project root it covers that project, and outside every root, or with `--all`, every project, as `list` picks. `--project` and `--all` conflict. A project with nothing to list says its digest is empty |
-| `digest ack [--project KEY]` | Interactive only. Shows the digest, asks for `ack`, then builds it again under the lock, and records nothing, with exit 1, if it changed. Otherwise writes the project's entry in `digests.json` and prints how many items and actions it covered. Outside every root it needs `--project` |
-| `review` | Also lists each project whose digest is overdue, after the held items, and says "No items are held for review." when only a digest is overdue |
+| `digest [--project KEY] [--all]` | Prints each covered project's digest, starting with its last ack (time, from a terminal or not, counts): auto-verified items since it, judge-passed first and each with the questions its judges were asked, then shelves, human actions and trigger-switching edits, oldest first. Inside a project root it covers that project, and outside every root, or with `--all`, every project, as `list` picks. `--project` and `--all` conflict. A project with nothing to list says its digest is empty |
+| `digest ack [--project KEY]` | Interactive only. Refuses with exit 3, before it asks, while an item file named for the project can't be read. Otherwise shows the digest, asks for `ack`, then builds it again under the lock, and records nothing, with exit 1, if it changed. Otherwise writes the project's entry in `digests.json` and prints how many items and actions it covered. Outside every root it needs `--project` |
+| `review` | Also lists each project whose digest is overdue, with its last ack, after the held items, and says "No items are held for review." when only a digest is overdue |
 | `audit` | Reports signs that the store was edited by hand, across every project. Changes nothing, and exits 0 whatever it finds |
 | `judges` | Shows, for each judge question, the approve and reject counts, split by the held question's trigger and answer |
 | `approve`, `reject`, `review`, `digest`, `digest ack`, `audit`, `judges` `--help` | Each has help text to slice 5's standard: a one-line summary, a longer description and each flag's help, with `--json` documented |
 
-`audit` and `judges` have no flags besides `--json`. `digest ack`'s confirmation is the one slice 4 built ([`tty::confirm`](../src/tty.rs)), given `ack` as the word to type, so it behaves as `approve`'s does: the key can be typed in either case, and anything else, an empty line or the end of input cancels with exit 1. The warning and question go to stderr, so `--json` output stays one object. The exit codes are as in [§3](DESIGN.md#3-interface): a refused `digest ack` (no terminal, a different word, an unknown or missing project, or a digest that changed while it asked) exits 1, a missing or unreadable store exits 3, and `audit`'s findings exit 0. A `digests.json` that can't be parsed exits 3 with a message that says what it holds and that only `digest ack` writes it.
+`audit` and `judges` have no flags besides `--json`. `digest ack`'s confirmation is the one slice 4 built ([`tty::confirm`](../src/tty.rs)), given `ack` as the word to type, so it behaves as `approve`'s does: the key can be typed in either case, and anything else, an empty line or the end of input cancels with exit 1. The warning and question go to stderr, so `--json` output stays one object. The exit codes are as in [§3](DESIGN.md#3-interface): a refused `digest ack` (no terminal, a different word, an unknown or missing project, or a digest that changed while it asked) exits 1, a missing or unreadable store exits 3, as does a `digest ack` while an item file of the project can't be read, and `audit`'s findings exit 0. A `digests.json` that can't be parsed exits 3 with a message that says what it holds and that only `digest ack` writes it.
 
 ## What digests.json holds
 
@@ -270,23 +317,23 @@ Notes on the output:
 | `verified` | How many auto-verified items the acknowledged digest listed |
 | `actions` | How many shelves, human actions and edits it listed |
 
-Removing a project's entry lists everything again. A project with no entry has never been acknowledged, and its digest says so. Times are kept to the second, and an entry is "since the ack" if it's strictly after `at`, so `digest ack` holds the lock until the clock has passed `at`. Without that wait, an item auto-verified in the same second after the ack would be missed by the next digest.
+`digest` and `review` print the entry as the project's last ack: when, whether it was from a terminal, and its counts. It holds only the last ack, so a later one overwrites it, which [§7](DESIGN.md#7-honest-limits) says: an ack made under `script` looks like a human's and replaces the one before it. Removing a project's entry lists everything again. A project with no entry has never been acknowledged, and its digest says so. Times are kept to the second, and an entry is "since the ack" if it's strictly after `at`, so `digest ack` holds the lock until the clock has passed `at`. Without that wait, an item auto-verified in the same second after the ack would be missed by the next digest.
 
 ## How it works
 
 ### Building a digest
 
-`digest::build` in [src/digest.rs](../src/digest.rs) takes one project key, every item, the readable lines of `deleted.json` (`deleted_records`) and the project's last `Ack`, and returns a `Digest` with no I/O of its own. An item is listed as verified if it's `done`, its record is `auto` and the record's time is after the ack. `judged` is true when the record has any judge entry. Each history entry after the ack that is a `shelve`, `approve`, `reject` or `criterion-accept`, or an `edit` with `needs-review` in `labels_removed` or a `kind_before` of `capability`, becomes an `Action`, with the entry's `interactive`, reason and `held_questions`. A shelve of an item with a judge criterion is marked `judged`, since starting it again empties its T11 count ([§7](DESIGN.md#7-honest-limits)), so a shelve and a later reopen and `start` is worth a look. Each `deleted.json` line for the project that has an ID and a time, and a time after the ack, becomes a `delete` action, with its `interactive` and `status`. A line that can't be read as a delete record is left out here, and `audit` reports it. Verified items are sorted judge-passed first, then oldest first. Actions are sorted oldest first. The sorts are stable, so entries in the same second keep the items' order.
+`digest::build` in [src/digest.rs](../src/digest.rs) takes one project key, every item, the readable lines of `deleted.json` (`deleted_records`) and the project's last `Ack`, and returns a `Digest` with no I/O of its own. An item is listed as verified if it's `done`, its record is `auto` and the record's time is after the ack. `judged` is true when the record has any judge entry. Each history entry after the ack that is a `shelve`, `approve`, `reject` or `criterion-accept`, or an `edit` with `needs-review` in `labels_removed` or a `kind_before` of `capability`, becomes an `Action`, with the entry's `interactive`, reason and `held_questions`. A shelve of an item with a judge criterion is marked `judged`, since starting it again empties its T11 count ([§7](DESIGN.md#7-honest-limits)), so a shelve and a later reopen and `start` is worth a look. Each `deleted.json` line for the project that has an ID and a time, and a time after the ack, becomes a `delete` action, with its `interactive` and `status`. A line that can't be read as a delete record is left out here, and `audit` reports it. Verified items are sorted judge-passed first, then oldest first. Actions are sorted oldest first. The sorts are stable, so entries in the same second keep the items' order. `Digest::last_ack` is the `Ack` as recorded, for the text and JSON to show. For a verified item, `asked` finds the question each judge answer was for, by its ref `c<n>:<id>`, in the item's criteria and returns it as `Verified::questions`. An answer whose question is no longer in the item has no entry there, and the digest prints that answer without a question.
 
-`digest` and `digest_text` in [src/main.rs](../src/main.rs) print it. Text from an agent, such as a title, a criterion, a reason or a judge's reason, goes through `text::for_terminal`, since it can hold control characters. A project's digest is built from all its items, so an item file that can't be read is skipped and the output says how many were skipped ([slice 5](slice-5-readme.md)).
+`digest` and `digest_text` in [src/main.rs](../src/main.rs) print it. Text from an agent, such as a title, a criterion, a reason or a judge's reason, goes through `text::for_terminal`, since it can hold control characters. `ack_detail` words the last ack, as `, from a terminal, with 2 items and 1 action`, for the digest's heading and for `review`. A project's digest is built from all its items, so an item file that can't be read is skipped and the output says how many were skipped ([slice 5](slice-5-readme.md)). `digest ack` doesn't go on over a skipped file, as the next section says.
 
 ### Acknowledging a digest
 
-`digest_ack` in [src/main.rs](../src/main.rs) picks the project (`--project`, or the current folder's, or an error that names the registered ones), builds the digest (`project_digest`), and calls `tty::confirm` with the word `ack`. That refuses without a terminal. The digest is shown in the warning, so what's acknowledged is what was read. After the word is typed, it takes the store's lock and builds the digest again. `Digest` derives `PartialEq`, so any difference at all, such as an item auto-verified while the question waited, makes it return an error that records nothing and exits 1, and says to run the command again. If they match, it writes the project's entry (`write_acks`, atomically, like every store write), then waits until the clock passes the ack's second ([What digests.json holds](#what-digestsjson-holds)) before it releases the lock. This is the check `Store::lock_unchanged` makes for an item, but over a project's digest, since there's no item file to read again.
+`digest_ack` in [src/main.rs](../src/main.rs) picks the project (`--project`, or the current folder's, or an error that names the registered ones), loads the items and returns a store error, exit 3, if a file whose name puts it in that project (`digest::key_of`) can't be read, before it asks and before the lock, since that file may be an auto-verified item the digest would leave out unseen. It then builds the digest (`project_digest`) and calls `tty::confirm` with the word `ack`. That refuses without a terminal. The digest is shown in the warning, so what's acknowledged is what was read. After the word is typed, it takes the store's lock and builds the digest again. `Digest` derives `PartialEq`, so any difference at all, such as an item auto-verified while the question waited, makes it return an error that records nothing and exits 1, and says to run the command again. If they match, it writes the project's entry (`write_acks`, atomically, like every store write), then waits until the clock passes the ack's second ([What digests.json holds](#what-digestsjson-holds)) before it releases the lock. This is the check `Store::lock_unchanged` makes for an item, but over a project's digest, since there's no item file to read again.
 
 ### The overdue flag
 
-`overdue_digests` in [src/main.rs](../src/main.rs) builds every project's digest, and `digest::is_overdue` compares the oldest entry's time (`Digest::oldest`) with now: overdue means at least `every_days` days (86,400 seconds each) old. An empty digest has no oldest entry and is never overdue. `Project::digest_every_days` in [src/config.rs](../src/config.rs) reads `review.digest.every_days`, which was stored but unread until now, and defaults to 7 (`DEFAULT_DIGEST_EVERY_DAYS`). `review` prints each overdue digest after the held items, and `review --json` has `overdue_digests` when any is ([JSON output](#json-output)). The flag doesn't hold anything or change an exit code: `review` is an inbox, and it's the human who acknowledges.
+`overdue_digests` in [src/main.rs](../src/main.rs) builds every project's digest, and `digest::is_overdue` compares the oldest entry's time (`Digest::oldest`) with now: overdue means at least `every_days` days (86,400 seconds each) old. An empty digest has no oldest entry and is never overdue. `Project::digest_every_days` in [src/config.rs](../src/config.rs) reads `review.digest.every_days`, which was stored but unread until now, and defaults to 7 (`DEFAULT_DIGEST_EVERY_DAYS`). `review` prints each overdue digest after the held items, and `review --json` has `overdue_digests` when any is ([JSON output](#json-output)), and each names its last ack in the text and as `last_ack`. The flag doesn't hold anything or change an exit code: `review` is an inbox, and it's the human who acknowledges.
 
 ### Auditing the store
 
@@ -297,7 +344,7 @@ Removing a project's entry lists everything again. A project with no entry has n
 - **`ref`:** a done item whose record is `auto` or `human` needs `refs/tracker/<ID>` to exist and to point at the record's `commit` (`ref_problem`, using `git::ref_target`, which resolves the ref to a full SHA, or `None` if there's none). A record that names no commit, or a project root that can't be found, is reported as unable to be checked. An `unchecked` record, from slice 2, has no ref.
 - **`held`:** `holds` and `held_questions` are there only while an item is in review ([§4.3](DESIGN.md#43-item-file)), and a T12 hold comes with its disputed questions, so an item outside review with either, a T12 hold with no T12 question, or a T12 question with no T12 hold is reported. `audit` doesn't check that each disputed question's request matches an answer, since that needs the judge cache.
 
-`check_deleted` goes through `deleted.json` line by line: a line that can't be read as a record with a valid ID, an ID that's also an item, an ID deleted on two lines, and a line whose ID number is at or above its project's counter in `counters.json`, which only a hand-written line can be ([slice 4's review 1](reviews/slice-4-review-1.md), finding 7). `audit` in [src/main.rs](../src/main.rs) loads everything, prints the problems, one line each, and then says how many item files were skipped. It reads `judge/` nowhere, and says so in [§7](DESIGN.md#7-honest-limits).
+`check_deleted` goes through `deleted.json` line by line: a line that can't be read as a record with a valid ID, an ID that's also an item, an ID deleted on two lines, and a line whose ID number is at or above its project's counter in `counters.json`, which only a hand-written line can be ([slice 4's review 1](reviews/slice-4-review-1.md), finding 7). `audit` in [src/main.rs](../src/main.rs) loads everything, prints the problems, one line each under a heading that calls each "a sign that the store was edited by hand, or something audit couldn't check" (`ref_problem`'s "can't be checked" lines, for a root that has moved or a git that fails, are the second kind), and then says how many item files were skipped. It reads `judge/` nowhere, and says so in [§7](DESIGN.md#7-honest-limits).
 
 ### Counting decisions
 
@@ -307,15 +354,15 @@ Removing a project's entry lists everything again. A project with no entry has n
 
 ## JSON output
 
-Four commands are new, and one gained a field:
+Four commands are new, and one gained a field. Review 1 added `last_ack` to a digest and to each of `review`'s overdue digests, and `questions` to a verified entry:
 
 | Command | Output | Schema |
 | --- | --- | --- |
-| `digest --json` | `{"project": <key or null>, "digests": [...], "skipped": [...]}`. Each digest has `project`, `acknowledged` (a time, or null), `verified` (each with `id`, `title`, `judged`, `criteria` and the item's `verification` record) and `actions` (each with `id`, `title`, `action`, `at`, `interactive`, and, when they apply, `reason`, `status`, `judged`, `labels_removed`, `kind_before` and `held_questions`). `project` is the key it covered, or null for every project | [digest.schema.json](../schemas/digest.schema.json) |
+| `digest --json` | `{"project": <key or null>, "digests": [...], "skipped": [...]}`. Each digest has `project`, `acknowledged` (a time, or null), `last_ack` (the recorded ack: `at`, `interactive`, `verified` and `actions`, left out when never acknowledged), `verified` (each with `id`, `title`, `judged`, `criteria`, `questions` when a judge was asked, each with its `ref` and `ask`, and the item's `verification` record) and `actions` (each with `id`, `title`, `action`, `at`, `interactive`, and, when they apply, `reason`, `status`, `judged`, `labels_removed`, `kind_before` and `held_questions`). `project` is the key it covered, or null for every project | [digest.schema.json](../schemas/digest.schema.json) |
 | `digest ack --json` | `{"project", "acknowledged", "verified", "actions"}` | [digest-ack.schema.json](../schemas/digest-ack.schema.json) |
 | `audit --json` | `{"items": <how many it read>, "problems": [...], "skipped": [...]}`. Each problem has `problem` (`status`, `verification`, `ref`, `held`, `id` or `deleted`), `message`, and the item's `id` when it names one | [audit.schema.json](../schemas/audit.schema.json) |
 | `judges --json` | `{"questions": [...], "skipped": [...]}`. Each question has `project`, `ask` (left out for decisions recorded before TR-53), `question` (the id) and `held`: for each trigger and answer, `trigger`, `answer`, `held_as`, `approved` and `rejected` | [judges.schema.json](../schemas/judges.schema.json) |
-| `review --json` | `overdue_digests`: for each project whose digest is overdue, `project`, `entries`, `oldest` and `acknowledged`. Left out when none is, so slice 9's shape is unchanged | [review.schema.json](../schemas/review.schema.json) |
+| `review --json` | `overdue_digests`: for each project whose digest is overdue, `project`, `entries`, `oldest`, `acknowledged` and `last_ack`, as in the digest. Left out when none is, so slice 9's shape is unchanged | [review.schema.json](../schemas/review.schema.json) |
 
 Every output holding an item still gets its shape from [item.schema.json](../schemas/item.schema.json), which didn't change. `tests/common/mod.rs`'s `schema_for` knows the four new commands, and `Env::json` checks each output against its schema. A later field on a digest entry or a question's counts can be added without breaking these, since the schemas are open to a reader that ignores what it doesn't know, but a reader that wants a new count must read the schema.
 
@@ -323,22 +370,22 @@ Every output holding an item still gets its shape from [item.schema.json](../sch
 
 | File | What's new or changed |
 | --- | --- |
-| [src/digest.rs](../src/digest.rs) | New, 240 lines. `Ack`, `Digest` (`entries`, `oldest`), `Verified`, `Action`, `read_acks` and `write_acks` for `digests.json`, `deleted_records`, `key_of`, `build` and `is_overdue` |
+| [src/digest.rs](../src/digest.rs) | New, 285 lines. `Ack`, `Digest` (`entries`, `oldest`, `last_ack`), `Verified` (`questions`), `Asked`, `asked`, `Action`, `read_acks` and `write_acks` for `digests.json`, `deleted_records`, `key_of`, `build` and `is_overdue` |
 | [src/audit.rs](../src/audit.rs) | New, 220 lines. `Problem`, `run`, `check_item`, `ref_problem` and `check_deleted` |
 | [src/decisions.rs](../src/decisions.rs) | New, 125 lines. `Question`, `Held`, `held_as` and `tally` |
-| [src/main.rs](../src/main.rs) | `Digest`, `Audit` and `Judges` commands, `DigestCommand::Ack` and their help text, `digest`, `digest_text`, `verified_text`, `action_text`, `project_digest`, `digest_ack`, `audit`, `judges`, `known_project`, `current_dir`, `plural`, `overdue_digests`, and `review` (the overdue digests, in text and JSON) |
+| [src/main.rs](../src/main.rs) | `Digest`, `Audit` and `Judges` commands, `DigestCommand::Ack` and their help text, `digest`, `digest_text`, `verified_text`, `action_text`, `project_digest`, `digest_ack`, `audit`, `judges`, `known_project`, `current_dir`, `plural`, `overdue_digests`, `ack_detail` (the last ack's wording), `digest_ack`'s refusal over an unreadable item, and `review` (the overdue digests, in text and JSON) |
 | [src/config.rs](../src/config.rs) | `DEFAULT_DIGEST_EVERY_DAYS` and `Project::digest_every_days` |
 | [src/git.rs](../src/git.rs) | `ref_target`: the commit `refs/tracker/<ID>` points at, or `None` |
 | [src/store.rs](../src/store.rs) | `digests_path`, and `read_counters` and `read_deleted` made public for `audit` |
 | [src/tty.rs](../src/tty.rs) | One doc comment: `digest ack` is no longer "later" |
 | [src/lib.rs](../src/lib.rs) | The three new modules |
-| [schemas/digest.schema.json](../schemas/digest.schema.json), [digest-ack.schema.json](../schemas/digest-ack.schema.json), [audit.schema.json](../schemas/audit.schema.json) and [judges.schema.json](../schemas/judges.schema.json) | New, one for each command |
-| [schemas/review.schema.json](../schemas/review.schema.json) | `overdue_digests` |
-| [tests/digest.rs](../tests/digest.rs) | New, 564 lines, 10 tests: `tr12_c1_`, `tr12_c2_`, `tr12_c3_`, `tr12_c10_` and `tr12_c11_`, with a fake judge, `reply`, `two_projects`, `auto_verified`, `judge_verified` and `ack` helpers |
+| [schemas/digest.schema.json](../schemas/digest.schema.json) (`last_ack` and `questions` added by TR-55), [digest-ack.schema.json](../schemas/digest-ack.schema.json), [audit.schema.json](../schemas/audit.schema.json) and [judges.schema.json](../schemas/judges.schema.json) | New, one for each command |
+| [schemas/review.schema.json](../schemas/review.schema.json) | `overdue_digests`, and `last_ack` in each (TR-55) |
+| [tests/digest.rs](../tests/digest.rs) | New, 715 lines, 16 tests: `tr12_c1_`, `tr12_c2_`, `tr12_c3_`, `tr12_c10_` and `tr12_c11_`, then the `tr55` module's six, `tr55_c1_` to `tr55_c5_`, with a fake judge, `reply`, `two_projects`, `auto_verified`, `judge_verified` and `ack` helpers |
 | [tests/audit.rs](../tests/audit.rs) | New, 261 lines, 8 tests: `tr12_c4_`, `tr12_c5_`, `tr12_c7_` and `tr12_held_` |
 | [tests/judge_report.rs](../tests/judge_report.rs) | New, 316 lines, 4 tests: `tr12_c6_`, `tr12_c8_` and `tr12_c9_`, with `only_question` and `counts` helpers |
 | [tests/common/mod.rs](../tests/common/mod.rs) | `schema_for` gained four match arms: `digest ack`, `digest`, `audit` and `judges` |
-| [docs/DESIGN.md](DESIGN.md) | §2.3.2 (what `judges` splits and reads, and the dispute check's wording), §2.6 (overdue), §3's `audit` and `judges` rows, §6's two rows, §7's two bullets on `audit`. 18 lines changed |
+| [docs/DESIGN.md](DESIGN.md) | §2.3.2 (what `judges` splits and reads, and the dispute check's wording), §2.6 (overdue), §3's `audit` and `judges` rows, §6's two rows, §7's two bullets on `audit`. 18 lines changed. TR-55 changed 3 more: §2.6 (the verification commit, and no record never listed), §3's `review` row (overdue) and §7's bullet on the terminal check (`digest ack` under `script`) |
 | [docs/PLAN.md](PLAN.md) | Slice 16's status, `todo` to `in review` (`93637e2`). `8b8670c` marked it `in progress` |
 
 To add another kind of digest entry, add its `Via` to `build`'s `listed` match and, if it needs a new field, to `Action` and `action_text`, then to [digest.schema.json](../schemas/digest.schema.json). To add another check to `audit`, add it to `check_item` or `check_deleted`, name its `problem` kind in [audit.schema.json](../schemas/audit.schema.json), and add a `tr12_c…`-style test that writes the sign by hand. To add another command, give it a schema first and a match arm in `schema_for`, as [CLAUDE.md](../CLAUDE.md) says.
@@ -347,7 +394,7 @@ To add another kind of digest entry, add its `Via` to `build`'s `listed` match a
 
 Run the test command in `tracker/`. TR-12's criteria run their own tests by prefix, such as `cargo test --test digest tr12_c1_`, and criteria 8 and 9 add a `grep` of DESIGN.md after their test. No test calls `tracker-judge` or the real `claude`: the harness's guard from [slice 14](slice-14-readme.md#testing) puts a failing one first on `PATH`, and each test that needs a judge sets the store's `judge.command` to a fake. The harness ([tests/common/mod.rs](../tests/common/mod.rs)) changed only by the four `schema_for` arms.
 
-**The tests that need a terminal** use `Env::in_terminal` or `Env::in_terminal_typing`, so they run under `script`, and return early, passing without checking anything (or the part after it), where `script` isn't installed, as slice 9's do. Nine of the 22 are such tests: `tr12_c1_digest_ack_project_empties_only_that_projects_digest`, `tr12_c2_digest_ack_asks_for_ack_and_anything_else_cancels`, `tr12_c2_an_item_verified_while_the_question_waits_stops_the_ack`, `tr12_c3_shelves_human_actions_and_trigger_edits_are_listed_marked_by_terminal`, `tr12_c6_judges_shows_the_approve_and_reject_counts_for_each_question`, `tr12_c7_audit_reports_a_human_approved_items_missing_ref`, `tr12_c8_judges_splits_counts_by_the_held_questions_trigger_and_answer`, `tr12_c8_an_each_question_counts_once_per_decision` and `tr12_held_audit_reports_holds_on_an_item_not_in_review`. `tr12_c10_` runs its main checks without a terminal and acknowledges at the end under `script`.
+**The tests that need a terminal** use `Env::in_terminal` or `Env::in_terminal_typing`, so they run under `script`, and return early, passing without checking anything (or the part after it), where `script` isn't installed, as slice 9's do. Nine of TR-12's 22 are such tests: `tr12_c1_digest_ack_project_empties_only_that_projects_digest`, `tr12_c2_digest_ack_asks_for_ack_and_anything_else_cancels`, `tr12_c2_an_item_verified_while_the_question_waits_stops_the_ack`, `tr12_c3_shelves_human_actions_and_trigger_edits_are_listed_marked_by_terminal`, `tr12_c6_judges_shows_the_approve_and_reject_counts_for_each_question`, `tr12_c7_audit_reports_a_human_approved_items_missing_ref`, `tr12_c8_judges_splits_counts_by_the_held_questions_trigger_and_answer`, `tr12_c8_an_each_question_counts_once_per_decision` and `tr12_held_audit_reports_holds_on_an_item_not_in_review`. `tr12_c10_` runs its main checks without a terminal and acknowledges at the end under `script`. Of TR-55's six, `tr55_c3_` and `tr55_c5_` ack under `script` and return early without it, and `tr55_c1_` checks the refusal without a terminal and the two acks under `script` only where it's installed.
 
 ### Coverage of the _Done when_ checks
 
@@ -355,7 +402,7 @@ Run the test command in `tracker/`. TR-12's criteria run their own tests by pref
 | --- | --- |
 | `digest` lists every item auto-verified since that project's last ack, judge-passed first. `digest ack --project XX` empties only XX's digest. | `tr12_c1_`, 2 tests: `tr12_c1_digest_lists_every_auto_verified_item_judge_passed_first` and `tr12_c1_digest_ack_project_empties_only_that_projects_digest` (under `script`) |
 | From a terminal, `digest ack` asks for `ack`. Typing the project key, or anything else, cancels with exit 1. An item auto-verified while the question waits makes it exit 1, record nothing, and stay in the next digest. | `tr12_c2_`, 3 tests: `tr12_c2_digest_ack_asks_for_ack_and_anything_else_cancels`, `tr12_c2_outside_every_root_digest_ack_needs_a_project` and `tr12_c2_an_item_verified_while_the_question_waits_stops_the_ack` |
-| A shelve from piped stdin and one under `script` are listed, marked not from a terminal and from a terminal. So are a delete and an approve, an edit that removes `needs-review` and one that changes kind from `capability` to `change`. An edit that only adds a label isn't. | `tr12_c3_`, 2 tests: `tr12_c3_a_piped_shelve_is_listed_as_not_from_a_terminal` and `tr12_c3_shelves_human_actions_and_trigger_edits_are_listed_marked_by_terminal` (the shelve under `script`, the `approve` and `delete`, and each edit) |
+| A shelve from piped stdin and one under `script` are listed, marked not from a terminal and from a terminal. So are a delete and an approve, an edit that removes `needs-review` and one that changes kind from `capability` to `change`. An edit that only adds a label isn't. | `tr12_c3_`, 2 tests: `tr12_c3_a_piped_shelve_is_listed_as_not_from_a_terminal` and `tr12_c3_shelves_human_actions_and_trigger_edits_are_listed_marked_by_terminal` (the shelve under `script`, the `approve` and `delete`, and each edit). "Since the last ack" for actions is TR-55's `tr55_c5_an_action_before_the_ack_is_left_out_and_one_after_is_listed` |
 | `audit` reports a hand-edited status, a done item with no verification record, and an ID used twice. | `tr12_c4_`, 3 tests: `tr12_c4_audit_reports_a_hand_edited_status`, `tr12_c4_audit_reports_a_done_item_with_no_verification_record` and `tr12_c4_audit_reports_an_id_used_twice` |
 | `audit` reports a `deleted.json` line whose ID is at or above its project's counter. | `tr12_c5_`, 2 tests: `tr12_c5_audit_reports_a_deleted_line_at_or_above_its_counter` and `tr12_c5_audit_reports_a_line_that_cant_be_read` |
 | `judges` shows the approve and reject counts for each question. | `tr12_c6_judges_shows_the_approve_and_reject_counts_for_each_question` (a rejected and an approved dispute of one question, text and `--json`) |
@@ -373,24 +420,32 @@ Requirements from the _Prompt_ and the settled points that no _Done when_ bullet
 | A decision counts once per question, however many `each` matches it held. | `tr12_c8_an_each_question_counts_once_per_decision` |
 | `audit` reports holds on an item that isn't in review. | `tr12_held_audit_reports_holds_on_an_item_not_in_review` |
 | Every `--json` output matches its schema. | `Env::json`, which checks each output against its schema |
+| `digest ack` refuses with exit 3, and records nothing, while an item file of the project can't be read (review 1, bug 1). | `tr55_c1_digest_ack_refuses_while_an_item_file_of_the_project_is_unreadable` |
+| A judged shelve points to `tracker show <ID>`, and `audit`'s heading allows for a ref it can't check (bugs 2 and 3). | `tr55_c2_a_judged_shelve_points_to_tracker_show` and `tr55_c2_audit_does_not_call_an_unchecked_ref_a_hand_edit` |
+| `digest` and `review` show the last ack: time, from a terminal or not, counts (security 1). | `tr55_c3_review_and_digest_show_the_last_ack` |
+| A judge-passed entry prints each question asked (design 2). | `tr55_c4_a_judge_passed_entry_prints_each_question_asked` |
+| §2.6, §3 and §7 say what review 1 asked (security 1, designs 1 to 3). | TR-55's criterion 6, four `grep`s of DESIGN.md, which failed at `start` |
 
 Not covered by a test:
 
 - **An unreadable `digests.json`.** No test writes one by hand and checks the exit 3 and its message.
-- **A shelve of a judged item.** `action_text` prints its warning, and `build` sets `judged`, but no test reads either.
 - **A decision with no `ask`.** `tally` groups it by the question's id, but no test feeds it a history entry written before TR-53 (the two files in [tests/fixtures/slice-15/](../tests/fixtures/slice-15/) have none, but only `fixtures.rs` reads them).
 - **`audit`'s `held` check for a T12 question with no T12 hold.** The test covers holds on an item that isn't in review, and `check_item` also covers the two T12 cases.
-- **`--all` for `digest`,** and an item file that can't be read, in `digest`, `audit` and `judges`' skipped note.
+- **An item file that can't be read, in `digest`, `audit` and `judges`' skipped note.** `digest ack`'s refusal over one has a test, `tr55_c1_`. Review 1's test gap 3 asked for the rest and was left out.
 
-**Seen failing first.** All eleven of TR-12's checks failed at `start`, at `a877beb`, which was committed about a minute before it. Criteria 1 to 7, 10 and 11 exercise commands that didn't exist. Criterion 8's test and its `grep` both failed, since `judges` didn't exist and §6 didn't say it. Criterion 9's test, `tr12_c9_a_dispute_beside_a_missing_input_is_refused_for_g3`, passed at `start`, since `apply`'s `unasked` check already did what §2.3.2 now says, so the criterion failed through its `grep`, and T13 stayed quiet. The schema arms in `tests/common/mod.rs` were in `a877beb` too. They are additions only, which is why T4 stayed quiet.
+**Seen failing first (TR-12).** All eleven of TR-12's checks failed at `start`, at `a877beb`, which was committed about a minute before it. Criteria 1 to 7, 10 and 11 exercise commands that didn't exist. Criterion 8's test and its `grep` both failed, since `judges` didn't exist and §6 didn't say it. Criterion 9's test, `tr12_c9_a_dispute_beside_a_missing_input_is_refused_for_g3`, passed at `start`, since `apply`'s `unasked` check already did what §2.3.2 now says, so the criterion failed through its `grep`, and T13 stayed quiet. The schema arms in `tests/common/mod.rs` were in `a877beb` too. They are additions only, which is why T4 stayed quiet.
+
+**Seen failing first (TR-55).** Criteria 1 to 4 and 6 failed at `start`, at `dc9a2ef`. Criterion 5's check passed at `start`, since the `since` filter already left out earlier actions. The builder saw `tr55_c5_an_action_before_the_ack_is_left_out_and_one_after_is_listed` fail by replacing the filter with one that lets everything through, then restored the file. T13 held the item for it, and the user approved it ([Tracking TR-55](#tracking-tr-55)).
 
 ### Checks done by hand
 
 | What | How | Result |
 | --- | --- | --- |
-| The demo above | Run line by line with the fake judge, stderr captured, on a temporary `TRACKER_HOME`, with the temporary folder replaced by `$DEMO`. The real `claude` and `tracker-judge` weren't called, and the temporary folder was deleted | The output above. Every refusal exits as marked |
+| The demo above | Run line by line with the fake judge, stderr captured, on a temporary `TRACKER_HOME`, with the temporary folder replaced by `$DEMO`. The real `claude` and `tracker-judge` weren't called, and the temporary folder was deleted | The output above, re-run at `8b84977` with a fifth item, a hand-written ack and a moved repository added. Every refusal exits as marked |
 | TR-12's checks, before the approve | The orchestrator checked by hand that the six written criteria are unchanged, that all eleven checks failed at `start`, and that every commit since `start` is scoped to TR-12 | All three held |
 | TR-12's approve in a real terminal | The user read the diff and approved it | `by: human` at `93637e2`, with `refs/tracker/TR-12` and three holds |
+| TR-55's checks, before the approve | The orchestrator checked by hand that the six written criteria are unchanged and that every commit since `start` is scoped to TR-55 | Both held |
+| TR-55's approve in a real terminal | The user's first `tracker approve TR-55` was refused: G4 failed on the flaky `tracker_judge::c5_a_judge_timeout_stops_the_claude_that_tracker_judge_started` (TR-56). The second passed | `by: human` at `8b84977`, with `refs/tracker/TR-55` and three holds |
 
 ### Tracking TR-12
 
@@ -411,7 +466,7 @@ TR-12, a `capability` with `design` `docs/DESIGN.md#2.6`, was created at 2026-11
 
 ## Decisions worth knowing
 
-These are the "Slice 16 must decide" points from slice 15's reviews, and what the slice chose:
+The first group is the "Slice 16 must decide" points from slice 15's reviews, and what the slice chose. The last seven came from [review 1](reviews/slice-16-review-1.md)'s fixes:
 
 - **`judges` groups a question by its `ask`, per project, and falls back to the ref's question id.** A ref's criterion number and `file:line` change, and a question id is unique only within one judge file, so the text is the stable key ([§4.3](DESIGN.md#43-item-file)). A decision recorded before TR-53 has no `ask`, so it's grouped by the id, apart from any question that has its text, and printed as "its text wasn't recorded".
 - **Counts are split by trigger and answer, and they're never added.** Under `auto_verify: false`, approving a passing answer agrees with the judge and approving a disputed fail overrules it, so one total would mix them. `held_as` names which each is: `disputed`, `unsure` or `passed`. §2.3.2 and §6 say so (criterion 8).
@@ -428,10 +483,82 @@ These are the "Slice 16 must decide" points from slice 15's reviews, and what th
 - **`digest ack` waits out the second.** It holds the lock until the clock passes the ack's time, so an entry written in the same second isn't missed ([What digests.json holds](#what-digestsjson-holds)).
 - **The digest lists my own actions, marked.** §2.6 says the terminal check can be got around on purpose, so leaving mine out would hide an action that got round it. Each line says "from a terminal" or "not from a terminal", and the digest says to check that you made each one marked from a terminal.
 - **`digest ack` takes a project and not an ID,** so the word typed is `ack`. Typing the project key cancels it, as the check says.
+- **`digest ack` refuses over an unreadable item and doesn't just warn.** The ack's purpose is that nothing unseen is marked seen ([§2.7](DESIGN.md#27-human-actions)), and an unreadable file may be the item that matters, so it exits 3 before asking, as G1 refuses at `start`. The check comes before the lock, since it only reads, and the digest's own comparison under the lock stays.
+- **Only the last ack is kept, and it's shown.** `digests.json` holds one entry per project, so an ack made under `script` overwrites the one before it. The digest and `review` name the last ack's time, whether it came from a terminal, and its counts, so one the user didn't make stands out, and §7 says so. Keeping every ack and listing the ones since the user's last look isn't done.
+- **`review` shows an overdue digest, not a pending one.** §3 says so now. A line for every digest with entries would leave the inbox never empty, and the weekly rhythm in §2.6 is the point.
+- **A judge question is read from the item's criteria when the digest is built.** `asked` matches a judge answer's ref `c<n>:<id>` to the criterion's question, so the digest shows the question as the item holds it now, and an answer whose question was removed shows without one.
+- **The digest never lists done items with no verification record.** TR's 18 early `unchecked` items predate the gates and no human or gate looked at them, so §2.6 says they never appear, instead of giving them a heading.
+- **A judged shelve's warning points to `tracker show <ID>`.** The digest lists no reopen or `start`, so the warning names the place that does. Listing a reopen of a judged item isn't done.
+- **`audit` words one heading for two kinds of finding.** A ref it can't check is under the same heading as a hand edit, which now allows for "something audit couldn't check". A separate `problem` kind for it isn't added.
+
+## Fixes after review 1
+
+[Review 1](reviews/slice-16-review-1.md) found that slice 16 does what PLAN.md asks, with three bugs, one security item, three design questions, three test gaps and one process point. Its main findings were that `digest ack` could acknowledge a digest built without an item file it couldn't read (bug 1), that `digest ack` run under `script` acknowledges like a human and overwrites the last ack (security 1), that §3 said `review` shows a pending digest though only an overdue one shows (design 1), and that a judge-passed entry didn't show the questions asked (design 2). The fixes were built as one item, TR-55, so the user approves once, with its tests committed before `tracker start`: `dc9a2ef` (tests), `0bfd2a9` (DESIGN.md) and `8b84977` (the code and schemas). The review's pick was taken every time. The review's [Outcome](reviews/slice-16-review-1.md#outcome) gives the reason for each decision, and this readme update is process 1.
+
+### Tracking TR-55
+
+TR-55 is a `fix`, created at 2026-11-23T23:51:54Z and tracked with the installed slice 15 binary, so T5, T13 and T14 ran on it. It has 6 criteria, and the orchestrator checked by hand that they're unchanged and that every commit since `start` is scoped to TR-55.
+
+| Step | When (UTC) | What |
+| --- | --- | --- |
+| Tests, committed | 23:53:49Z | `dc9a2ef`, 10 seconds before `start` |
+| `tracker start TR-55` | 23:53:59Z | `started.head` `dc9a2ef`. Criteria 1 to 4 and 6 failed, and criterion 5 passed |
+| The docs and code | after `start` | `0bfd2a9` and `8b84977`, at 23:55:18Z |
+| `tracker submit TR-55` | 00:06:30Z (24 Nov) | The gates passed, then the triggers ran. Held under T7, T8 and T13 |
+| `tracker approve TR-55` | 02:38:19Z (24 Nov) | From a terminal, at the second try, verified `human` at `8b84977`, with `refs/tracker/TR-55` |
+
+- **The three holds** read: T7, "315 lines changed, more than the project's max_diff_lines of 300". T8, "the project's design doc changed: docs/DESIGN.md". T13, "criterion 5's check already passed before the work, so it can't be proving it". T4 stayed quiet: `dc9a2ef` only adds tests.
+- **Why T13 fired.** The `since` filter already left out an action from before an ack, so `tr55_c5_an_action_before_the_ack_is_left_out_and_one_after_is_listed` passed at `start`. It pins what review 1's test gap 1 found untested. The builder saw it fail by replacing the filter with one that lets everything through, then restored the file.
+- **The first approve was refused.** G4 failed on `tracker_judge::c5_a_judge_timeout_stops_the_claude_that_tracker_judge_started`, a flaky test whose 3-second timeout can expire under the full suite's load before `tracker-judge` starts the fake `claude`. The second approve passed. TR-56 tracks the fix, and it's open ([Still open](#still-open)).
+- **After it,** `cargo fmt --check`, `cargo clippy -- -D warnings` and all 565 tests pass, 6 more than before the review, all in `tests/digest.rs`.
+
+### Bugs
+
+| Finding | Commit | Fix | Tests |
+| --- | --- | --- | --- |
+| Bug 1: `digest ack` acknowledges a digest built without the item files it can't read, and doesn't say so | `8b84977`, option (a) | `digest_ack` loads the items first and refuses with exit 3, naming the file, while a file whose name puts it in the project can't be read. It runs before the question and before the lock. Option (b), putting a skipped note in the warning, isn't taken | `tr55_c1_digest_ack_refuses_while_an_item_file_of_the_project_is_unreadable`, failed at `start`. It's test gap 2 too: it checks the refusal without a terminal and under `script`, and that another project's ack goes ahead |
+| Bug 2: a judged shelve tells the reader to look for a reopen and `start` that no digest lists | `8b84977`, option (a) | The warning says to look in `tracker show <ID>` for them. Listing a reopen, option (b), isn't taken | `tr55_c2_a_judged_shelve_points_to_tracker_show`, failed at `start` |
+| Bug 3: `audit` calls a ref it couldn't check a sign of a hand edit | `8b84977`, option (a) | The heading reads "each a sign that the store was edited by hand, or something audit couldn't check". A separate `problem` kind, option (b), isn't taken | `tr55_c2_audit_does_not_call_an_unchecked_ref_a_hand_edit`, failed at `start` |
+
+### Security items
+
+| Finding | Commit | Fix | Tests |
+| --- | --- | --- | --- |
+| Security 1: `digest ack` under `script` acknowledges like a human and overwrites the only record of the ack before it | `0bfd2a9` and `8b84977`, option (a) | §7's bullet on the terminal check says it. `last_ack` is in `digest` and `review`'s JSON and text: its time, whether it came from a terminal, and its counts, so an ack the user didn't make stands out. Keeping every ack, option (b), isn't taken | `tr55_c3_review_and_digest_show_the_last_ack` and criterion 6's `grep` checks, which failed at `start` |
+
+### Design decisions
+
+| Question | Decision | Commits |
+| --- | --- | --- |
+| Design 1: §3 says `review` shows a pending digest, and the code shows only an overdue one | Option (a): §3 says "whether a digest is overdue (§2.6)". No code changed | `0bfd2a9` |
+| Design 2: a judge-passed entry shows refs, answers and reasons but not the question asked | Option (a): `questions` on a verified entry, from the item's criteria, and text of the form `judge c1:works asked "…" answered yes: "…"`. §2.6 says "the commit it was verified at", not "the commits" | `8b84977`, `0bfd2a9` |
+| Design 3: `unchecked` done items are in no digest, and §2.6 doesn't say so | Option (b): §2.6 says done items with no verification record never appear in a digest. They're not listed under a heading of their own | `0bfd2a9` |
+
+### Test gaps
+
+| Finding | Commit | Fix | Tests |
+| --- | --- | --- | --- |
+| Test gap 1: nothing checks that an action from before an ack is left out of the next digest | `dc9a2ef` | A test that shelves one item, acks under `script`, shelves another, and finds only the second | `tr55_c5_an_action_before_the_ack_is_left_out_and_one_after_is_listed`, which passed at `start`, since the filter already worked, and which the builder saw fail with the filter removed |
+| Test gap 2: nothing covers an unreadable item file at `digest ack` | `dc9a2ef` | With bug 1 | `tr55_c1_` |
+| Test gap 3: the readme's own not-covered list is untested | Not taken | Low: each is a few lines read by eye. The judged shelve's warning is tested under bug 2. An unreadable `digests.json`, a decision with no `ask`, `audit`'s T12 mismatch and the skipped note in `digest`, `audit` and `judges` are still untested ([Still open](#still-open)) | |
+
+### Process
+
+| Finding | Commit | Fix | Tests |
+| --- | --- | --- | --- |
+| Process 1: the readme says `digest --all` has no test, but one runs it | This readme update | `--all` is out of the not-covered list. `tr12_c1_digest_lists_every_auto_verified_item_judge_passed_first` runs `digest --all` inside XX's root and checks `"project": null` | |
+
+### A few consequences
+
+- `digest ack` exits 3 where it used to go ahead, while an item file of the project can't be read, and says which file.
+- A digest, and `review`'s overdue line, now name the last ack, so a script that matches the digest's first line or `review`'s overdue line breaks.
+- A judge-passed entry's text has the question inside the `judge c1:works` line, where it had only the ref.
+- `audit`'s heading has changed, so a script that matches the old one breaks.
+- Done items with no verification record, such as TR's early `unchecked` ones, are in no digest, as before. §2.6 now says so.
 
 ## Still open
 
-From the build and the checks. There's no review of slice 16 yet, so none of its findings are listed.
+From the build, the checks and [review 1](reviews/slice-16-review-1.md). Review 1's findings are all fixed except what's listed here.
 
 **Checks not run** (they wait for slice 16's binary, installed at the end of the cycle):
 
@@ -439,7 +566,7 @@ From the build and the checks. There's no review of slice 16 yet, so none of its
 - **`tracker digest` and `tracker judges` on the real store.** The tests and the demo use throwaway stores and a fake judge, so what they show for the real items, and how long a real digest reads, are unchecked.
 - **A real judge.** No run used the real `claude`. `judges` counts what the fake produced.
 
-**Test gaps** (see [Testing](#testing)): an unreadable `digests.json`, a shelve of a judged item, a decision with no `ask`, `audit`'s T12 mismatch in both directions, `digest --all` and the skipped note.
+**Test gaps** (review 1's test gap 3, left out; see [Testing](#testing)): an unreadable `digests.json`, a decision with no `ask`, `audit`'s T12 mismatch in both directions, and the skipped note in `digest`, `audit` and `judges`.
 
 **Not decided:**
 
@@ -448,11 +575,14 @@ From the build and the checks. There's no review of slice 16 yet, so none of its
 
 **Open items in `tracker`** (`tracker list --project TR`):
 
+- **TR-56** (high, fix, `flaky`): raise `tracker_judge::c5_a_judge_timeout_stops_the_claude_that_tracker_judge_started`'s `timeout_secs` from 3 to 10, since it can expire under the full suite's load before `tracker-judge` starts the fake `claude`. It failed the user's first `tracker approve TR-55` and once for the builder of TR-55, and once more in this update's first `cargo test`. It is to be built in slice 16's review 2 round, and changing the test fires T4.
 - **TR-39** (low, change): line up hold messages when trigger names differ in width, found while building slice 11.
 - **TR-44** (low, fix): say what to do when git no longer has an item's `started.head`, from slice 10's review 2, bug 3.
 - **TR-47** (low, fix): strip a `diff` judge's comments over each file's whole text, so a hunk that starts inside a block comment doesn't reach the judge.
 - **TR-48** (low, change): say what else a judge sees besides the excerpt, Claude Code's environment note and the account's email.
 - **TR-50** (low, fix): escape `</material>` in both judge adapters, pin step 1's prompt in a test, and say an empty `is_error` reply said nothing.
+
+**Not taken from review 1:** its options (b) for bugs 1 to 3, security 1 and design 2, and design 3's option (a), each described under [Fixes after review 1](#fixes-after-review-1).
 
 **Carried from slice 15** ([its Still open](slice-15-readme.md#still-open)): review 1's security 1 option (b), review 2's design 2 and its two test gaps, an approve that matches the request and not the answer, and a terminal `approve` of a held T12 item.
 
@@ -460,13 +590,19 @@ From the build and the checks. There's no review of slice 16 yet, so none of its
 
 Slice 16 is the last slice in [PLAN.md](PLAN.md), so there's no later slice to change this one. What's left open across the plan, and what a change to this slice must not break:
 
-- **Open items.** TR-39, TR-44, TR-47, TR-48 and TR-50 are open in `tracker`, all low priority ([Still open](#still-open)). TR-47 and TR-50 touch a judge's input, so a `diff` judge shouldn't be added to a project before TR-47 is done (a disputed `diff` question's excerpt has the same flaw).
+- **Open items.** TR-39, TR-44, TR-47, TR-48 and TR-50 are open in `tracker`, all low priority, and so is TR-56, which is high ([Still open](#still-open)). TR-47 and TR-50 touch a judge's input, so a `diff` judge shouldn't be added to a project before TR-47 is done (a disputed `diff` question's excerpt has the same flaw).
 - **Everything in [PLAN.md](PLAN.md)'s "Deferred / out of scope"** stays out: saved rulings for each question, mutation testing, and a branch or worktree per item ([§7](DESIGN.md#7-honest-limits)). If saved rulings are added, a decision no longer covers one submit, `judges` would need to say which counts came from a saved one, and the key is the excerpt and the question, not a held question's `request`, which changes with the model.
 - **Slices 7 to 16 aren't merged.** Every slice's row in PLAN.md is `in review` from 7 on, and a row becomes `merged` only once its review fixes are in and its branch is merged. The branches are stacked, so they merge in order.
-- **No review of this slice yet.** When there is one, its fixes are new items, and this document gets a `Fixes after review 1` section ([slice 15's readme](slice-15-readme.md) shows the form).
+- **Review 2's fixes** are new items, and this document then gets a `Fixes after review 2` section ([slice 15's readme](slice-15-readme.md) shows the form). TR-56, the flaky test, is the first.
 - **`audit` and the digest are reports, not gates.** Neither blocks anything, and `audit` exits 0 whatever it finds. A script that needs a failing exit must read `--json`.
 - **`judges` depends on `held_questions` in history.** A change to that shape, or to when `approve` and `reject` record it, changes what `judges` counts. A new place that moves an item out of review must record its decision with `record_decision`, as slice 15's readme says. A new trigger that holds questions must put them in `held_questions` with its own `trigger`, and `decisions::held_as` needs to say what it means.
 - **A new human action** goes in the digest's `listed` match in `digest::build`, with its `Via`, and in [§2.6](DESIGN.md#26-digest-auditing-the-auto-verifications) and [§2.7](DESIGN.md#27-human-actions), or the digest won't show it.
 - **A new item field that `audit` should check** goes in `check_item`, with a `problem` kind in [audit.schema.json](../schemas/audit.schema.json).
 - **`digests.json` is written only by `digest ack`.** A command that edits it would need the lock, and the digest's "since the ack" depends on every other write's second being past the ack's, which `digest ack`'s wait keeps.
 - **The real-terminal checks** of `digest ack`, `digest` and `judges` are the user's, once slice 16's binary is installed. PLAN.md's integration risks say every new interactive command is tried once in a real terminal.
+- **Before merging the stack** (from [review 1](reviews/slice-16-review-1.md#before-merging-the-stack)):
+  - **One real-terminal `digest ack`.** Once slice 16's binary is installed, run `tracker digest --project TR`, then `tracker digest ack --project TR`. Type `TR` once to see it cancel, then `ack`. The ack prints the whole digest again before it asks, so what's acknowledged is that copy.
+  - **Merge while no TR item is in progress or in review.** A merge commit is unscoped, and T14 holds an item for any unscoped commit after its `start` that touches the root.
+  - **Don't squash-merge.** `show --diff` finds an item's commits through `HEAD`'s history, by their scoped headers ([§2.1](DESIGN.md#21-items)), so a squash would leave it empty for every done TR item. A merge commit or a fast-forward keeps them. `refs/tracker/<ID>` keeps each verified commit either way, so `audit` stays clean.
+  - **Set PLAN.md's rows to `merged`** in the pull request that merges each branch, not before.
+  - **Do TR-47 before any project adds a `diff` judge.**
