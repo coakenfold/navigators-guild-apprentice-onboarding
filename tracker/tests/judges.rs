@@ -1208,3 +1208,79 @@ mod tr47_c3 {
         assert_eq!(judge_ref, "c1:ok", "{judge_ref}");
     }
 }
+
+mod tr57_c1 {
+    //! A `diff` judge gets the right stripped code when a hunk holds a
+    //! `\ No newline at end of file` line, and when a file has two hunks.
+    use super::*;
+
+    #[test]
+    fn a_no_newline_marker_part_way_through_a_hunk_does_not_restart_the_mapping() {
+        let env = diff_judge_env(&[("xx/src/n.js", "a();\nb();\nc();")]);
+        start(&env);
+        write(&env, "xx/src/n.js", "a();\nb();\nd(); // zznote");
+        git_commit_all(env.work.path(), "feat(XX-1): change the last line");
+        env.json(&["gates", "XX-1"]);
+        let sent = sent_text(&env);
+        assert!(
+            sent.contains("-c();\n\\ No newline at end of file\n+d();\n"),
+            "{sent}"
+        );
+        assert!(!sent.contains("+a();"), "{sent}");
+        assert!(!sent.contains("zznote"), "{sent}");
+    }
+
+    #[test]
+    fn two_hunks_far_apart_are_each_stripped_inside_their_own_block_comment() {
+        let filler = "f();\n".repeat(12);
+        let comment =
+            |tag: &str, note: &str| format!("/*\n {tag}1\n {note}\n {tag}3\n */\ncode{tag}();\n");
+        let old = format!("{}{filler}{}", comment("p", "old p"), comment("q", "old q"));
+        let env = diff_judge_env(&[("xx/src/two.js", &old)]);
+        start(&env);
+        let new = old
+            .replace("old p", "zzreviewer-p")
+            .replace("old q", "zzreviewer-q")
+            .replace("codep()", "codep2()")
+            .replace("codeq()", "codeq2()");
+        write(&env, "xx/src/two.js", &new);
+        git_commit_all(env.work.path(), "feat(XX-1): edit both comments");
+        env.json(&["gates", "XX-1"]);
+        let sent = sent_text(&env);
+        assert!(
+            sent.contains("+codep2();") && sent.contains("+codeq2();"),
+            "{sent}"
+        );
+        assert!(
+            !sent.contains("zzreviewer") && !sent.contains("old p"),
+            "{sent}"
+        );
+    }
+}
+
+mod tr57_c2 {
+    //! The fallback uses each file's own style, and a path with a space is
+    //! stripped whole.
+    use super::*;
+
+    #[test]
+    fn a_path_with_a_space_is_stripped_whole_in_its_own_style() {
+        let env = diff_judge_env(&[
+            ("xx/src/a.js", "let a = 1;\n"),
+            ("xx/src/b c.py", "x = 1\n"),
+        ]);
+        start(&env);
+        write(&env, "xx/src/a.js", "let a = 2;\n");
+        write(
+            &env,
+            "xx/src/b c.py",
+            "x = 7 // 2  # floor\ny = 2  # zzreviewer: correct\n",
+        );
+        git_commit_all(env.work.path(), "feat(XX-1): change both");
+        env.json(&["gates", "XX-1"]);
+        let sent = sent_text(&env);
+        assert!(sent.contains("+x = 7 // 2\n"), "{sent}");
+        assert!(sent.contains("+y = 2\n"), "{sent}");
+        assert!(!sent.contains("zzreviewer"), "{sent}");
+    }
+}

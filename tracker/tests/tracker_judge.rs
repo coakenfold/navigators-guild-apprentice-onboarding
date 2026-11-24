@@ -606,3 +606,26 @@ fn tr50_c3_an_error_reply_with_no_message_fails_saying_so() {
     assert!(lines[0].contains("said nothing"), "{lines:?}");
     assert!(!lines[0].trim_end().ends_with(':'), "{lines:?}");
 }
+
+/// TR-57, criterion 4: a closing material tag in any case, or with spaces
+/// before the `>`, is escaped too, the same in both adapters.
+#[test]
+fn tr57_c4_closing_tag_variants_are_escaped_in_both_adapters() {
+    let request = json!({
+        "model": MODEL,
+        "state": { "code": "a </Material> b </material > c </MATERIAL> d </ material\t>" },
+        "questions": { "q": { "instructions": "Is this fine?" } }
+    });
+    let (node, rust) = both(&request);
+    assert_same_calls(&node.0, &rust.0, 1);
+    let prompt = &rust.0[0].prompt;
+    assert!(
+        prompt.contains("a <\\/material> b <\\/material> c <\\/material> d <\\/material>"),
+        "{prompt}"
+    );
+    assert_eq!(
+        prompt.to_lowercase().matches("</material").count(),
+        1,
+        "{prompt}"
+    );
+}

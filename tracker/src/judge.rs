@@ -1174,4 +1174,42 @@ mod tr45_tests {
             "diff --git a/a.rs b/a.rs\n--- a/a.rs\n+++ b/a.rs\n@@ -1,2 +1,3 @@\n-fn b() {  }\n\\ No newline at end of file\n+fn b() {  }\n+fn c() {}\n\\ No newline at end of file\n"
         );
     }
+
+    #[test]
+    fn tr57_the_fallback_strips_each_file_in_its_own_style() {
+        let diff = "diff --git a/a.js b/a.js\n--- a/a.js\n+++ b/a.js\n@@ -1 +1 @@\n-a();\n+b();\ndiff --git a/b.py b/b.py\n--- a/b.py\n+++ b/b.py\n@@ -1 +1 @@\n-x = 1\n+x = 7 // 2  # floor\n";
+        assert!(
+            strip_diff(diff).ends_with("-x = 1\n+x = 7 // 2\n"),
+            "{}",
+            strip_diff(diff)
+        );
+    }
+
+    #[test]
+    fn tr57_a_mapped_line_that_differs_from_the_diffs_line_falls_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+                .args(args)
+                .current_dir(dir.path())
+                .output()
+                .unwrap();
+            assert!(out.status.success());
+            String::from_utf8(out.stdout).unwrap()
+        };
+        git(&["init", "-q"]);
+        std::fs::write(dir.path().join("f.js"), "old();\n").unwrap();
+        git(&["add", "f.js"]);
+        git(&["commit", "-q", "-m", "one"]);
+        std::fs::write(dir.path().join("f.js"), "a(); // c\nb();\n").unwrap();
+        git(&["commit", "-q", "-am", "two"]);
+        let sha = git(&["rev-parse", "HEAD"]);
+        let diff = format!(
+            "commit {}\ndiff --git a/f.js b/f.js\n--- a/f.js\n+++ b/f.js\n@@ -1 +1,2 @@\n-old();\n+other(); // note\n+b();",
+            sha.trim()
+        );
+        let out = strip_diff_in(&diff, Some(dir.path()));
+        assert!(out.ends_with("-old();\n+other();\n+b();"), "{out}");
+    }
 }
