@@ -21,6 +21,12 @@
             "type": "array",
             "items": { "$ref": "item.schema.json#/$defs/hold" }
           },
+          "held_questions": {
+            "description": "The judge questions that hold it: each fail the agent disputed (T12), with the agent's reason, and each unsure answer (T10). Left out when none do.",
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "item.schema.json#/$defs/held_question" }
+          },
           "diff": {
             "description": "The command that shows the item's commits and their diff, for reviewing it: tracker show <ID> --diff.",
             "type": "string",

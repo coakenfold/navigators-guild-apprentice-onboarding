@@ -211,6 +211,7 @@ mod criterion_1 {
                 { "trigger": "T9", "fired": false },
                 { "trigger": "T10", "fired": false },
                 { "trigger": "T11", "fired": false },
+                { "trigger": "T12", "fired": false },
                 { "trigger": "T13", "fired": false },
                 { "trigger": "T14", "fired": false }
             ])
@@ -264,6 +265,7 @@ mod criterion_2 {
                         { "trigger": "T9", "fired": true },
                         { "trigger": "T10", "fired": false },
                         { "trigger": "T11", "fired": false },
+                        { "trigger": "T12", "fired": false },
                         { "trigger": "T13", "fired": false },
                         { "trigger": "T14", "fired": false }
                     ],
@@ -826,6 +828,7 @@ mod tr_29 {
                 { "trigger": "T9", "fired": false },
                 { "trigger": "T10", "fired": false },
                 { "trigger": "T11", "fired": false },
+                { "trigger": "T12", "fired": false },
                 { "trigger": "T13", "fired": false },
                 { "trigger": "T14", "fired": false }
             ]),
@@ -879,6 +882,7 @@ mod tr_29 {
                 { "trigger": "T9", "fired": false },
                 { "trigger": "T10", "fired": false },
                 { "trigger": "T11", "fired": false },
+                { "trigger": "T12", "fired": false },
                 { "trigger": "T13", "fired": false },
                 { "trigger": "T14", "fired": false }
             ]),

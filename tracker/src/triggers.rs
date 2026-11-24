@@ -7,11 +7,12 @@
 //! moved), T6 (a manual criterion), T7 (a large change), T8 (the design doc
 //! changed), T9 (the `needs-review` label), T10 (a judge answered unsure,
 //! or the project doesn't auto-verify judged work), T11 (judges failed
-//! `max_failures` runs that failed new questions since start), T13 (a check or judge
+//! `max_failures` runs that failed new questions since start), T12 (the
+//! agent disputed a judge's fail), T13 (a check or judge
 //! passed before the work) and T14 (unscoped commits since start). T1 to T4, T7 and T8 read
 //! the item's changed files (§2.1), and T14 reads the commits made since
 //! start. A trigger in the project's `review.disabled` doesn't run, except
-//! T6 and T10, which always do.
+//! T6, T10 and T12, which always do.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -19,7 +20,7 @@ use std::path::Path;
 use crate::config::{self, Config, Review};
 use crate::error::{Error, Result};
 use crate::git;
-use crate::item::{Criterion, Hold, Item, Kind};
+use crate::item::{Criterion, HeldQuestion, Hold, Item, Kind};
 use crate::judge::{Answered, FailedRun, Outcome};
 use crate::states;
 use sha2::{Digest, Sha256};
@@ -116,13 +117,15 @@ pub fn changes(root: &Path, id: &str, started: Option<&str>) -> Result<Changes> 
 
 /// Runs every trigger on `item` that its project doesn't switch off, in
 /// order, and returns each one. `judges` is every judge question G3 asked
-/// (T10), and `failed` every run in which judges failed new requests since start (T11).
+/// (T10), `failed` every run in which judges failed new requests since start (T11),
+/// and `disputed` every judge fail the agent disputed (T12).
 /// Exits 3 if git can't say what the item's commits changed.
 pub fn run(
     item: &Item,
     config: &Config,
     judges: &[Answered],
     failed: &[FailedRun],
+    disputed: &[HeldQuestion],
 ) -> Result<Vec<Ran>> {
     let project = config.projects.get(&item.project);
     let review = project.map(|project| project.review()).unwrap_or_default();
@@ -166,6 +169,7 @@ pub fn run(
     add("T10", (t10(judges, auto_verify), Vec::new()));
     let max_failures = project.map_or(config::DEFAULT_MAX_FAILURES, |p| p.max_failures());
     add("T11", (t11(failed, max_failures), Vec::new()));
+    add("T12", (t12(disputed), Vec::new()));
     add("T13", (t13(item), Vec::new()));
     add("T14", (t14(&item.id, &unscoped), Vec::new()));
     Ok(ran)
@@ -533,6 +537,27 @@ fn t11(failed: &[FailedRun], max: u64) -> Option<String> {
         failed.len(),
         file_list(&refs)
     ))
+}
+
+/// T12: the agent disputed a judge's fail (§2.3.2), so a human decides
+/// whether the judge was wrong. A dispute never passes anything.
+fn t12(disputed: &[HeldQuestion]) -> Option<String> {
+    match disputed {
+        [] => None,
+        [one] => Some(format!(
+            "the agent disputed a judge's fail, so a human decides: {} answered {}",
+            one.judge_ref,
+            one.answer.as_str()
+        )),
+        _ => {
+            let refs: Vec<String> = disputed.iter().map(|q| q.judge_ref.clone()).collect();
+            Some(format!(
+                "the agent disputed judges' fails to {} questions, so a human decides: {}",
+                disputed.len(),
+                file_list(&refs)
+            ))
+        }
+    }
 }
 
 /// T13: a criterion's script check already passed when it ran before the

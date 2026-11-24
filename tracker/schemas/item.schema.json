@@ -79,6 +79,12 @@
       "minItems": 1,
       "items": { "$ref": "#/$defs/hold" }
     },
+    "held_questions": {
+      "description": "The judge questions held at the item's last submit, while it waits in review: each judge fail the agent disputed (T12), with the agent's reason, and each unsure answer (T10). approve counts the disputed ones as passed for that approval only, and approve and reject record them in their history entry (DESIGN.md §2.3.2, §2.7). Present only while the item is in review.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/held_question" }
+    },
     "history": {
       "description": "One entry per move between states or edit, oldest first. Left out while there are none.",
       "type": "array",
@@ -110,6 +116,41 @@
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
     },
     "state": { "enum": ["open", "in-progress", "review", "done", "shelved"] },
+    "held_question": {
+      "description": "One judge question that held an item for a human (DESIGN.md §2.3.2): T12 for a fail the agent disputed, with the agent's reason in dispute, or T10 for an unsure answer, or, when the project's auto_verify is false, for any answer that wasn't a fail.",
+      "type": "object",
+      "required": ["trigger", "ref", "request", "answer", "reason"],
+      "properties": {
+        "trigger": { "enum": ["T10", "T12"] },
+        "ref": {
+          "description": "The question's ref (DESIGN.md §2.3.2), such as c2:src/import.js:57:suggests_next_step.",
+          "type": "string",
+          "pattern": "^c[1-9][0-9]*:"
+        },
+        "ask": {
+          "description": "The question's text, as the judge was asked it, so judges can group a question across items. Left out in held questions written before TR-53.",
+          "type": "string",
+          "minLength": 1
+        },
+        "request": {
+          "description": "The fingerprint of the request the answer came from. approve counts a disputed question as passed only for the same answer.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "answer": { "enum": ["yes", "no", "unsure"] },
+        "reason": {
+          "description": "The judge's one-sentence reason.",
+          "type": "string"
+        },
+        "dispute": {
+          "description": "For T12, the agent's reason for disputing the answer: one line of at most 500 characters.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "additionalProperties": false
+    },
     "hold": {
       "description": "One trigger that fired (DESIGN.md §2.5): its name, such as T6, the message saying why it holds the item, and the files that fired it, if it is about files.",
       "type": "object",
@@ -322,6 +363,12 @@
           "minItems": 1,
           "items": { "$ref": "#/$defs/hold" }
         },
+        "held_questions": {
+          "description": "For a human record, the judge questions held under T10 or T12 that approve accepted (DESIGN.md §2.7). Left out when none were held.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/held_question" }
+        },
         "note": {
           "description": "Why the record says what it does, such as that no gates ran.",
           "type": "string",
@@ -402,6 +449,12 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": { "type": "string", "minLength": 1 }
+        },
+        "held_questions": {
+          "description": "For an approve or a reject, the judge questions held under T10 or T12 that it decided, so tracker judges can count my decisions on each question (DESIGN.md §2.3.2). Left out when none were held.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/held_question" }
         }
       },
       "additionalProperties": false,

@@ -1,0 +1,99 @@
+{
+  "id": "XX-26",
+  "title": "Dispute demo XX-26",
+  "project": "XX",
+  "kind": "change",
+  "status": "done",
+  "priority": "medium",
+  "created": "2026-11-23T18:00:45Z",
+  "updated": "2026-11-23T18:01:18Z",
+  "criteria": [
+    {
+      "text": "The code does the work",
+      "inputs": [
+        "src/lib.rs"
+      ],
+      "ask": [
+        {
+          "id": "works",
+          "ask": "Does this code do the work?"
+        }
+      ]
+    }
+  ],
+  "started": {
+    "at": "2026-11-23T18:01:16Z",
+    "criteria_hash": "c9e3f64f301b2dc8b9ae077884f62e9a3a2a468fbdeadcf999822257188cdb91",
+    "head": "6538899261903ee66092f1a619890fe535308b06",
+    "checks": [
+      {
+        "criterion": 1,
+        "passed": false
+      }
+    ]
+  },
+  "verification": {
+    "by": "human",
+    "at": "2026-11-23T18:01:18Z",
+    "commit": "96ad01e7c908f7f2b5636b933570d869e62433b3",
+    "ref": "refs/tracker/XX-26",
+    "judges": [
+      {
+        "ref": "c1:works",
+        "model": "claude-haiku-5-5",
+        "request": "c052694b7b9399b2c4809ec103ec761e26ad877c02e2e9e52036baeb123adebb",
+        "answer": "no",
+        "reason": "The function only calls step and never checks its result."
+      }
+    ],
+    "triggers": [
+      {
+        "trigger": "T12",
+        "message": "the agent disputed a judge's fail, so a human decides: c1:works answered no"
+      }
+    ],
+    "held_questions": [
+      {
+        "trigger": "T12",
+        "ref": "c1:works",
+        "request": "c052694b7b9399b2c4809ec103ec761e26ad877c02e2e9e52036baeb123adebb",
+        "answer": "no",
+        "reason": "The function only calls step and never checks its result.",
+        "dispute": "lib.rs:2 calls step, which checks its own result"
+      }
+    ]
+  },
+  "history": [
+    {
+      "at": "2026-11-23T18:01:16Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-23T18:01:16Z",
+      "from": "in-progress",
+      "to": "review",
+      "via": "submit",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-23T18:01:18Z",
+      "from": "review",
+      "to": "done",
+      "via": "approve",
+      "interactive": true,
+      "held_questions": [
+        {
+          "trigger": "T12",
+          "ref": "c1:works",
+          "request": "c052694b7b9399b2c4809ec103ec761e26ad877c02e2e9e52036baeb123adebb",
+          "answer": "no",
+          "reason": "The function only calls step and never checks its result.",
+          "dispute": "lib.rs:2 calls step, which checks its own result"
+        }
+      ]
+    }
+  ]
+}

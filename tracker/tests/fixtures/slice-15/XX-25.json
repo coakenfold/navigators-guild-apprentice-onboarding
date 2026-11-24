@@ -1,0 +1,67 @@
+{
+  "id": "XX-25",
+  "title": "Dispute demo XX-25",
+  "project": "XX",
+  "kind": "change",
+  "status": "review",
+  "priority": "medium",
+  "created": "2026-11-23T18:00:45Z",
+  "updated": "2026-11-23T18:00:46Z",
+  "criteria": [
+    {
+      "text": "The code does the work",
+      "inputs": [
+        "src/lib.rs"
+      ],
+      "ask": [
+        {
+          "id": "works",
+          "ask": "Does this code do the work?"
+        }
+      ]
+    }
+  ],
+  "started": {
+    "at": "2026-11-23T18:00:45Z",
+    "criteria_hash": "c9e3f64f301b2dc8b9ae077884f62e9a3a2a468fbdeadcf999822257188cdb91",
+    "head": "2f3aa1d4628726e23ff1d9599ac75f95ae5698a0",
+    "checks": [
+      {
+        "criterion": 1,
+        "passed": false
+      }
+    ]
+  },
+  "holds": [
+    {
+      "trigger": "T12",
+      "message": "the agent disputed a judge's fail, so a human decides: c1:works answered no"
+    }
+  ],
+  "held_questions": [
+    {
+      "trigger": "T12",
+      "ref": "c1:works",
+      "request": "83f16f8a7463ad47f09fc5633686cff3ea5ab39bdf6b8e11bd13e7afb7fe2aef",
+      "answer": "no",
+      "reason": "The function only calls step and never checks its result.",
+      "dispute": "lib.rs:2 calls step, which checks its own result"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-11-23T18:00:45Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-23T18:00:46Z",
+      "from": "in-progress",
+      "to": "review",
+      "via": "submit",
+      "interactive": false
+    }
+  ]
+}
