@@ -92,6 +92,11 @@
       "type": "string",
       "pattern": "^[A-Z][A-Z0-9]{0,9}$"
     },
+    "sha": {
+      "description": "A git commit's full SHA: 40 hex digits, or 64 in a SHA-256 repository.",
+      "type": "string",
+      "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+    },
     "time": {
       "description": "An RFC 3339 time in UTC, to the second.",
       "type": "string",
@@ -127,15 +132,24 @@
       "not": { "required": ["check", "evidence"] }
     },
     "verification": {
-      "description": "How an item reached done (DESIGN.md §2.7). Later slices add the commit, its ref, and the judges that ran.",
+      "description": "How an item reached done (DESIGN.md §2.7). Slice 12 adds the judges that ran.",
       "type": "object",
       "required": ["by", "at"],
       "properties": {
         "by": {
-          "description": "auto: the gates passed and no trigger fired. human: approved from the inbox. unchecked: done before the gates existed, so nothing checked it.",
+          "description": "auto: the gates passed and no trigger fired. human: approved from the inbox. unchecked: done before the gates proved the work against a commit, so no commit ties the checks to the work.",
           "enum": ["auto", "human", "unchecked"]
         },
         "at": { "$ref": "#/$defs/time" },
+        "commit": {
+          "description": "The commit the checks ran against, as a full SHA: HEAD when G5 looked. Left out of unchecked records.",
+          "$ref": "#/$defs/sha"
+        },
+        "ref": {
+          "description": "The git ref that keeps commit, in the project's repository, so a rebase or gc can't lose it (DESIGN.md §2.7). Deleting the item removes it.",
+          "type": "string",
+          "pattern": "^refs/tracker/[A-Z][A-Z0-9]{0,9}-[1-9][0-9]*$"
+        },
         "checks": {
           "description": "Every check the submit ran, criterion checks first, then the project's, in order. Left out when none ran.",
           "type": "array",
@@ -170,11 +184,15 @@
       "additionalProperties": false
     },
     "started": {
-      "description": "What start recorded. Later slices add head and the criteria's fingerprint.",
+      "description": "What start recorded. Slice 11 adds the criteria's fingerprint.",
       "type": "object",
       "required": ["at"],
       "properties": {
         "at": { "$ref": "#/$defs/time" },
+        "head": {
+          "description": "The commit HEAD pointed to at start, as a full SHA (T14). Left out for a repository with no commits yet, and by trackers before slice 8.",
+          "$ref": "#/$defs/sha"
+        },
         "checks": {
           "description": "Each criterion check, run once at start, where failing is expected because the work isn't done yet (T13). Left out when the item had no criterion checks.",
           "type": "array",

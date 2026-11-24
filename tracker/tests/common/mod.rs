@@ -28,7 +28,10 @@ impl Env {
         env
     }
 
-    /// An empty `TRACKER_HOME`, with no store in it yet.
+    /// An empty `TRACKER_HOME`, with no store in it yet. The work folder is
+    /// a git repository with one commit, so every project root under it is
+    /// a subfolder of one, as TR's is (§2.1). From slice 8, `start`,
+    /// `submit`, `gates` and shelving an in-progress item need that.
     pub fn without_store() -> Env {
         let env = Env {
             home: TempDir::new().unwrap(),
@@ -36,6 +39,7 @@ impl Env {
         };
         fs::create_dir_all(env.outside()).unwrap();
         fs::create_dir_all(env.user_home()).unwrap();
+        git_init(env.work.path());
         env
     }
 
@@ -318,10 +322,25 @@ impl Env {
     }
 
     /// Creates an item in `project` with no criteria, as `tracker create`
-    /// does, and returns its ID. G1 won't let it start.
+    /// does, and returns its ID. G1 won't let it start. Then it commits
+    /// everything in the work folder's repository, as `commit_for` does, so
+    /// the item has a commit and G5 lets it be submitted (slice 8), as its
+    /// tests would be committed before `start`. A project root in a
+    /// repository of its own, such as `tests/commits.rs` makes, isn't in
+    /// that one, so its items have no commits until the test makes them.
     pub fn create_bare(&self, project: &str, title: &str) -> String {
         let output = self.json(&["create", title, "--project", project]);
-        output["item"]["id"].as_str().unwrap().to_string()
+        let id = output["item"]["id"].as_str().unwrap().to_string();
+        self.commit_for(&id);
+        id
+    }
+
+    /// Commits everything in the work folder's repository, which holds
+    /// every project root under it, as `test(<id>): …`, so item `id` has a
+    /// commit and the tree is clean for G5 (slice 8). For a test that wrote
+    /// a file in a root after the item was created.
+    pub fn commit_for(&self, id: &str) {
+        git_commit_all(self.work.path(), &format!("test({id}): the work"));
     }
 
     /// Gives item `id` a script criterion whose check is `true`, so that
@@ -394,6 +413,67 @@ fn read_until(
             }
         }
     }
+}
+
+/// Runs `git <args>` in `dir`, expects it to succeed, and returns its
+/// stdout without the final line break. It reads no global or system git
+/// config, and commits under a test identity without signing, so a
+/// developer's own settings can't change what a test does.
+pub fn git(dir: &Path, args: &[&str]) -> String {
+    let output = git_cmd(dir, args).output().unwrap();
+    assert!(
+        output.status.success(),
+        "`git {}` failed in {}:\n{}",
+        args.join(" "),
+        dir.display(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout)
+        .unwrap()
+        .trim_end()
+        .to_string()
+}
+
+/// Whether `git <args>` succeeds in `dir`.
+pub fn git_ok(dir: &Path, args: &[&str]) -> bool {
+    git_cmd(dir, args).output().unwrap().status.success()
+}
+
+fn git_cmd(dir: &Path, args: &[&str]) -> std::process::Command {
+    let mut cmd = std::process::Command::new("git");
+    cmd.current_dir(dir)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .args([
+            "-c",
+            "user.name=Tracker Test",
+            "-c",
+            "user.email=test@tracker.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "init.defaultBranch=main",
+        ])
+        .args(args);
+    cmd
+}
+
+/// Makes `dir` a git repository with one commit, so it has a `HEAD`.
+pub fn git_init(dir: &Path) {
+    fs::create_dir_all(dir).unwrap();
+    git(dir, &["init", "--quiet"]);
+    git(
+        dir,
+        &["commit", "--quiet", "--allow-empty", "-m", "chore: start"],
+    );
+}
+
+/// Commits everything under `dir`, in the repository that holds it, with
+/// `message`, even if nothing changed. Returns the new commit's SHA.
+pub fn git_commit_all(dir: &Path, message: &str) -> String {
+    git(dir, &["add", "--all", "."]);
+    git(dir, &["commit", "--quiet", "--allow-empty", "-m", message]);
+    git(dir, &["rev-parse", "HEAD"])
 }
 
 /// The binary followed by `args`.

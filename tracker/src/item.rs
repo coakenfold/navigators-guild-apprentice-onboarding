@@ -75,11 +75,15 @@ impl Criterion {
     }
 }
 
-/// What `start` recorded (§2.4, §4.3). Slice 8 adds `head`, and slice 11
-/// the criteria's fingerprint.
+/// What `start` recorded (§2.4, §4.3). Slice 11 adds the criteria's
+/// fingerprint, before `head`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Started {
     pub at: Timestamp,
+    /// The commit `HEAD` pointed to at start, as a full SHA (T14). Left out
+    /// for a repository with no commits yet, and by trackers before slice 8.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub head: Option<String>,
     /// Each criterion check, run once at start, where failing is expected
     /// because the work isn't done yet (T13).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -94,12 +98,20 @@ pub struct StartedCheck {
     pub passed: bool,
 }
 
-/// How an item reached done (§2.1, §2.7). Later slices add the commit, its
-/// ref, and the judges that ran.
+/// How an item reached done (§2.1, §2.7). Slice 12 adds the judges that
+/// ran.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Verification {
     pub by: VerifiedBy,
     pub at: Timestamp,
+    /// The commit the checks ran against, as a full SHA: `HEAD` when G5
+    /// looked. Left out of `unchecked` records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+    /// The git ref that keeps `commit`, `refs/tracker/<ID>`, in the
+    /// project's repository (§2.7).
+    #[serde(default, rename = "ref", skip_serializing_if = "Option::is_none")]
+    pub git_ref: Option<String>,
     /// Every check the submit ran, criterion checks first, then the
     /// project's, in order (§4.3).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

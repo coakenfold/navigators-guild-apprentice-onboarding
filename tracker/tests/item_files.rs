@@ -353,7 +353,8 @@ fn lost_on_rewrite_tells_unknown_fields_from_values_written_differently() {
     item["updated"] = serde_json::json!(at);
     item["history"][0]["reason"] = serde_json::Value::Null;
     // Unknown: a field inside a record, and one at the top level.
-    item["verification"]["commit"] = serde_json::json!("abc123");
+    // (`commit` was the record's unknown field until slice 8 wrote it.)
+    item["verification"]["triggers"] = serde_json::json!(["T3"]);
     item["criteria"] = serde_json::json!([]);
     item["owner"] = serde_json::json!("me");
     let text = serde_json::to_string_pretty(&item).unwrap();

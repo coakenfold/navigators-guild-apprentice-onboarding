@@ -176,6 +176,8 @@ fn show_prints_every_field_the_verification_records_and_history_with_times() {
     ]);
     env.json(&["evidence", "XX-1", "1", "the tag chips on the home page"]);
     env.add_criterion("XX-1");
+    // So the design doc is committed, and XX-1 has a commit, for G5.
+    env.commit_for("XX-1");
     env.json(&["start", "XX-1"]);
     env.json(&["submit", "XX-1"]);
     env.json(&["reopen", "XX-1", "--reason", "The tag list is missing."]);
@@ -201,11 +203,19 @@ fn show_prints_every_field_the_verification_records_and_history_with_times() {
         "  1. Clicking a tag shows only bookmarks with that tag\n       manual, evidence: the \
          tag chips on the home page\n",
         "  2. it works\n       check: true\n",
-        // Both verification records, with their notes.
+        // What start recorded, and both verification records, with the
+        // commit, its ref, and each check with its saved output (slice 8).
+        "Started:",
+        item["started"]["head"].as_str().unwrap(),
+        "checks  criterion 2 passed",
         "Verification:",
         "Previous verification",
-        "unchecked",
-        "Submitted before tracker ran checks",
+        "numbered as they were at that submit",
+        "auto",
+        item["verification"]["commit"].as_str().unwrap(),
+        "refs/tracker/XX-1",
+        "    criterion 2, passed in",
+        ": `true`\n",
         // The history, with what the edit changed and the reopen's reason.
         "History, oldest first (6 entries):",
         "changed: kind, labels",
@@ -464,10 +474,7 @@ fn in_a_terminal_typing_the_id_deletes_an_item_in_each_state() {
     env.json(&["shelve", "XX-4", "--reason", "later"]);
     // Nothing reaches review until slice 9's triggers, but by hand.
     edit_file(&env, "XX-5", |item| item["status"] = json!("review"));
-    let done_at = env.item("XX-3")["verification"]["at"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let done_at = env.item("XX-3")["verification"]["commit"].as_str().unwrap()[..7].to_string();
 
     let cases = [
         (
@@ -485,9 +492,9 @@ fn in_a_terminal_typing_the_id_deletes_an_item_in_each_state() {
         (
             "XX-3",
             "done",
-            &format!("XX-3 \"finished\" is done at {done_at}, unchecked: no checks ran."),
-            "removes its file, its criterion, its history (2 entries) and its verification \
-             record.",
+            &format!("XX-3 \"finished\" is done, verified by its gates at {done_at}."),
+            "removes its file, its criterion, its history (2 entries), its verification record \
+             and refs/tracker/XX-3.",
         ),
         (
             "XX-4",
@@ -828,4 +835,63 @@ fn a_delete_whose_file_cant_be_removed_takes_its_record_back_out() {
             );
         }
     }
+}
+
+// TR-22: an `unchecked` record with checks, as the slice 7 binary wrote,
+// says how many ran and that no commit records them. One without checks
+// still says no checks ran.
+
+#[test]
+fn delete_says_how_many_checks_an_unchecked_record_ran() {
+    let env = env_with_project();
+    env.create("XX", "checked by slice 7");
+    env.create("XX", "from before slice 7");
+    for id in ["XX-1", "XX-2"] {
+        env.json(&["start", id]);
+        env.json(&["submit", id]);
+    }
+    // As the slice 7 binary wrote it: its checks, but no commit or ref.
+    edit_file(&env, "XX-1", |item| {
+        let record = &mut item["verification"];
+        record["by"] = json!("unchecked");
+        let checks = record["checks"].as_array().unwrap().clone();
+        record.as_object_mut().unwrap().remove("commit");
+        record.as_object_mut().unwrap().remove("ref");
+        record["checks"] = json!([checks[0].clone(), checks[0].clone(), checks[0].clone()]);
+    });
+    // As an earlier binary wrote it: no checks at all.
+    edit_file(&env, "XX-2", |item| {
+        item["verification"] = json!({
+            "by": "unchecked",
+            "at": "2026-11-15T22:02:00Z",
+            "note": "No gates ran."
+        });
+    });
+
+    let at = env.item("XX-1")["verification"]["at"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let Some((output, ok)) = env.in_terminal_typing(&["delete", "XX-1"], PROMPT, "XX-1", || {})
+    else {
+        return;
+    };
+    assert!(ok, "{output}");
+    assert!(
+        output.contains(&format!(
+            "is done at {at}, unchecked: 3 checks ran and passed, but no commit records them."
+        )),
+        "{output}"
+    );
+    assert!(!output.contains("no checks ran"), "{output}");
+
+    let Some((output, ok)) = env.in_terminal_typing(&["delete", "XX-2"], PROMPT, "XX-2", || {})
+    else {
+        return;
+    };
+    assert!(ok, "{output}");
+    assert!(
+        output.contains("is done at 2026-11-15T22:02:00Z, unchecked: no checks ran."),
+        "{output}"
+    );
 }

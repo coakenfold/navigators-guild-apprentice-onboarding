@@ -14,6 +14,7 @@ use tracker::checks;
 use tracker::config::{self, Project};
 use tracker::error::{Error, Result};
 use tracker::gates::{self, Run};
+use tracker::git;
 use tracker::item::{
     self, CheckRecord, Criterion, HistoryEntry, Item, Kind, Priority, Started, StartedCheck,
     Status, Verification, VerifiedBy, Via,
@@ -81,21 +82,24 @@ enum Command {
     /// Gate G1 runs first: the item needs at least one criterion, and no
     /// other item in its project may be in progress or in review. If it
     /// fails, start is refused with exit 2 and every reason, and nothing
-    /// changes. Then each criterion's check runs once and its result is
-    /// recorded. A check is expected to fail before the work is done, so
-    /// start warns about one that already passes, and goes ahead
+    /// changes. Then it records the commit HEAD points to, and each
+    /// criterion's check runs once and its result is recorded. A check is
+    /// expected to fail before the work is done, so start warns about one
+    /// that already passes, and goes ahead
     Start {
         /// The item's ID, such as BM-12
         id: String,
     },
     /// Submit an in-progress item: → done
     ///
-    /// Gates G2, G6, G3 and G4 run first, as `tracker gates` runs them: G3
-    /// runs each criterion's check, and G4 the project's checks. If any
-    /// fails, submit is refused with exit 2 and every reason, and nothing
-    /// changes. Until commits are recorded (a later version), an item that
-    /// passes goes to done with a verification record that says it's
-    /// unchecked, and keeps each check's last lines of output
+    /// Gates G2, G5, G6, G3 and G4 run first, as `tracker gates` runs them:
+    /// G5 needs a clean tree under the project's root and a commit scoped to
+    /// the item, such as `feat(BM-12): …`, G3 runs each criterion's check,
+    /// and G4 the project's checks. If any fails, submit is refused with
+    /// exit 2 and every reason, and nothing changes. An item that passes
+    /// goes to done, verified automatically against HEAD, with each check's
+    /// last lines of output, and the git ref refs/tracker/<ID> keeps that
+    /// commit
     Submit {
         /// The item's ID, such as BM-12
         id: String,
@@ -130,6 +134,12 @@ enum Command {
     // `reason` is optional to clap, so that a missing one gets tracker's
     // own message saying how to give it. The usage line shows it as needed.
     /// Put an open or in-progress item back in the backlog: → shelved
+    ///
+    /// The next item builds on an in-progress item's tree, so shelving one
+    /// needs a clean tree under its project's root (G5) and passing project
+    /// checks (G4). If either fails, shelve is refused with exit 2 and every
+    /// reason, and nothing changes. Revert unfinished work first, in a
+    /// commit scoped to the item
     #[command(override_usage = "tracker shelve [OPTIONS] <ID> --reason <REASON>")]
     Shelve {
         /// The item's ID, such as BM-12
@@ -1765,16 +1775,18 @@ fn record_evidence(store: &Store, id: &str, n: usize, evidence: &str) -> Result<
     ))
 }
 
-/// `gates`: runs the gates `submit` runs, G2, G6, G3 and G4, without changing
-/// anything (§2.4). Exits 2, listing every failure, if any fails.
+/// `gates`: runs the gates `submit` runs, G2, G5, G6, G3 and G4, without
+/// changing anything (§2.4). Exits 2, listing every failure, if any fails,
+/// and 3 if the project's root isn't inside a git work tree (§4.4).
 fn gates_dry_run(store: &Store, id: &str) -> Result<Output> {
     store.require_exists()?;
     let id = normalize_id(id);
     let (item, file) = store.load_item_with_text(&id)?;
     refuse_newer_file(store, &id, &file)?;
     let config = config::load(store)?;
-    let mut report = gates::statics(&item, &config);
+    let mut report = gates::statics(&item, &config)?;
     report.extend(gates::scripts(&item, &config));
+    gates::tree_after_checks(&item, &config, &mut report)?;
     if !report.passed() {
         return Err(report.refusal(&id, item.status, Run::DryRun));
     }
@@ -2126,13 +2138,17 @@ fn check_reason(id: &str, via: Via, reason: Option<String>, how: &str) -> Result
 /// its history entry, and writes the item. A file from a newer tracker is
 /// refused first, with exit 3. A move that has gates runs them next, and
 /// refuses with exit 2, changing nothing, if any fails (§2.4): G1 for
-/// `start`, and G2, G6, G3 and G4 for `submit`.
+/// `start`, G2, G5, G6, G3 and G4 for `submit`, and G5's clean tree and G4
+/// for shelving an in-progress item (§2.8). Each of those, `start`
+/// included, exits 3 if the project's root isn't inside a git work tree
+/// (§4.4).
 ///
 /// Checks run without the lock (§4.4), since one can take minutes. Once
-/// they've run, the lock is taken again, and the move is refused with exit
-/// 1 if the item's file changed meanwhile. `start` runs G1 again then,
-/// since another item in the project may have started while its checks
-/// ran.
+/// they've run, G5 looks at the tree again, the lock is taken again, and
+/// the move is refused with exit 1 if the item's file changed meanwhile.
+/// `start` runs G1 again then, since another item in the project may have
+/// started while its checks ran. A passing submit creates the item's git
+/// ref only then, so a refused one leaves none (§2.7).
 fn apply(
     store: &Store,
     lock: std::fs::File,
@@ -2145,6 +2161,7 @@ fn apply(
     let command = states::command(&item.id, step.via);
     let mut report = None;
     let mut started = Vec::new();
+    let mut head = None;
     let _lock = match step.via {
         Via::Start => {
             // A file that can't be read as an item can't say whether it's
@@ -2155,6 +2172,7 @@ fn apply(
                 return Err(g1.refusal(&item.id, item.status, Run::Start));
             }
             let config = config::load(store)?;
+            head = gates::head_at_start(&item, &config)?;
             drop(lock);
             started = gates::criterion_runs(&item, &config);
             let lock = store.lock_unchanged_after_checks(&item.id, file, &command)?;
@@ -2168,14 +2186,39 @@ fn apply(
         }
         Via::Submit => {
             let config = config::load(store)?;
-            let mut gates = gates::statics(&item, &config);
+            let mut gates = gates::statics(&item, &config)?;
             drop(lock);
             gates.extend(gates::scripts(&item, &config));
+            gates::tree_after_checks(&item, &config, &mut gates)?;
             let lock = store.lock_unchanged_after_checks(&item.id, file, &command)?;
             if !gates.passed() {
                 return Err(gates.refusal(&item.id, item.status, Run::Submit));
             }
+            // G5 passed, so the root is in a work tree and HEAD is the
+            // commit the checks ran against.
+            let (Ok(root), Some(sha)) = (gates::root(&item, &config), &gates.head) else {
+                return Err(Error::store(format!(
+                    "{}'s gates passed, but its project's root or HEAD can't be found now. \
+                     Nothing was changed.",
+                    item.id
+                )));
+            };
+            git::set_ref(&root, &item.id, sha)?;
             report = Some(gates);
+            lock
+        }
+        // An in-progress item frees its project when it's shelved, so it
+        // must leave a tree the next item can build on (§2.8).
+        Via::Shelve if step.from == Status::InProgress => {
+            let config = config::load(store)?;
+            let mut gates = gates::g5(&item, &config, false)?;
+            drop(lock);
+            gates.extend(gates::g4(&item, &config));
+            gates::tree_after_checks(&item, &config, &mut gates)?;
+            let lock = store.lock_unchanged_after_checks(&item.id, file, &command)?;
+            if !gates.passed() {
+                return Err(gates.refusal(&item.id, item.status, Run::Shelve));
+            }
             lock
         }
         _ => lock,
@@ -2193,6 +2236,7 @@ fn apply(
         warnings = already_passing(&item, &started);
         item.started = Some(Started {
             at: now,
+            head,
             checks: started
                 .iter()
                 .map(|(n, run)| StartedCheck {
@@ -2215,14 +2259,20 @@ fn apply(
             .as_ref()
             .map(|report| report.checks.iter().map(check_record).collect())
             .unwrap_or_default();
+        let commit = report.as_ref().and_then(|report| report.head.clone());
+        let git_ref = git::ref_name(&item.id);
+        text.push(&format!(
+            "Verified automatically: every gate passed at {}, and {git_ref} keeps that commit.\n",
+            commit.as_deref().map_or("", gates::short)
+        ));
         item.verification = Some(Verification {
-            by: VerifiedBy::Unchecked,
+            by: VerifiedBy::Auto,
             at: now,
+            commit,
+            git_ref: Some(git_ref),
             checks,
-            note: Some(states::UNCHECKED_NOTE.to_string()),
+            note: None,
         });
-        // The note says which gates passed.
-        text.push(&format!("Unchecked. {}\n", states::UNCHECKED_NOTE));
     }
     item.history.push(HistoryEntry {
         at: now,
@@ -2376,10 +2426,15 @@ fn show(store: &Store, id: &str) -> Result<Output> {
         }
     }
 
+    if let Some(started) = &item.started {
+        section(&mut text, "Started:", "");
+        text.append(started_text(started));
+    }
+
     match &item.verification {
         Some(record) => {
             section(&mut text, "Verification:", "");
-            text.push(&verification_rows(record));
+            text.append(verification_text(record));
         }
         None => section(&mut text, "Verification:", " none."),
     }
@@ -2387,9 +2442,10 @@ fn show(store: &Store, id: &str) -> Result<Output> {
         section(
             &mut text,
             "Previous verification,",
-            " from before it was last reopened:",
+            " from before it was last reopened. Its criteria are numbered as they were at that \
+             submit:",
         );
-        text.push(&verification_rows(record));
+        text.append(verification_text(record));
     }
 
     if item.history.is_empty() {
@@ -2503,16 +2559,74 @@ fn refuse_newer_file(store: &Store, id: &str, file: &str) -> Result<()> {
     )))
 }
 
-/// A verification record's fields as indented rows.
-fn verification_rows(record: &Verification) -> String {
+/// What `start` recorded, as indented rows: when, `HEAD` then, and whether
+/// each criterion's check passed, when failing was expected (§2.4).
+fn started_text(started: &Started) -> Styled {
+    let mut rows = vec![vec!["  at".to_string(), started.at.to_string()]];
+    if let Some(head) = &started.head {
+        rows.push(vec!["  head".to_string(), text::for_terminal(head, false)]);
+    }
+    if !started.checks.is_empty() {
+        let checks: Vec<String> = started
+            .checks
+            .iter()
+            .map(|check| {
+                let how = if check.passed { "passed" } else { "failed" };
+                format!("criterion {} {how}", check.criterion)
+            })
+            .collect();
+        rows.push(vec!["  checks".to_string(), checks.join(", ")]);
+    }
+    Styled::from(table(&rows))
+}
+
+/// A verification record as indented rows, then each check it ran, with
+/// the criterion it came from, its command, how it went, and its saved
+/// output below it, escaped with its line breaks kept (§2.3). The output is
+/// what the check printed then, so it still shows after a test is renamed.
+fn verification_text(record: &Verification) -> Styled {
     let mut rows = vec![
         vec!["  by".to_string(), record.by.as_str().to_string()],
         vec!["  at".to_string(), record.at.to_string()],
     ];
+    if let Some(commit) = &record.commit {
+        rows.push(vec![
+            "  commit".to_string(),
+            text::for_terminal(commit, false),
+        ]);
+    }
+    if let Some(git_ref) = &record.git_ref {
+        rows.push(vec![
+            "  ref".to_string(),
+            text::for_terminal(git_ref, false),
+        ]);
+    }
     if let Some(note) = &record.note {
         rows.push(vec!["  note".to_string(), note.clone()]);
     }
-    table(&rows)
+    let mut text = Styled::from(table(&rows));
+    if record.checks.is_empty() {
+        return text;
+    }
+    text.push("  checks:\n");
+    for check in &record.checks {
+        let from = match check.criterion {
+            Some(n) => format!("criterion {n}"),
+            None => "project".to_string(),
+        };
+        let how = if check.ok { "passed" } else { "failed" };
+        text.push(&format!(
+            "    {from}, {how} in {}s: {}\n",
+            check.secs,
+            text::for_terminal(&format!("`{}`", check.cmd), false)
+        ));
+        if let Some(output) = &check.output {
+            for line in output.lines() {
+                text.push(&format!("      {line}\n"));
+            }
+        }
+    }
+    text
 }
 
 /// "1 entry" or "6 entries".
@@ -2561,11 +2675,23 @@ fn delete(store: &Store, id: &str) -> Result<Output> {
         )
     };
     let command = format!("tracker delete {id}");
-    tty::confirm(&command, &id, &deletion_warning(&item), &otherwise)?;
+    let ref_root = ref_to_delete(store, &item)?;
+    tty::confirm(
+        &command,
+        &id,
+        &deletion_warning(&item, ref_root.is_some()),
+        &otherwise,
+    )?;
 
     // The lock wasn't held while I decided, so nothing happens if the item
     // changed meanwhile (§4.4).
     let _lock = store.lock_unchanged(&id, &before, &command)?;
+    // Nothing should keep a commit alive for an item that no longer exists
+    // (§2.8). The ref goes first, so a delete that fails here leaves the
+    // item to try again.
+    if let Some(root) = &ref_root {
+        git::delete_ref(root, &id)?;
+    }
 
     // The ID, title, state, time and whether it came from a terminal, and
     // nothing else of the item (§2.8).
@@ -2588,23 +2714,57 @@ fn delete(store: &Store, id: &str) -> Result<Output> {
     ))
 }
 
+/// The root of the repository that holds item's git ref, `refs/tracker/<ID>`,
+/// for `delete` to remove (§2.8), or `None` if it has none. Only an item
+/// whose verification record, or the one from before it was reopened,
+/// names a ref can have one, so git is asked only then. A ref in a root
+/// that can't be found now can't be removed, and is left.
+fn ref_to_delete(store: &Store, item: &Item) -> Result<Option<PathBuf>> {
+    let names_ref = [&item.verification, &item.previous_verification]
+        .into_iter()
+        .flatten()
+        .any(|record| record.git_ref.is_some());
+    if !names_ref {
+        return Ok(None);
+    }
+    let config = config::load(store)?;
+    let Ok(root) = gates::root(item, &config) else {
+        return Ok(None);
+    };
+    Ok(git::ref_exists(&root, &item.id)?.then_some(root))
+}
+
 /// What `delete` says before asking for the ID (§2.8): the item's state,
-/// and what deleting it removes.
-fn deletion_warning(item: &Item) -> String {
+/// and what deleting it removes, including its git ref, if `has_ref`.
+fn deletion_warning(item: &Item, has_ref: bool) -> String {
     let id = &item.id;
     let state = match (item.status, &item.verification) {
         (Status::Done, Some(record)) => match record.by {
-            VerifiedBy::Auto => format!("done, verified by its gates at {}", record.at),
+            VerifiedBy::Auto => match &record.commit {
+                Some(sha) => format!("done, verified by its gates at {}", gates::short(sha)),
+                None => format!("done, verified by its gates at {}", record.at),
+            },
             VerifiedBy::Human => format!("done, approved by a human at {}", record.at),
-            // Nothing verified it, so the warning mustn't say it was.
-            VerifiedBy::Unchecked => format!("done at {}, unchecked: no checks ran", record.at),
+            // Nothing verified it, so the warning mustn't say it was. The
+            // slice 7 binary ran checks but recorded no commit.
+            VerifiedBy::Unchecked => match record.checks.len() {
+                0 => format!("done at {}, unchecked: no checks ran", record.at),
+                1 => format!(
+                    "done at {}, unchecked: 1 check ran and passed, but no commit records it",
+                    record.at
+                ),
+                count => format!(
+                    "done at {}, unchecked: {count} checks ran and passed, but no commit \
+                     records them",
+                    record.at
+                ),
+            },
         },
         (Status::Done, None) => "done, with no verification record".to_string(),
         (Status::InProgress, _) => "in-progress, so someone may be working on it".to_string(),
         (Status::Review, _) => "in review, waiting for a human's decision".to_string(),
         (status, _) => status.as_str().to_string(),
     };
-    // Slice 8 adds a done item's git ref.
     let mut lost = vec!["its file".to_string()];
     match item.criteria.len() {
         0 => {}
@@ -2619,6 +2779,9 @@ fn deletion_warning(item: &Item) -> String {
     }
     if item.previous_verification.is_some() {
         lost.push("the verification record from before it was reopened".to_string());
+    }
+    if has_ref {
+        lost.push(git::ref_name(id));
     }
     format!(
         "{id} \"{}\" is {state}.\nDeleting it removes {}.\nAny commits scoped to it stay in \

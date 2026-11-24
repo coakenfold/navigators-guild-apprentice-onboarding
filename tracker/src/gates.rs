@@ -2,9 +2,10 @@
 //! submitted. A gate never changes anything. It reports every reason it
 //! failed, and the command that ran it refuses with exit 2.
 //!
-//! This version has G1 (at `start`), and G2, G6, G3 and G4 (at `submit`,
-//! and in the `gates` dry run). G3 and G4 run checks (`checks.rs`). Slice 8
-//! adds G5, which reads git.
+//! This version has G1 (at `start`), and G2, G5, G6, G3 and G4 (at
+//! `submit`, and in the `gates` dry run). G3 and G4 run checks
+//! (`checks.rs`), and G5 reads git (`git.rs`). Shelving an in-progress item
+//! runs G5's clean-tree half and G4 (§2.8).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,6 +16,7 @@ use serde_json::{Value, json};
 use crate::checks;
 use crate::config::Config;
 use crate::error::Error;
+use crate::git;
 use crate::item::{Item, Status, is_valid_id};
 use crate::states;
 use crate::store::Skipped;
@@ -41,6 +43,13 @@ pub struct Report {
     pub ran: Vec<&'static str>,
     pub failures: Vec<Failure>,
     pub checks: Vec<Ran>,
+    /// The commit `HEAD` pointed to when G5 looked, which a passing submit
+    /// records (§2.7). `None` if G5 didn't run, or the repository has no
+    /// commits.
+    pub head: Option<String>,
+    /// What G5 found uncommitted under the root, as `git::uncommitted`
+    /// names them, so `tree_after_checks` can tell what the checks left.
+    pub uncommitted: Vec<String>,
 }
 
 /// One check a gate ran: G3 for a criterion's, G4 for a project's.
@@ -57,6 +66,9 @@ pub struct Ran {
 pub enum Run {
     Start,
     Submit,
+    /// `shelve` on an in-progress item, which needs a clean tree and
+    /// passing project checks (§2.8).
+    Shelve,
     /// `tracker gates`, which changes nothing either way.
     DryRun,
 }
@@ -71,6 +83,10 @@ impl Report {
         self.ran.extend(other.ran);
         self.failures.extend(other.failures);
         self.checks.extend(other.checks);
+        if other.head.is_some() {
+            self.head = other.head;
+        }
+        self.uncommitted.extend(other.uncommitted);
     }
 
     /// The gates that failed, each once, in the order they ran.
@@ -140,6 +156,11 @@ impl Report {
             Run::Submit => {
                 format!("{id} can't be submitted: {failed} failed. Nothing was changed.")
             }
+            Run::Shelve => format!(
+                "{id} can't be shelved while it's in progress: {failed} failed. The next item \
+                 builds on this tree, so it must be clean and pass the project checks. Nothing \
+                 was changed."
+            ),
             Run::DryRun => format!(
                 "{id} would be refused at submit: {failed} failed. This was a dry run, so \
                  nothing was changed."
@@ -252,19 +273,160 @@ pub fn start(item: &Item, items: &[Item], skipped: &[Skipped]) -> Report {
     Report {
         ran: vec!["G1"],
         failures,
-        checks: Vec::new(),
+        ..Report::default()
     }
 }
 
 /// The gates `submit` and `gates` run first, since they read only files
-/// (§2.4): G2, then G6. `scripts` runs the rest.
-pub fn statics(item: &Item, config: &Config) -> Report {
-    let mut failures = g2(item);
-    failures.extend(g6(item, config));
-    Report {
-        ran: vec!["G2", "G6"],
-        failures,
-        checks: Vec::new(),
+/// and git (§2.4): G2, G5, then G6. `scripts` runs the rest. Fails with
+/// exit 3 if the project's root isn't inside a git work tree (§4.4).
+pub fn statics(item: &Item, config: &Config) -> crate::error::Result<Report> {
+    let mut report = Report {
+        ran: vec!["G2"],
+        failures: g2(item),
+        ..Report::default()
+    };
+    report.extend(g5(item, config, true)?);
+    report.ran.push("G6");
+    report.failures.extend(g6(item, config));
+    Ok(report)
+}
+
+/// G5 (§2.4): nothing under the project's root is uncommitted or
+/// untracked, and, if `needs_commit`, the item has at least one commit
+/// (§2.1). A file marked skip-worktree or assume-unchanged fails it, since
+/// git can't see a change to it. Files that git's ignore rules exclude, and
+/// files outside the root, don't count. Shelving an in-progress item needs only the clean tree
+/// (§2.8). Records `HEAD` in the report. Fails with exit 3 if the root
+/// isn't inside a git work tree, or git can't be run (§4.4).
+pub fn g5(item: &Item, config: &Config, needs_commit: bool) -> crate::error::Result<Report> {
+    let mut report = Report {
+        ran: vec!["G5"],
+        ..Report::default()
+    };
+    let id = &item.id;
+    let root = match root(item, config) {
+        Ok(root) => root,
+        Err(why) => {
+            report.failures.push(g5_failure(format!(
+                "Can't look at {id}'s work in git: {why}."
+            )));
+            return Ok(report);
+        }
+    };
+    git::require_work_tree(&root, &item.project, id)?;
+    report.head = git::head(&root)?;
+    report.uncommitted = git::uncommitted(&root)?;
+    // Only a submit's G5 needs a commit. A shelve's clean tree is for the
+    // next item, which builds on what's committed (§2.8).
+    let why = if needs_commit {
+        "the proof has to match a real commit"
+    } else {
+        "the next item builds on what's committed"
+    };
+    if !report.uncommitted.is_empty() {
+        let them = if report.uncommitted.len() == 1 {
+            "it"
+        } else {
+            "them"
+        };
+        report.failures.push(g5_failure(format!(
+            "{}'s root has {}. Commit {them}, scoped to {id}, or remove {them}: {why}.",
+            item.project,
+            uncommitted_list(&report.uncommitted)
+        )));
+    }
+    // `git status` can't see a change to these, so they could hold work
+    // that no commit has.
+    let hidden = git::hidden(&root)?;
+    if !hidden.is_empty() {
+        let mut named: Vec<String> = hidden.iter().take(git::LISTED_FILES).cloned().collect();
+        if hidden.len() > named.len() {
+            named.push(format!("{} more", hidden.len() - named.len()));
+        }
+        report.failures.push(g5_failure(format!(
+            "{}'s root has files git is told not to look at, so G5 can't see a change to them: \
+             {}. Clear the flag with `git update-index --no-skip-worktree <file>` or \
+             `--no-assume-unchanged <file>`, then commit any change, scoped to {id}: {why}.",
+            item.project,
+            states::join(&named, "and")
+        )));
+    }
+    if needs_commit && git::item_commits(&root, id)?.is_empty() {
+        report.failures.push(g5_failure(format!(
+            "{id} has no commits. Commit its work with a message headed `<type>({id}): …`, such \
+             as `feat({id}): …`, so the proof matches a real commit (§2.1)."
+        )));
+    }
+    Ok(report)
+}
+
+/// G5 again, once the checks have run (§2.4): a check that changed files
+/// under the root, or moved `HEAD`, fails G5, since the checks must leave
+/// the tree as they found it. Otherwise the verified commit wouldn't be
+/// what they ran against, and a file a check left would fail the next
+/// submit, or a shelve, instead of this one. Only what changed since
+/// `report`'s G5 ran is reported, so nothing is listed twice.
+pub fn tree_after_checks(
+    item: &Item,
+    config: &Config,
+    report: &mut Report,
+) -> crate::error::Result<()> {
+    // If the root couldn't be found, G5 has failed already.
+    let Ok(root) = root(item, config) else {
+        return Ok(());
+    };
+    let left: Vec<String> = git::uncommitted(&root)?
+        .into_iter()
+        .filter(|file| !report.uncommitted.contains(file))
+        .collect();
+    if !left.is_empty() {
+        report.failures.push(g5_failure(format!(
+            "The checks left {} under {}'s root. A check must leave the tree as it found it, so \
+             make it write outside the root, or to a file that .gitignore excludes.",
+            uncommitted_list(&left),
+            item.project
+        )));
+    }
+    let head = git::head(&root)?;
+    if head != report.head {
+        let name = |sha: &Option<String>| sha.as_deref().map_or("nothing", short).to_string();
+        report.failures.push(g5_failure(format!(
+            "HEAD moved from {} to {} while the checks ran, so they may not have run against the \
+             commit that would be recorded. Run it again once nothing else is committing.",
+            name(&report.head),
+            name(&head)
+        )));
+    }
+    Ok(())
+}
+
+/// A commit's SHA cut to 7 characters, as git shows it.
+pub fn short(sha: &str) -> &str {
+    sha.get(..7).unwrap_or(sha)
+}
+
+/// "uncommitted changes: modified xx/a.txt and untracked xx/b.txt", naming
+/// at most `git::LISTED_FILES` of `files`.
+fn uncommitted_list(files: &[String]) -> String {
+    let what = if files.len() == 1 {
+        "an uncommitted change"
+    } else {
+        "uncommitted changes"
+    };
+    let mut named: Vec<String> = files.iter().take(git::LISTED_FILES).cloned().collect();
+    if files.len() > named.len() {
+        named.push(format!("{} more", files.len() - named.len()));
+    }
+    format!("{what}: {}", states::join(&named, "and"))
+}
+
+fn g5_failure(message: String) -> Failure {
+    Failure {
+        gate: "G5",
+        criterion: None,
+        message,
+        check: None,
     }
 }
 
@@ -272,8 +434,15 @@ pub fn statics(item: &Item, config: &Config) -> Report {
 /// criterion's check, and G4 each of the project's checks, in the project's
 /// root. Every check runs, so the refusal lists every one that fails.
 pub fn scripts(item: &Item, config: &Config) -> Report {
+    let mut report = g3(item, config);
+    report.extend(g4(item, config));
+    report
+}
+
+/// G3's script half: each criterion's check, run in the project's root.
+pub fn g3(item: &Item, config: &Config) -> Report {
     let mut report = Report {
-        ran: vec!["G3", "G4"],
+        ran: vec!["G3"],
         ..Report::default()
     };
     for (n, run) in criterion_runs(item, config) {
@@ -288,7 +457,16 @@ pub fn scripts(item: &Item, config: &Config) -> Report {
             run,
         });
     }
+    report
+}
 
+/// G4: each of the project's checks, run in its root. Shelving an
+/// in-progress item runs it on its own (§2.8).
+pub fn g4(item: &Item, config: &Config) -> Report {
+    let mut report = Report {
+        ran: vec!["G4"],
+        ..Report::default()
+    };
     let key = &item.project;
     let Some(project) = config.projects.get(key) else {
         // Its checks aren't known, so G4 can't pass.
@@ -364,9 +542,21 @@ fn run_in(cmd: &str, root: &Result<PathBuf, String>, timeout: Duration, what: &s
     }
 }
 
-/// The project's root, where its checks run, followed through symlinks,
-/// or what's wrong with it.
-fn root(item: &Item, config: &Config) -> Result<PathBuf, String> {
+/// The commit `HEAD` points to in the project's root, for `start` to
+/// record (§4.3), or `None` in a repository with no commits yet, or when
+/// the root can't be found, which the checks that run next report. Fails
+/// with exit 3 if the root isn't inside a git work tree (§4.4).
+pub fn head_at_start(item: &Item, config: &Config) -> crate::error::Result<Option<String>> {
+    let Ok(root) = root(item, config) else {
+        return Ok(None);
+    };
+    git::require_work_tree(&root, &item.project, &item.id)?;
+    git::head(&root)
+}
+
+/// The project's root, where its checks and git run, followed through
+/// symlinks, or what's wrong with it.
+pub fn root(item: &Item, config: &Config) -> Result<PathBuf, String> {
     let key = &item.project;
     let Some(project) = config.projects.get(key) else {
         return Err(format!(

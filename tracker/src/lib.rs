@@ -5,6 +5,7 @@ pub mod checks;
 pub mod config;
 pub mod error;
 pub mod gates;
+pub mod git;
 pub mod item;
 pub mod states;
 pub mod store;

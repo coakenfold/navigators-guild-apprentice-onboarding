@@ -56,17 +56,17 @@ fn check_last_move(item: &Value, from: &str, to: &str, via: &str, reason: Option
     assert_eq!(item["updated"], entry["at"]);
 }
 
-/// Checks that the item's verification record is the unchecked one that a
-/// submit writes before checks run (slice 7), made by its last move.
-fn check_unchecked(item: &Value) {
+/// Checks that the item's verification record is the `auto` one that a
+/// passing submit writes, with the commit and its ref (slice 8), made by
+/// its last move. Until slice 8 it was `unchecked`, with a note.
+fn check_verified(item: &Value) {
     let verification = &item["verification"];
-    assert_eq!(verification["by"], "unchecked");
+    assert_eq!(verification["by"], "auto");
     assert_eq!(verification["at"], history(item).last().unwrap()["at"]);
-    let note = verification["note"].as_str().unwrap();
-    assert!(
-        note.contains("Submitted before tracker ran checks"),
-        "{note}"
-    );
+    assert!(verification["commit"].is_string(), "{verification}");
+    let git_ref = format!("refs/tracker/{}", item["id"].as_str().unwrap());
+    assert_eq!(verification["ref"], git_ref.as_str());
+    assert!(verification.get("note").is_none(), "{verification}");
 }
 
 /// Checks that `record`, the verification record the item had when it was
@@ -137,7 +137,7 @@ fn an_item_goes_open_in_progress_done_open_through_the_commands() {
 
     let item = moved(&env, &["submit", "XX-1"]);
     check_last_move(&item, "in-progress", "done", "submit", None);
-    check_unchecked(&item);
+    check_verified(&item);
     let record = item["verification"].clone();
 
     let item = moved(&env, &["reopen", "XX-1", "--reason", "  found a bug  "]);
@@ -155,7 +155,7 @@ fn an_item_goes_open_in_progress_done_open_through_status() {
 
     let item = moved(&env, &["status", "XX-1", "done"]);
     check_last_move(&item, "in-progress", "done", "submit", None);
-    check_unchecked(&item);
+    check_verified(&item);
     let record = item["verification"].clone();
 
     let item = moved(&env, &["status", "XX-1", "open", "--reason", "found a bug"]);
@@ -185,7 +185,7 @@ fn each_reopen_from_done_replaces_the_previous_verification() {
     // Reaching done again keeps the previous record next to the new one.
     env.json(&["start", "XX-1"]);
     let item = moved(&env, &["submit", "XX-1"]);
-    check_unchecked(&item);
+    check_verified(&item);
     assert_eq!(item["previous_verification"], first);
     let second = item["verification"].clone();
 
@@ -227,6 +227,7 @@ fn submit_prints_the_shape_section_3_gives_it() {
                 "status": "done",
                 "gates": [
                     { "gate": "G2", "ok": true },
+                    { "gate": "G5", "ok": true },
                     { "gate": "G6", "ok": true },
                     { "gate": "G3", "ok": true, "secs": 0 },
                     { "gate": "G4", "ok": true, "secs": 0 }
@@ -597,11 +598,16 @@ fn the_text_output_names_the_move() {
     let output = env.cmd().args(["submit", "XX-1"]).assert().success();
     let stdout = String::from_utf8_lossy(&output.get_output().stdout).to_string();
     assert!(stdout.starts_with("XX-1: in-progress → done\n"), "{stdout}");
+    let commit = env.item("XX-1")["verification"]["commit"]
+        .as_str()
+        .unwrap()
+        .to_string();
     assert!(
-        stdout.contains(
-            "Unchecked. Submitted before tracker ran checks against a recorded commit. Gates \
-             G2, G6, G3 and G4 passed, but no commit ties the checks to the work.\n"
-        ),
+        stdout.contains(&format!(
+            "Verified automatically: every gate passed at {}, and refs/tracker/XX-1 keeps that \
+             commit.\n",
+            &commit[..7]
+        )),
         "{stdout}"
     );
 

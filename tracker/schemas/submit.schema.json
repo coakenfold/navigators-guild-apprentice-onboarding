@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tracker.invalid/schemas/submit.schema.json",
   "title": "tracker submit and status <id> done --json",
-  "description": "A submit that wasn't refused (DESIGN.md §3). A refused one prints the error shape instead. Until the triggers (slice 9) exist, result is always done and triggers and holds are empty. gates lists G2, G6, G3 and G4, which passed, since a gate that fails refuses the submit.",
+  "description": "A submit that wasn't refused (DESIGN.md §3). A refused one prints the error shape instead. Until the triggers (slice 9) exist, result is always done and triggers and holds are empty. gates lists G2, G5, G6, G3 and G4, which passed, since a gate that fails refuses the submit.",
   "type": "object",
   "required": ["id", "result", "status", "gates", "triggers", "holds", "item"],
   "properties": {

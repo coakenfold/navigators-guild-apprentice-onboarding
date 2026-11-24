@@ -1,6 +1,8 @@
 //! Slice 6: gates G1 (at `start`), G2 and G6 (at `submit` and in the
 //! `gates` dry run), as DESIGN.md §2.4 describes. A failure lists every
-//! reason, changes nothing and exits 2.
+//! reason, changes nothing and exits 2. From slice 8, G5 runs between G2
+//! and G6, so each item here has a commit and a clean tree
+//! (`tests/commits.rs` tests G5 itself).
 
 mod common;
 
@@ -348,6 +350,7 @@ fn a_manual_criterion_with_no_evidence_fails_g2() {
         "--done-when",
         "Looks right",
     ]);
+    env.commit_for("XX-1");
     env.json(&["start", "XX-1"]);
 
     for args in [
@@ -360,6 +363,7 @@ fn a_manual_criterion_with_no_evidence_fails_g2() {
             error["gates"],
             json!([
                 { "gate": "G2", "ok": false },
+                { "gate": "G5", "ok": true },
                 { "gate": "G6", "ok": true },
                 { "gate": "G3", "ok": true, "secs": 0 },
                 { "gate": "G4", "ok": true, "secs": 0 }
@@ -399,6 +403,7 @@ fn an_item_with_no_criteria_fails_g2() {
             error["gates"],
             json!([
                 { "gate": "G2", "ok": false },
+                { "gate": "G5", "ok": true },
                 { "gate": "G6", "ok": true },
                 { "gate": "G3", "ok": true, "secs": 0 },
                 { "gate": "G4", "ok": true, "secs": 0 }
@@ -432,6 +437,7 @@ fn a_script_criterion_needs_no_evidence() {
             "result": "passed",
             "gates": [
                 { "gate": "G2", "ok": true },
+                { "gate": "G5", "ok": true },
                 { "gate": "G6", "ok": true },
                 { "gate": "G3", "ok": true, "secs": 0 },
                 { "gate": "G4", "ok": true, "secs": 0 }
@@ -491,6 +497,7 @@ fn a_design_naming_a_missing_section_fails_g6() {
                 error["gates"],
                 json!([
                     { "gate": "G2", "ok": true },
+                    { "gate": "G5", "ok": true },
                     { "gate": "G6", "ok": false },
                     { "gate": "G3", "ok": true, "secs": 0 },
                     { "gate": "G4", "ok": true, "secs": 0 }
@@ -524,6 +531,8 @@ fn a_design_whose_file_is_a_symlink_outside_the_root_fails_g6() {
 
     fs::remove_file(root.join("DESIGN.md")).unwrap();
     std::os::unix::fs::symlink(outside.join("DESIGN.md"), root.join("DESIGN.md")).unwrap();
+    // Committed, so G6's is the only failure (slice 8's G5).
+    env.commit_for("XX-1");
     let error = refused_by_gate(&env, &["gates", "XX-1"]);
     let message = error["failures"][0]["message"].as_str().unwrap();
     assert!(message.contains("outside XX's root"), "{message}");
@@ -531,6 +540,7 @@ fn a_design_whose_file_is_a_symlink_outside_the_root_fails_g6() {
     // And so does a folder on the way that leads outside.
     fs::remove_file(root.join("DESIGN.md")).unwrap();
     std::os::unix::fs::symlink(&outside, root.join("docs")).unwrap();
+    env.commit_for("XX-1");
     set_design(&env, "docs/DESIGN.md#2.4");
     let error = refused_by_gate(&env, &["gates", "XX-1"]);
     let message = error["failures"][0]["message"].as_str().unwrap();
@@ -541,6 +551,7 @@ fn a_design_whose_file_is_a_symlink_outside_the_root_fails_g6() {
     fs::create_dir(root.join("real")).unwrap();
     fs::write(root.join("real/DESIGN.md"), DESIGN).unwrap();
     std::os::unix::fs::symlink(root.join("real"), root.join("docs")).unwrap();
+    env.commit_for("XX-1");
     env.json(&["gates", "XX-1"]);
 }
 
@@ -613,6 +624,7 @@ fn gates_lists_every_failure_and_leaves_the_item_file_unchanged() {
         "second",
     ]);
     env.json(&["criterion", "add", "XX-1", "third", "--check", "true"]);
+    env.commit_for("XX-1");
     set_design(&env, "DESIGN.md#9");
     env.json(&["start", "XX-1"]);
 
@@ -628,6 +640,7 @@ fn gates_lists_every_failure_and_leaves_the_item_file_unchanged() {
             "result": "refused",
             "gates": [
                 { "gate": "G2", "ok": false },
+                { "gate": "G5", "ok": true },
                 { "gate": "G6", "ok": false },
                 { "gate": "G3", "ok": true, "secs": 0 },
                 { "gate": "G4", "ok": true, "secs": 0 }
@@ -661,6 +674,7 @@ fn gates_lists_every_failure_and_leaves_the_item_file_unchanged() {
 fn a_refused_submit_exits_2_and_changes_nothing() {
     let (env, _) = env_with_project();
     env.json(&["create", "a", "--project", "XX", "--done-when", "first"]);
+    env.commit_for("XX-1");
     env.json(&["start", "XX-1"]);
     let error = refused_by_gate(&env, &["submit", "XX-1"]);
     assert_eq!(
@@ -681,7 +695,7 @@ fn gates_says_when_the_item_isnt_ready_to_submit() {
     let text = String::from_utf8_lossy(&output.get_output().stdout).to_string();
     assert_eq!(
         text,
-        "XX-1 passes the gates submit runs: G2, G6, G3 and G4.\nIt's open, and only an in-progress \
+        "XX-1 passes the gates submit runs: G2, G5, G6, G3 and G4.\nIt's open, and only an in-progress \
          item can be submitted.\n"
     );
     env.json(&["start", "XX-1"]);
@@ -689,7 +703,7 @@ fn gates_says_when_the_item_isnt_ready_to_submit() {
     let text = String::from_utf8_lossy(&output.get_output().stdout).to_string();
     assert_eq!(
         text,
-        "XX-1 passes the gates submit runs: G2, G6, G3 and G4.\n"
+        "XX-1 passes the gates submit runs: G2, G5, G6, G3 and G4.\n"
     );
 }
 
@@ -699,6 +713,7 @@ fn a_failing_gates_says_when_the_item_isnt_ready_to_submit_either() {
     // submitted, so the refusal says that too (review 2's finding 5).
     let (env, _) = env_with_project();
     env.json(&["create", "a", "--project", "XX", "--done-when", "first"]);
+    env.commit_for("XX-1");
     let error = refused_by_gate(&env, &["gates", "XX-1"]);
     assert_eq!(error["status"], "open", "{error}");
     let output = env.cmd().args(["gates", "XX-1"]).assert().code(2);
