@@ -114,9 +114,11 @@ fn prompt(state: &str, id: &str, question: &Value) -> Result<String, String> {
     let instructions = question["instructions"]
         .as_str()
         .ok_or_else(|| format!("question {id} has no instructions"))?;
-    // A `</material>` in the excerpt would close the tag as the model reads
-    // it, so it's escaped (judge-eval's adapter does the same).
-    let state = state.replace("</material>", "<\\/material>");
+    // A `</material>` in the excerpt, in any case and with spaces before the
+    // `>`, would close the tag as the model reads it, so it's escaped
+    // (judge-eval's adapter does the same).
+    let closing = regex::Regex::new(r"(?i)</\s*material\s*>").map_err(|e| e.to_string())?;
+    let state = closing.replace_all(state, regex::NoExpand("<\\/material>"));
     let mut prompt = format!("<material>\n{state}\n</material>\n\nQuestion: {instructions}");
     for (key, label) in [("true", "Yes means"), ("false", "No means")] {
         if let Some(meaning) = question["criteria"][key].as_str().filter(|m| !m.is_empty()) {

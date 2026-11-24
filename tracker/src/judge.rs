@@ -351,7 +351,7 @@ pub struct Answered {
     pub reason: String,
     /// The answer that passes.
     pub passing: Answer,
-    /// The model that answered.
+    /// The model asked for.
     pub model: String,
     /// The fingerprint of the request it was asked in.
     pub request: String,
@@ -1012,13 +1012,26 @@ fn strip_diff_in(diff: &str, root: Option<&Path>) -> String {
             return;
         }
         let whole = root.and_then(|root| file.stripped(root, sha));
-        let lines = match whole.and_then(|(before, after)| map_hunk(header, hunk, &before, &after))
-        {
+        let lines = match whole.and_then(|versions| map_hunk(header, hunk, &versions)) {
             Some(lines) => lines,
             None => {
-                let text: Vec<&str> = hunk.iter().map(|(_, line)| line.as_str()).collect();
+                // The `\ No newline` markers aren't code, so they're left out.
+                let text: Vec<&str> = hunk
+                    .iter()
+                    .filter(|(marker, _)| *marker != '\\')
+                    .map(|(_, line)| line.as_str())
+                    .collect();
                 let stripped = strip_comments(&text.join("\n"), file.style);
-                stripped.split('\n').map(str::to_string).collect()
+                let mut stripped = stripped.split('\n').map(str::to_string);
+                hunk.iter()
+                    .map(|(marker, line)| {
+                        if *marker == '\\' {
+                            line.clone()
+                        } else {
+                            stripped.next().unwrap_or_default()
+                        }
+                    })
+                    .collect()
             }
         };
         for ((marker, _), line) in hunk.iter().zip(lines) {
@@ -1028,34 +1041,34 @@ fn strip_diff_in(diff: &str, root: Option<&Path>) -> String {
     };
     for line in diff.split('\n') {
         let marker = line.chars().next();
-        if in_hunk && matches!(marker, Some('+' | '-' | ' ')) {
+        if in_hunk && matches!(marker, Some('+' | '-' | ' ' | '\\')) {
             let marker = marker.unwrap_or(' ');
             hunk.push((marker, line[marker.len_utf8()..].to_string()));
-            continue;
-        }
-        // git's `\ No newline at end of file` sits inside a hunk.
-        if in_hunk && line.starts_with('\\') {
-            flush(&mut hunk, &mut out, &header, &file, &sha);
-            out.push(line.to_string());
             continue;
         }
         flush(&mut hunk, &mut out, &header, &file, &sha);
         if let Some(id) = line.strip_prefix("commit ") {
             sha = id.to_string();
         }
-        if !in_hunk {
-            if let Some(rest) = line.strip_prefix("diff --git ") {
-                let name = rest.rsplit(" b/").next().unwrap_or(rest);
-                file = DiffFile {
-                    style: style_for(name),
-                    before: Some(name.to_string()),
-                    after: Some(name.to_string()),
-                };
-            } else if let Some(path) = line.strip_prefix("--- ") {
-                file.before = path.strip_prefix("a/").map(str::to_string);
-            } else if let Some(path) = line.strip_prefix("+++ ") {
-                file.after = path.strip_prefix("b/").map(str::to_string);
-            }
+        // A header line is never a hunk line, whatever the last line was.
+        // git ends a path that holds a space with a tab.
+        if let Some(rest) = line.strip_prefix("diff --git ") {
+            let name = rest.rsplit(" b/").next().unwrap_or(rest);
+            file = DiffFile {
+                style: style_for(name),
+                before: Some(name.to_string()),
+                after: Some(name.to_string()),
+            };
+        } else if let Some(path) = line.strip_prefix("--- ") {
+            file.before = path
+                .trim_end_matches('\t')
+                .strip_prefix("a/")
+                .map(str::to_string);
+        } else if let Some(path) = line.strip_prefix("+++ ") {
+            file.after = path
+                .trim_end_matches('\t')
+                .strip_prefix("b/")
+                .map(str::to_string);
         }
         in_hunk = line.starts_with("@@");
         if in_hunk {
@@ -1082,33 +1095,47 @@ struct DiffFile {
 }
 
 impl DiffFile {
-    /// The file's before and after versions in commit `sha`, stripped
-    /// whole, as lines. A missing side (an added or deleted file) is empty.
-    fn stripped(&self, root: &Path, sha: &str) -> Option<(Vec<String>, Vec<String>)> {
+    /// The file's before and after versions in commit `sha`, as lines, each
+    /// both as it is and stripped whole. A missing side (an added or
+    /// deleted file) is empty.
+    fn stripped(&self, root: &Path, sha: &str) -> Option<Versions> {
         let side = |path: &Option<String>, rev: String| match path {
-            None => Some(Vec::new()),
+            None => Some((Vec::new(), Vec::new())),
             Some(path) => {
                 let text = git::file_at(root, &rev, path)?;
                 let stripped = strip_comments(&text, style_for(path));
-                Some(stripped.split('\n').map(str::to_string).collect())
+                let lines = |text: &str| text.split('\n').map(str::to_string).collect();
+                Some((lines(&text), lines(&stripped)))
             }
         };
-        Some((
-            side(&self.before, format!("{sha}^"))?,
-            side(&self.after, sha.to_string())?,
-        ))
+        let (raw_before, before) = side(&self.before, format!("{sha}^"))?;
+        let (raw_after, after) = side(&self.after, sha.to_string())?;
+        Some(Versions {
+            raw_before,
+            before,
+            raw_after,
+            after,
+        })
     }
 }
 
-/// Each line of `hunk`, as the stripped `before` and `after` versions have
-/// it, found by the line numbers in `header`, `@@ -a,b +c,d @@`. `None` if
-/// the header or a line number doesn't fit.
-fn map_hunk(
-    header: &str,
-    hunk: &[(char, String)],
-    before: &[String],
-    after: &[String],
-) -> Option<Vec<String>> {
+/// A file's lines before and after a commit, as they are and stripped.
+struct Versions {
+    raw_before: Vec<String>,
+    before: Vec<String>,
+    raw_after: Vec<String>,
+    after: Vec<String>,
+}
+
+/// Each line of `hunk`, as the stripped versions have it, found by the line
+/// numbers in `header`, `@@ -a,b +c,d @@`. A `\ No newline at end of file`
+/// line moves neither number. `None` if the header or a line number doesn't
+/// fit, or a line isn't the one the diff shows, so the hunk is stripped on
+/// its own instead.
+fn map_hunk(header: &str, hunk: &[(char, String)], files: &Versions) -> Option<Vec<String>> {
+    if header.starts_with("@@@") {
+        return None;
+    }
     let mut numbers = header.split(' ').skip(1).take(2).map(|range| {
         let start = range[1..].split(',').next()?;
         start.parse::<usize>().ok()
@@ -1116,19 +1143,27 @@ fn map_hunk(
     let mut old = numbers.next()??;
     let mut new = numbers.next()??;
     let mut lines = Vec::new();
-    for (marker, _) in hunk {
-        let line = match marker {
-            '-' => before.get(old.checked_sub(1)?)?,
-            '+' => after.get(new.checked_sub(1)?)?,
-            _ => after.get(new.checked_sub(1)?)?,
+    for (marker, text) in hunk {
+        if *marker == '\\' {
+            lines.push(text.clone());
+            continue;
+        }
+        let (raw, stripped, at) = if *marker == '-' {
+            (&files.raw_before, &files.before, old)
+        } else {
+            (&files.raw_after, &files.after, new)
         };
+        let at = at.checked_sub(1)?;
+        if raw.get(at)? != text {
+            return None;
+        }
+        lines.push(stripped.get(at)?.clone());
         if *marker != '+' {
             old += 1;
         }
         if *marker != '-' {
             new += 1;
         }
-        lines.push(line.clone());
     }
     Some(lines)
 }

@@ -24,8 +24,8 @@ const render = (v) => (typeof v === "string" ? v : JSON.stringify(v, null, 2));
 const state = typeof req.state === "string" ? req.state
   : Object.entries(req.state).map(([k, v]) => `[${k}]\n${render(v)}`).join("\n\n");
 
-// A </material> in the excerpt would close the tag as the model reads it, so it's escaped (tracker-judge does the same).
-const material = state.replaceAll("</material>", "<\\/material>");
+// A </material> in the excerpt, in any case and with spaces before the >, would close the tag as the model reads it, so it's escaped (tracker-judge does the same).
+const material = state.replace(/<\/\s*material\s*>/gi, () => "<\\/material>");
 
 function prompt(q) {
   const yes = q.criteria?.true ? `\nYes means: ${q.criteria.true}` : "";
