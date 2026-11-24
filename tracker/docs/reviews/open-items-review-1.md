@@ -22,6 +22,8 @@ The findings that matter come from TR-47's new mapping, which isn't used by any 
 
 The rest is wording: §2.3.2 still gives the old run's numbers (design 1), and §4.3 and §7 keep two sentences that TR-48's rewording now contradicts (design 2 and 3).
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 | Check | Result | Tests |
@@ -86,3 +88,23 @@ Every commit is scoped to its item, and no item's commit was made while another 
 - **Fix bugs 1 to 3 in one `fix` item**, with test gap 1's tests, before any project is given a `diff` judge. Bug 1 is a regression from what `main` had before TR-47, so this is the one worth doing before the merge. It doesn't block it, since no project has a `diff` judge today. Bug 4 can go in the same item, or wait.
 - **Security 1** is a few lines in each adapter and a test, and needs no judge-eval rerun. It can share the item with design 1 to 3's wording, which needs only `grep` checks.
 - **Run `cargo test --test docs_links`** after saving this review, and the full test command after the fixes.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at the commit the review read, not at the fixed code. Every finding the review asked to fix went into one tracker item, TR-57, so the user approved once. Its tests were committed before `tracker start`. The commits after this review (`243e16f`), in order: `949af00` (tests), `e5dbdd4` (fix) and `0b4c737` (DESIGN.md and the doc comment).
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: a `\ No newline at end of file` line part-way through a hunk restarts the mapping | TR-57, `e5dbdd4`: the marker stays in its hunk, and `map_hunk` skips it without moving either counter. Tests: `tr57_c1`'s two tests in `tests/judges.rs`, the review's reproduction and a file with two hunks |
+| Bug 2: the fallback strips a file in the previous file's style, and a path with a space always falls back | TR-57, `e5dbdd4`: the `!in_hunk` guard on `diff --git` is gone, and the tab git adds after a path with a space is trimmed. Tests: `tr57_c2` (a `b c.py` after `a.js`) and the unit test `tr57_the_fallback…` |
+| Bug 3: nothing checks a mapped line against the line the diff shows | TR-57, `e5dbdd4`: `map_hunk` returns nothing on a mismatch, so the per-hunk fallback takes over, and a combined-diff `@@@` header goes to the fallback too. Test: the unit test `tr57_a_mapped_line…`, with a hand-written diff that differs from the file |
+| Bug 4: each hunk reads and strips its file again | Won't fix. It only costs time, and no project has a `diff` judge yet |
+| Security 1: only the exact lowercase `</material>` is escaped | TR-57, `e5dbdd4`: both adapters use the same case-insensitive pattern that allows spaces, `(?i)</\s*material\s*>` in tracker-judge and `/<\/\s*material\s*>/gi` in judge-eval's Node adapter. Test: `tr57_c4` in `tests/tracker_judge.rs`, with `</Material>`, `</material >`, `</MATERIAL>` and `</ material\t>`. judge-eval wasn't rerun, since only excerpts holding such a tag change |
+| Design 1: §2.3.2 gives the old run, and §2.3.1 points at the README | TR-57, `0b4c737`: §2.3.2 gives the 52/2/0/0 run, and both point at `judge-eval/results/claude-haiku-5-5.json` |
+| Design 2: §4.3 and a doc comment say "the model that answered" | TR-57, `0b4c737`: §4.3, the Pinned model bullet and the doc comment on `Answered::model` say the model asked for, which must be among `modelUsage`'s models |
+| Design 3: "It sees only its excerpt." sits under "A judge sees more than its excerpt." | TR-57, `0b4c737`: the bullet reads "It knows only its excerpt." |
+| Test gap 1: TR-47's tests each have one file and one hunk | TR-57's tests above cover a mid-hunk marker, two files in different styles, a path with a space and two hunks in one file |
+
+Seen failing: all five checks failed at `start`. Criterion 1's two-hunk test pins behaviour that already worked, and its check failed at `start` through the no-newline test; the builder saw the two-hunk test fail by moving `map_hunk`'s starting line number by one for a moment. The item doesn't record that.
+
+TR-57 was held under T8 only, since no existing test changed, and the user read its diff and approved it from a terminal: `human` at `0b4c737`, with `refs/tracker/TR-57`. The installed slice 16 binary tracked it. After it, `cargo fmt --check`, `cargo clippy -- -D warnings` and all 586 tests pass, 6 more than at this review. The binary was reinstalled afterwards, so the installed `tracker-judge` escapes every form of the tag.
