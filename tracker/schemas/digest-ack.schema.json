@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracker.invalid/schemas/digest-ack.schema.json",
+  "title": "tracker digest ack --json",
+  "description": "Records that a project's digest was seen (DESIGN.md §2.6, §2.7), from an interactive terminal only, after the digest and the question on stderr. Without a terminal, or if the digest changed while it asked, it exits 1 with the error shape and records nothing.",
+  "type": "object",
+  "required": ["project", "acknowledged", "verified", "actions"],
+  "properties": {
+    "project": { "$ref": "item.schema.json#/$defs/key" },
+    "acknowledged": {
+      "description": "The time recorded in digests.json. The next digest lists only what comes after it.",
+      "$ref": "item.schema.json#/$defs/time"
+    },
+    "verified": {
+      "description": "How many auto-verified items the acknowledged digest listed.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "actions": {
+      "description": "How many actions it listed.",
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false
+}

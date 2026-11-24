@@ -462,8 +462,8 @@ fn c5_a_judge_timeout_stops_the_claude_that_tracker_judge_started() {
     edit_config(&env, |config| {
         config["judge"] = json!({ "command": command, "model": MODEL });
         // Long enough for tracker-judge to start `claude` when the whole
-        // suite runs at once.
-        config["projects"]["XX"]["judge"] = json!({ "timeout_secs": 3 });
+        // suite runs at once, and shorter than the fake's 30-second sleep.
+        config["projects"]["XX"]["judge"] = json!({ "timeout_secs": 10 });
     });
 
     let fake = Fake::new(&claude_reply(MODEL, "yes"));

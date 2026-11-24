@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracker.invalid/schemas/judges.schema.json",
+  "title": "tracker judges --json",
+  "description": "For each judge question, how often a human approved and how often rejected the items it held (DESIGN.md §2.3.2), read from every approve and reject in every item's history. Only T10 and T12 holds record questions: a T11 hold records none.",
+  "type": "object",
+  "required": ["questions", "skipped"],
+  "properties": {
+    "questions": {
+      "description": "One entry per question within a project, grouped by its text, sorted by project and then text.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["project", "ask", "question", "held"],
+        "properties": {
+          "project": { "$ref": "item.schema.json#/$defs/key" },
+          "ask": {
+            "description": "The question's text, or null for a decision recorded before tracker kept it, which is then grouped by question id.",
+            "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+          },
+          "question": {
+            "description": "The question's id, from the ref of the first decision counted.",
+            "type": "string",
+            "minLength": 1
+          },
+          "held": {
+            "description": "The counts split by what held the item: each trigger and answer apart, so approving a disputed fail (overruling the judge) and approving a pass held by auto_verify: false (agreeing with it) aren't added together. Each decision counts once per question, however many of its matches were held.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["trigger", "answer", "held_as", "approved", "rejected"],
+              "properties": {
+                "trigger": { "enum": ["T10", "T12"] },
+                "answer": { "enum": ["yes", "no", "unsure"] },
+                "held_as": {
+                  "description": "disputed: a fail the agent disputed (T12). unsure: an unsure answer (T10). passed: a passing answer held because the project sets auto_verify: false (T10).",
+                  "enum": ["disputed", "unsure", "passed"]
+                },
+                "approved": { "type": "integer", "minimum": 0 },
+                "rejected": { "type": "integer", "minimum": 0 }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "skipped": { "$ref": "list.schema.json#/$defs/skipped" }
+  },
+  "additionalProperties": false
+}

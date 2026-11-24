@@ -87,6 +87,12 @@ impl Store {
         self.home.join("deleted.json")
     }
 
+    /// When each project's digest was last acknowledged (§2.6), created by
+    /// the first `digest ack`.
+    pub fn digests_path(&self) -> PathBuf {
+        self.home.join("digests.json")
+    }
+
     /// Judge answers by request fingerprint (§2.3.1), made by the first
     /// judge that's asked.
     pub fn judge_cache_dir(&self) -> PathBuf {
@@ -334,7 +340,7 @@ impl Store {
 
     /// Reads `counters.json`: the next number for each project. A counter
     /// below 1 is refused, since IDs start at 1 and `XX-0` isn't an ID.
-    fn read_counters(&self) -> Result<BTreeMap<String, u64>> {
+    pub fn read_counters(&self) -> Result<BTreeMap<String, u64>> {
         let path = self.counters_path();
         let text = read_file(&path)?;
         let counters: BTreeMap<String, u64> = serde_json::from_str(&text).map_err(|e| {
@@ -396,7 +402,7 @@ impl Store {
     }
 
     /// The text of `deleted.json`, or "" before the first delete.
-    fn read_deleted(&self) -> Result<String> {
+    pub fn read_deleted(&self) -> Result<String> {
         let path = self.deleted_path();
         match fs::read_to_string(&path) {
             Ok(text) => Ok(text),

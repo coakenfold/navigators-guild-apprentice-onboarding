@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracker.invalid/schemas/digest.schema.json",
+  "title": "tracker digest --json",
+  "description": "Each project's digest (DESIGN.md §2.6): what was auto-verified, and every shelve, human action and trigger-switching edit, since the project's digest was last acknowledged.",
+  "type": "object",
+  "required": ["project", "digests", "skipped"],
+  "properties": {
+    "project": {
+      "description": "The one project covered, or null for every project: outside every root, or with --all.",
+      "oneOf": [{ "$ref": "item.schema.json#/$defs/key" }, { "type": "null" }]
+    },
+    "digests": {
+      "description": "One digest per project covered, sorted by key.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/digest" }
+    },
+    "skipped": { "$ref": "list.schema.json#/$defs/skipped" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "digest": {
+      "type": "object",
+      "required": ["project", "acknowledged", "verified", "actions"],
+      "properties": {
+        "project": { "$ref": "item.schema.json#/$defs/key" },
+        "acknowledged": {
+          "description": "When digest ack last recorded this project's digest as seen, or null if it never has. Everything listed is from after it.",
+          "oneOf": [{ "$ref": "item.schema.json#/$defs/time" }, { "type": "null" }]
+        },
+        "last_ack": {
+          "description": "The project's last ack as digests.json records it: when, whether it came from an interactive terminal, and how many items and actions it listed. Left out when it was never acknowledged.",
+          "type": "object",
+          "required": ["at", "interactive", "verified", "actions"],
+          "properties": {
+            "at": { "$ref": "item.schema.json#/$defs/time" },
+            "interactive": { "type": "boolean" },
+            "verified": { "type": "integer", "minimum": 0 },
+            "actions": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "verified": {
+          "description": "Every item auto-verified since the ack, the ones that passed on a judge first, then by when they were verified.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "title", "judged", "criteria", "verification"],
+            "properties": {
+              "id": { "$ref": "item.schema.json#/properties/id" },
+              "title": { "$ref": "item.schema.json#/properties/title" },
+              "judged": {
+                "description": "Whether a judge passed it, rather than only scripts: its record has a judge answer.",
+                "type": "boolean"
+              },
+              "criteria": {
+                "description": "Each criterion's text, numbered from 1 by position.",
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "questions": {
+                "description": "For a judge-passed item, each question its judges were asked, by ref such as c1:works, taken from the item's criteria. Left out when none.",
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["ref", "ask"],
+                  "properties": {
+                    "ref": { "type": "string", "minLength": 1 },
+                    "ask": { "type": "string", "minLength": 1 }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "verification": { "$ref": "item.schema.json#/$defs/verification" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "actions": {
+          "description": "Since the ack, oldest first: every shelve, approve, reject, criterion accept and delete, and every edit that removed needs-review or changed kind away from capability.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/action" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "action": {
+      "type": "object",
+      "required": ["id", "title", "action", "at", "interactive"],
+      "properties": {
+        "id": { "$ref": "item.schema.json#/properties/id" },
+        "title": { "$ref": "item.schema.json#/properties/title" },
+        "action": { "enum": ["shelve", "approve", "reject", "criterion-accept", "delete", "edit"] },
+        "at": { "$ref": "item.schema.json#/$defs/time" },
+        "interactive": {
+          "description": "Whether it came from an interactive terminal. A human action not from one, or a shelve from one, needs a closer look (DESIGN.md §2.6).",
+          "type": "boolean"
+        },
+        "reason": {
+          "description": "The reason given to a shelve or a reject.",
+          "type": "string"
+        },
+        "status": {
+          "description": "For a delete, the state the item was in.",
+          "$ref": "item.schema.json#/$defs/state"
+        },
+        "judged": {
+          "description": "For a shelve, true when the item has a judge criterion: starting it again empties its T11 count (DESIGN.md §7). Left out otherwise.",
+          "const": true
+        },
+        "labels_removed": {
+          "description": "For an edit, the labels it removed.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "kind_before": {
+          "description": "For an edit that changed the kind, the kind it replaced.",
+          "$ref": "item.schema.json#/properties/kind"
+        },
+        "held_questions": {
+          "description": "For an approve or a reject, the judge questions it decided: each disputed fail with the model's and the agent's reasons, and each T10 answer.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "item.schema.json#/$defs/held_question" }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
