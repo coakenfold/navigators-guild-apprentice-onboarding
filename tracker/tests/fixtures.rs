@@ -489,3 +489,29 @@ fn slice_11s_fixture_has_a_criteria_fingerprint_and_the_new_holds() {
     assert!(lost.is_empty(), "{lost:?}");
     check_schema("item", &file);
 }
+
+/// TR-8: XX-24 was written by slice 12's binary, the first with judge
+/// criteria. It's done, `auto`, with a judge criterion, which has `inputs`,
+/// `each`, `context_lines` and `ask`, after a script criterion, and one
+/// judge record per question and match in its verification record.
+#[test]
+fn slice_12s_fixture_has_a_judge_criterion_and_judge_records() {
+    assert_eq!(names_in("slice-12"), ["XX-24.json"]);
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/slice-12/XX-24.json");
+    let text = fs::read_to_string(&path).unwrap();
+    let file: Value = serde_json::from_str(&text).unwrap();
+    let judge: Vec<&String> = file["criteria"][1].as_object().unwrap().keys().collect();
+    assert_eq!(judge, ["text", "inputs", "each", "context_lines", "ask"]);
+    let record: Vec<&String> = file["verification"].as_object().unwrap().keys().collect();
+    assert_eq!(record, ["by", "at", "commit", "ref", "checks", "judges"]);
+    let judges = file["verification"]["judges"].as_array().unwrap();
+    assert_eq!(judges.len(), 2);
+    let fields: Vec<&String> = judges[0].as_object().unwrap().keys().collect();
+    assert_eq!(fields, ["ref", "model", "request", "answer", "reason"]);
+
+    let item = tracker::item::from_json(&text).unwrap();
+    assert_eq!(tracker::item::to_json(&item), text);
+    let lost = tracker::item::lost_on_rewrite(&text).unwrap();
+    assert!(lost.is_empty(), "{lost:?}");
+    check_schema("item", &file);
+}

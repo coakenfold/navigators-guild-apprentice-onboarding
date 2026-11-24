@@ -168,7 +168,7 @@ pub fn run(cmd: &str, root: &Path, timeout: Duration, what: &str) -> Run {
 
 /// Waits for `child` to end, or stops it once `deadline` passes. Returns
 /// its exit status, if waiting for it worked, and whether it was stopped.
-fn wait(child: &mut Child, deadline: Instant) -> (Option<std::process::ExitStatus>, bool) {
+pub fn wait(child: &mut Child, deadline: Instant) -> (Option<std::process::ExitStatus>, bool) {
     loop {
         match child.try_wait() {
             Ok(Some(status)) => return (Some(status), false),
@@ -187,7 +187,7 @@ fn wait(child: &mut Child, deadline: Instant) -> (Option<std::process::ExitStatu
 /// is numbered after it, since it was started with `process_group(0)`. The
 /// standard library has no call for this, so it runs `kill`, which says
 /// nothing if the group has already gone.
-fn stop_group(child: &Child) {
+pub fn stop_group(child: &Child) {
     let group = format!("-{}", child.id());
     let _ = Command::new("kill")
         .args(["-KILL", "--", &group])

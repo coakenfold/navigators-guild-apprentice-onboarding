@@ -243,15 +243,16 @@ fn a_move_the_diagram_doesnt_draw_is_still_exit_1_not_a_gate() {
 
 #[test]
 fn a_newer_trackers_file_is_refused_with_exit_3_before_any_gate_runs() {
-    // A judge criterion (slice 12) has `ask`, which this version doesn't
-    // know. Read without it, the criterion would look manual, and G2 would
-    // ask for evidence that `evidence` then refuses.
+    // A criterion from a newer tracker has `rubric`, which this version
+    // doesn't know. (Until slice 12 that field was a judge's `ask`.) Read
+    // without it, the criterion would look manual, and G2 would ask for
+    // evidence that `evidence` then refuses.
     let (env, _) = env_with_project();
     env.create("XX", "a");
     let mut item = env.item("XX-1");
     item["criteria"] = json!([{
         "text": "Errors say what to do",
-        "ask": ["Does each error message say how to fix the problem?"],
+        "rubric": ["Does each error message say how to fix the problem?"],
     }]);
     fs::write(
         env.item_path("XX-1"),
@@ -454,6 +455,7 @@ fn a_script_criterion_needs_no_evidence() {
                 { "trigger": "T7", "fired": false },
                 { "trigger": "T8", "fired": false },
                 { "trigger": "T9", "fired": false },
+                { "trigger": "T10", "fired": false },
                 { "trigger": "T13", "fired": false },
                 { "trigger": "T14", "fired": false }
             ],

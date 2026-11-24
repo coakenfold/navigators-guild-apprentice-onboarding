@@ -87,6 +87,12 @@ impl Store {
         self.home.join("deleted.json")
     }
 
+    /// Judge answers by request fingerprint (§2.3.1), made by the first
+    /// judge that's asked.
+    pub fn judge_cache_dir(&self) -> PathBuf {
+        self.home.join("judge").join("cache")
+    }
+
     /// The item file for `id`. Anything that isn't an item ID, such as
     /// `../config`, is refused, so no ID can name a file outside `items/`.
     pub fn item_path(&self, id: &str) -> Result<PathBuf> {

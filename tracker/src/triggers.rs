@@ -5,11 +5,12 @@
 //! This version has T1 (a new capability), T2 (risky paths), T3 (a
 //! dependency manifest), T4 (an existing test changed), T5 (the goalposts
 //! moved), T6 (a manual criterion), T7 (a large change), T8 (the design doc
-//! changed), T9 (the `needs-review` label), T13 (a check passed before the
-//! work) and T14 (unscoped commits since start). T1 to T4, T7 and T8 read
+//! changed), T9 (the `needs-review` label), T10 (a judge answered unsure,
+//! or the project doesn't auto-verify judged work), T13 (a check passed
+//! before the work) and T14 (unscoped commits since start). T1 to T4, T7 and T8 read
 //! the item's changed files (§2.1), and T14 reads the commits made since
 //! start. A trigger in the project's `review.disabled` doesn't run, except
-//! T6, which always does.
+//! T6 and T10, which always do.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -18,6 +19,7 @@ use crate::config::{self, Config, Review};
 use crate::error::{Error, Result};
 use crate::git;
 use crate::item::{Criterion, Hold, Item, Kind};
+use crate::judge::{Answered, Outcome};
 use crate::states;
 use sha2::{Digest, Sha256};
 
@@ -112,9 +114,9 @@ pub fn changes(root: &Path, id: &str, started: Option<&str>) -> Result<Changes> 
 }
 
 /// Runs every trigger on `item` that its project doesn't switch off, in
-/// order, and returns each one. Exits 3 if git can't say what the item's
-/// commits changed.
-pub fn run(item: &Item, config: &Config) -> Result<Vec<Ran>> {
+/// order, and returns each one. `judges` is every judge question G3 asked
+/// (T10). Exits 3 if git can't say what the item's commits changed.
+pub fn run(item: &Item, config: &Config, judges: &[Answered]) -> Result<Vec<Ran>> {
     let project = config.projects.get(&item.project);
     let review = project.map(|project| project.review()).unwrap_or_default();
     let design = project.and_then(|project| project.design.clone());
@@ -153,6 +155,8 @@ pub fn run(item: &Item, config: &Config) -> Result<Vec<Ran>> {
     add("T7", (t7(&changes, review.max_diff_lines()), Vec::new()));
     add("T8", t8(&changes, design.as_deref()));
     add("T9", (t9(item), Vec::new()));
+    let auto_verify = project.is_none_or(|project| project.auto_verify());
+    add("T10", (t10(judges, auto_verify), Vec::new()));
     add("T13", (t13(item), Vec::new()));
     add("T14", (t14(&item.id, &unscoped), Vec::new()));
     Ok(ran)
@@ -456,6 +460,38 @@ fn t9(item: &Item) -> Option<String> {
         .iter()
         .any(|label| label == NEEDS_REVIEW)
         .then(|| format!("it has the label {NEEDS_REVIEW}, which asks for a human's review"))
+}
+
+/// T10: a judge answered unsure, or the project's judge settings have
+/// `auto_verify` false and a judge graded the item (§2.5).
+fn t10(judges: &[Answered], auto_verify: bool) -> Option<String> {
+    let unsure: Vec<String> = judges
+        .iter()
+        .filter(|answered| answered.outcome() == Outcome::Unsure)
+        .map(|answered| answered.judge_ref.clone())
+        .collect();
+    if let [one] = unsure.as_slice() {
+        let answered = judges
+            .iter()
+            .find(|answered| &answered.judge_ref == one)
+            .expect("found above");
+        return Some(format!(
+            "a judge answered unsure to {one}, so a human decides: {}",
+            answered.reason
+        ));
+    }
+    if !unsure.is_empty() {
+        return Some(format!(
+            "judges answered unsure to {} questions, so a human decides: {}",
+            unsure.len(),
+            file_list(&unsure)
+        ));
+    }
+    (!auto_verify && !judges.is_empty()).then(|| {
+        "the project's judge settings have auto_verify false, so an item a judge passed waits \
+         for a human"
+            .to_string()
+    })
 }
 
 /// T13: a criterion's script check already passed when it ran before the

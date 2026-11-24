@@ -1,7 +1,7 @@
 //! `config.json` (§4.2): the registered projects.
 //!
-//! So far the tool reads each project's name, root, design, checks, check
-//! timeout, `review` and `judge` settings. A key under a project that isn't
+//! The tool reads each project's name, root, design, checks, check
+//! timeout, `review` and `judge` settings, and the global `judge` settings. A key under a project that isn't
 //! one of these is refused, and `add_project` edits the file as plain JSON,
 //! so settings added by hand survive.
 
@@ -18,6 +18,68 @@ use crate::store::{self, Store};
 pub struct Config {
     #[serde(default)]
     pub projects: BTreeMap<String, Project>,
+    /// How to call the judge, for every project (§4.2). Each setting left
+    /// out takes its default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub judge: Option<Judge>,
+}
+
+/// The global `judge` settings (§2.3.1, §4.2).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Judge {
+    /// A line of `sh` that reads a judge request on stdin and writes the
+    /// answers on stdout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    /// A full model name, never an alias.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// The largest excerpt a question is asked about, in bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_input_bytes: Option<usize>,
+    /// The lines shown either side of an `each` match.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_lines: Option<usize>,
+}
+
+/// The judge command when the config doesn't name one (§4.2).
+pub const DEFAULT_JUDGE_COMMAND: &str = "tracker-judge";
+/// The judge model when the config doesn't name one (§4.2).
+pub const DEFAULT_JUDGE_MODEL: &str = "claude-haiku-5-5";
+/// `max_input_bytes` when the config doesn't set it (§4.2).
+pub const DEFAULT_MAX_INPUT_BYTES: usize = 40000;
+/// `context_lines` when neither the config nor the judge sets it (§4.2).
+pub const DEFAULT_CONTEXT_LINES: usize = 12;
+/// A project's `judge.timeout_secs` when it isn't set (§4.2).
+pub const DEFAULT_JUDGE_TIMEOUT_SECS: u64 = 60;
+
+impl Config {
+    fn judge(&self) -> Judge {
+        self.judge.clone().unwrap_or_default()
+    }
+
+    pub fn judge_command(&self) -> String {
+        self.judge()
+            .command
+            .unwrap_or_else(|| DEFAULT_JUDGE_COMMAND.to_string())
+    }
+
+    pub fn judge_model(&self) -> String {
+        self.judge()
+            .model
+            .unwrap_or_else(|| DEFAULT_JUDGE_MODEL.to_string())
+    }
+
+    pub fn max_input_bytes(&self) -> usize {
+        self.judge()
+            .max_input_bytes
+            .unwrap_or(DEFAULT_MAX_INPUT_BYTES)
+    }
+
+    pub fn context_lines(&self) -> usize {
+        self.judge().context_lines.unwrap_or(DEFAULT_CONTEXT_LINES)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,10 +101,26 @@ pub struct Project {
     /// `config.json`; each setting left out takes its default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review: Option<Review>,
-    /// The project's judge settings (§4.2). Slice 12 reads them, and
-    /// they're kept as written until then.
+    /// The project's judge settings (§4.2). Each one left out takes its
+    /// default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub judge: Option<serde_json::Value>,
+    pub judge: Option<ProjectJudge>,
+}
+
+/// A project's `judge` settings (§4.2).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectJudge {
+    /// How many different failed judge requests hold an item (T11).
+    /// Slice 14 reads it, and it's kept as written until then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_failures: Option<u64>,
+    /// `false` holds every item a judge passed (T10).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_verify: Option<bool>,
+    /// How long the judge may take per question, in seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_secs: Option<u64>,
 }
 
 /// A project's `review` settings (§4.2). Each glob is matched against a
@@ -179,6 +257,25 @@ impl Project {
     /// out (§4.2).
     pub fn review(&self) -> Review {
         self.review.clone().unwrap_or_default()
+    }
+
+    /// Whether an item a judge passed can reach done without a human
+    /// (T10).
+    pub fn auto_verify(&self) -> bool {
+        self.judge
+            .as_ref()
+            .and_then(|judge| judge.auto_verify)
+            .unwrap_or(true)
+    }
+
+    /// How long the judge may take per question (§4.2).
+    pub fn judge_timeout(&self) -> std::time::Duration {
+        let secs = self
+            .judge
+            .as_ref()
+            .and_then(|judge| judge.timeout_secs)
+            .unwrap_or(DEFAULT_JUDGE_TIMEOUT_SECS);
+        std::time::Duration::from_secs(secs)
     }
 }
 

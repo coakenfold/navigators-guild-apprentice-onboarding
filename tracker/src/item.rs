@@ -59,25 +59,104 @@ pub struct Item {
 }
 
 /// One **Done when** criterion (§2.3): what must be true, and how it's
-/// verified. A criterion with a `check` is a script criterion. One with
-/// neither a check nor (from slice 12) a judge is manual, and only it has
-/// `evidence`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// verified. A criterion with a `check` is a script criterion, and one with
+/// questions in `ask` is a judge criterion (§2.3.1). One with neither is
+/// manual, and only it has `evidence`.
+///
+/// The judge's fields come between `check` and `evidence`, and are left out
+/// when they're not set, so a criterion without a judge is written, and
+/// fingerprinted (T5), as it was before slice 12.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Criterion {
     pub text: String,
     /// A shell command, run in the project root, whose exit code 0 means
     /// the criterion holds. Slice 7 runs it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub check: Option<String>,
+    /// For a judge, the files it reads, relative to the project's root, or
+    /// `diff` for the item's changes (§2.3.1).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inputs: Vec<String>,
+    /// For a judge, a regex: the questions are asked once per match, about
+    /// the lines around it. Without it, the whole input is the excerpt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub each: Option<String>,
+    /// For a judge with `each`, how many lines either side of a match the
+    /// excerpt shows. The config's `judge.context_lines` when it's not set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_lines: Option<usize>,
+    /// For a judge about comments: the excerpts keep them.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub keep_comments: bool,
+    /// For a judge, its yes/no questions, each asked in its own call.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ask: Vec<Question>,
     /// For a manual criterion, a note saying where to look (G2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evidence: Option<String>,
 }
 
+fn is_false(value: &bool) -> bool {
+    !value
+}
+
 impl Criterion {
     /// Whether nothing can run it, so only a human can verify it (T6).
     pub fn is_manual(&self) -> bool {
-        self.check.is_none()
+        self.check.is_none() && !self.is_judge()
+    }
+
+    /// Whether a judge verifies it (§2.3.1).
+    pub fn is_judge(&self) -> bool {
+        !self.ask.is_empty()
+    }
+}
+
+/// One of a judge's yes/no questions (§2.3.1).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Question {
+    /// Names the question in its ref, such as `suggests_next_step`.
+    pub id: String,
+    /// The question.
+    pub ask: String,
+    /// What a yes means, shown to the model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub yes: Option<String>,
+    /// What a no means, shown to the model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub no: Option<String>,
+    /// The answer that passes: yes when it's not set, or no for a question
+    /// about a defect.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pass_when: Option<Answer>,
+}
+
+impl Question {
+    /// The answer that passes.
+    pub fn passing(&self) -> Answer {
+        self.pass_when.unwrap_or(Answer::Yes)
+    }
+}
+
+/// A judge's answer to one question (§2.3.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Answer {
+    Yes,
+    No,
+    /// The excerpt doesn't show enough to decide, which holds the item
+    /// (T10).
+    Unsure,
+}
+
+impl Answer {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Answer::Yes => "yes",
+            Answer::No => "no",
+            Answer::Unsure => "unsure",
+        }
     }
 }
 
@@ -108,8 +187,7 @@ pub struct StartedCheck {
     pub passed: bool,
 }
 
-/// How an item reached done (§2.1, §2.7). Slice 12 adds the judges that
-/// ran.
+/// How an item reached done (§2.1, §2.7).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Verification {
     pub by: VerifiedBy,
@@ -126,6 +204,10 @@ pub struct Verification {
     /// project's, in order (§4.3).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub checks: Vec<CheckRecord>,
+    /// Every judge question the submit asked, one entry per question and
+    /// excerpt, in order (§4.3).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub judges: Vec<JudgeRecord>,
     /// For a `human` record, the triggers that held the item, which I
     /// accepted by approving it (§2.7). Empty for an `auto` one.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -162,6 +244,19 @@ pub struct CheckRecord {
     pub secs: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output: Option<String>,
+}
+
+/// One judge question in a verification record: its ref, the model that
+/// answered, the fingerprint of the request it was asked in, which names
+/// its cache entry, and the answer with its reason (§4.3).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct JudgeRecord {
+    #[serde(rename = "ref")]
+    pub judge_ref: String,
+    pub model: String,
+    pub request: String,
+    pub answer: Answer,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

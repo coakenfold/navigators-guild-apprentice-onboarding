@@ -36,6 +36,12 @@
         "additionalProperties": false
       }
     },
+    "judges": {
+      "description": "Every judge question G3 asked, in order, with its ref and answer. Left out when the item has no judge.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "item.schema.json#/$defs/judged" }
+    },
     "triggers": {
       "description": "Every trigger that ran, with whether it fired. A trigger switched off in the project's review.disabled doesn't run and isn't listed.",
       "type": "array",

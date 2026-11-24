@@ -1008,6 +1008,7 @@ dependencies = [
  "globset",
  "jiff",
  "jsonschema",
+ "regex",
  "serde",
  "serde_json",
  "sha2",

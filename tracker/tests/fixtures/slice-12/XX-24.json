@@ -1,0 +1,92 @@
+{
+  "id": "XX-24",
+  "title": "Error messages say what to do next",
+  "project": "XX",
+  "kind": "change",
+  "status": "done",
+  "priority": "medium",
+  "created": "2026-11-23T03:19:55Z",
+  "updated": "2026-11-23T03:19:56Z",
+  "written": [
+    "The work is done"
+  ],
+  "criteria": [
+    {
+      "text": "The work is done",
+      "check": "test -f done"
+    },
+    {
+      "text": "Every error message says what to do next",
+      "inputs": [
+        "src/errors.rs"
+      ],
+      "each": "bail!\\(",
+      "context_lines": 1,
+      "ask": [
+        {
+          "id": "suggests_next_step",
+          "ask": "Does this error message tell the user what to do next?",
+          "yes": "the message gives a concrete next step",
+          "no": "the message only reports the problem"
+        }
+      ]
+    }
+  ],
+  "started": {
+    "at": "2026-11-23T03:19:55Z",
+    "criteria_hash": "3c4917301a5fdcfab11ef7893b66dc1e3181b491608cb18eefdc82eb7f4dbad0",
+    "head": "404c38eb57aa7aba882cba877f31908b945be655",
+    "checks": [
+      {
+        "criterion": 1,
+        "passed": false
+      }
+    ]
+  },
+  "verification": {
+    "by": "auto",
+    "at": "2026-11-23T03:19:56Z",
+    "commit": "bc98021f6043bc867fb4aff111319d3bb0eee0d4",
+    "ref": "refs/tracker/XX-24",
+    "checks": [
+      {
+        "criterion": 1,
+        "cmd": "test -f done",
+        "ok": true,
+        "secs": 0
+      }
+    ],
+    "judges": [
+      {
+        "ref": "c2:src/errors.rs:3:suggests_next_step",
+        "model": "claude-haiku-5-5",
+        "request": "c7ad51c44432bd00db2291fd54e2223b642697eb7329ae5868df455756e2baeb",
+        "answer": "yes",
+        "reason": "The message names a command to run."
+      },
+      {
+        "ref": "c2:src/errors.rs:8:suggests_next_step",
+        "model": "claude-haiku-5-5",
+        "request": "b0f8a273fd87b12a396d30424b7df8410aaf7d97fd1c27b8fb989b6875b99fc5",
+        "answer": "yes",
+        "reason": "The message names a command to run."
+      }
+    ]
+  },
+  "history": [
+    {
+      "at": "2026-11-23T03:19:55Z",
+      "from": "open",
+      "to": "in-progress",
+      "via": "start",
+      "interactive": false
+    },
+    {
+      "at": "2026-11-23T03:19:56Z",
+      "from": "in-progress",
+      "to": "done",
+      "via": "submit",
+      "interactive": false
+    }
+  ]
+}

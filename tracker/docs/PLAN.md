@@ -50,7 +50,7 @@ The stack, where things live, the conventions and the test command are in `guild
 | 9   | Inbox, approve, reject          | see held items in `review` and approve or reject them                                                 | 8          | —             | in review |
 | 10  | Risky changes are held          | have new capabilities, new dependencies, risky paths, edited tests, big diffs and design changes held | 9          | —             | in review |
 | 11  | Tampered proof is held          | have moved goalposts, checks that pass before the work, and unscoped commits held                     | 10         | —             | in review |
-| 12  | Judge criteria                  | have yes/no judges grade qualities at submit, using a fake judge command                              | 9, 11      | —             | todo   |
+| 12  | Judge criteria                  | have yes/no judges grade qualities at submit, using a fake judge command                              | 9, 11      | —             | in review |
 | 13  | Real Claude judge               | have judges answered by `claude-haiku-5-5`, with judge-eval running the same binary                   | 12         | —             | todo   |
 | 14  | Judges must fail first          | have judges that pass before the work, or get retried until they pass, held                           | 11, 12     | —             | todo   |
 | 15  | Disputes                        | dispute a judge's wrong fail and decide it myself                                                     | 9, 12      | —             | todo   |

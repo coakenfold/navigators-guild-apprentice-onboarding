@@ -7,6 +7,7 @@ pub mod error;
 pub mod gates;
 pub mod git;
 pub mod item;
+pub mod judge;
 pub mod states;
 pub mod store;
 pub mod styled;
