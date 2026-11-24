@@ -20,6 +20,8 @@ Two of the fixes fall short of their aim, and neither is a blocker:
 
 On the copy of the real store, the first `tracker digest --project TR` lists 18 auto-verified items and 15 actions (14 approves, TR-55's among them, and TR-1's `criterion accept`) in 220 lines, never acknowledged. `audit` finds no problems in 56 items, `judges` has no decisions, and `review` says "Nothing needs you." until 2026-11-28.
 
+What was done about each finding, after the review, is under [Outcome](#outcome) at the end.
+
 ## Done when
 
 The slice's _Done when_ rows from [review 1](slice-16-review-1.md#done-when) still pass, with the same tests. What TR-55 changed:
@@ -72,3 +74,27 @@ From the readme's Still open, unchanged: no `digest ack` typed in a real termina
 - **Keep the item commits reachable from `HEAD`.** `show --diff` finds an item's commits by their scoped headers in `HEAD`'s history (§2.1), so a squash merge would leave it empty for every done TR item. A merge commit or a fast-forward keeps them, and `refs/tracker/<ID>` keeps each verified commit either way.
 - **PLAN.md's status rows** become `merged` in the pull request that merges each branch, not before. The branches are stacked, so they merge in order, slice 7 first.
 - **Judges.** Do TR-47 before any project adds a `diff` judge, and bug 1's fix before relying on the digest to show an `each` judge's questions. TR-39, TR-44, TR-48 and TR-50 don't block a merge.
+
+## Outcome
+
+Added after the fixes. The findings above are left as written, so their line links point at `bd0ea42`'s code, not at the fixed code. The fixes were built as one tracker item, TR-56, with its tests committed before `tracker start`, so the user approves once. TR-56 was the flaky-test item filed after the user's first `approve TR-55` failed G4. Before it started, the orchestrator folded this review's fixes into it, with a new title, description and 3 criteria. The readme's [Fixes after review 2](../slice-16-readme.md#fixes-after-review-2) lists them too.
+
+This round fixed bug 1, security 1 (option (a)), design 1, test gap 1's digest half and process 1 (option (b)). The commits after this review (`868f470`), in order: `41d92f4` (tests), `d47a336` (the code and DESIGN.md), then `6598320` and `5626b67` (the wording of §7's sentence), all scoped to TR-56. The readme's update and the commit that adds this Outcome belong to no item.
+
+| Finding | Resolved by |
+| --- | --- |
+| Bug 1: a judge with `each` never shows its question in the digest | TR-56, `d47a336`: `asked` in [src/digest.rs](../../src/digest.rs) takes the criterion from before the first colon and the id from after the last (`rsplit_once`), so the ref `c1:src/lib.rs:1:works` finds its question. Test: `tr56_c2_an_each_judge_entry_prints_each_question_asked`, committed in `41d92f4` and failed at `start`. The readme's Decisions line is corrected |
+| Security 1: `review` names the last ack only beside an overdue digest, and every recorded ack reads "from a terminal" | TR-56, `d47a336`, `6598320` and `5626b67`, option (a): §7 says only `tracker digest` always shows the last ack, that `review` shows it only beside an overdue digest, and that every recorded ack reads from a terminal, so its time and counts are what to check. The readme says the same. No code changed. Options (b), a `review` line for each recent ack, and (c), keeping every ack, aren't taken. Check: criterion 3's `grep`s, which failed at `start` |
+| Design 1: DESIGN.md doesn't say that `digest ack` refuses over an unreadable item file | TR-56, `d47a336`: §2.7's `digest ack` bullet says it refuses with exit 3 while an item file named for the project can't be read. Check: criterion 3's `grep`s |
+| Test gap 1: no test runs the digest with an `each` judge, or `review` after an ack empties the digest | The digest half is bug 1's test, `tr56_c2_`, in `41d92f4`. The `review` half isn't taken: option (a) of security 1 changes no code, so it needs no test |
+| Process 1: TR-55's criterion 4 passed falsely for `each` judges | TR-56, `41d92f4`, option (b): a new test, as TR-56's criterion 2, that fails at `start`. `tr55_c4_` is untouched and TR-55 isn't reopened |
+| Carried forward | Unchanged. Review 1's test gap 3 and its options not taken stay open, as do TR-39, TR-44, TR-47, TR-48 and TR-50. TR-56, the flaky test, is done |
+| Before merging the stack | Added to the readme's [Limits](../slice-16-readme.md#limits-and-what-later-slices-change): install slice 16's binary between items, read the first real digest, one real-terminal `digest ack` (type `TR` to see it cancel, then `ack`), note what the ack says, merge while no TR item is open, don't squash, set PLAN.md's rows to `merged` in the merging pull requests, and TR-47 before any `diff` judge |
+
+Seen failing:
+
+- **TR-56's criteria 2 and 3** failed at `start`, at `41d92f4`. **Criterion 1**, the timeout test's `timeout_secs` from 3 to 10, passed at `start`, since the test's fix is the change and went in the test commit, and T13 held the item for that.
+
+TR-56 was held under T4 (`tests/tracker_judge.rs`, changed in `41d92f4` before start), T8 and T13, tracked by the installed slice 15 binary. The first submit was refused at G3, because §7's sentence was capitalised where criterion 3's check expects lowercase. The docs were fixed (`6598320`, `5626b67`), not the check. The user read the diff and approved it in a terminal: `human` at `5626b67`, with `refs/tracker/TR-56`. The orchestrator checked by hand that every commit since `start` is scoped to TR-56. After it, `cargo fmt --check`, `cargo clippy -- -D warnings` and all 566 tests pass, 1 more than at `bd0ea42`, in `tests/digest.rs`.
+
+What's left is the user's: one real-terminal `tracker digest ack`, reading `tracker digest` and `tracker judges` on the real store once slice 16's binary is installed, and merging the stack.
