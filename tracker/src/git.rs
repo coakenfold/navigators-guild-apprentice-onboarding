@@ -279,6 +279,21 @@ pub fn patches(root: &Path, shas: &[String]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// The text of `path` (from the top of the repository) as commit `rev`
+/// holds it, or `None` if it has none there or isn't UTF-8.
+pub fn file_at(root: &Path, rev: &str, path: &str) -> Option<String> {
+    let output = Command::new("git")
+        .current_dir(root)
+        .args(["show", "--no-textconv", &format!("{rev}:{path}")])
+        .stdin(Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout).ok()
+}
+
 /// The project root's path from the top of its repository, with a
 /// trailing `/`, such as `tracker/`, or empty when the root is the top.
 pub fn prefix(root: &Path) -> Result<String> {
