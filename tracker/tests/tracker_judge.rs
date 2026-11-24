@@ -535,3 +535,30 @@ fn tr49_c2_the_first_call_has_the_flags_section_2_3_1_lists() {
     ];
     assert_eq!(calls[0].args, expected);
 }
+
+/// TR-50, criterion 1: call 1's prompt is §2.3.1 step 1's template, written
+/// out here, so changing the prompt means changing this test too.
+#[test]
+fn tr50_c1_the_first_call_has_the_prompt_section_2_3_1_lists() {
+    let fake = Fake::new(&claude_reply(MODEL, "yes"));
+    let output = fake.run(tracker_judge(), &[], &each_request());
+    assert!(output.status.success());
+    let calls = fake.calls();
+    let expected = "<material>
+[match]
+src/errors.rs:3: bail!(\"the config file is missing: run tracker init\");
+
+[code]
+fn load() -> Result<()> {
+    
+    bail!(\"the config file is missing: run tracker init\");
+}
+</material>
+
+Question: Does this error message name the specific problem?
+Yes means: the message says what was wrong
+No means: the message is generic
+
+Answer yes or no, with a one-sentence reason. Answer unsure only if the material doesn't show enough to decide.";
+    assert_eq!(calls[0].prompt, expected);
+}
