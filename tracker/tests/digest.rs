@@ -693,6 +693,45 @@ mod tr55 {
     }
 
     #[test]
+    fn tr56_c2_an_each_judge_entry_prints_each_question_asked() {
+        let env = two_projects();
+        install_fake(&env);
+        let lib = env.work.path().join("xx/src/lib.rs");
+        fs::create_dir_all(lib.parent().unwrap()).unwrap();
+        fs::write(&lib, "fn run() {\n    todo!()\n}\n").unwrap();
+        git_commit_all(env.work.path(), "chore: the code before the judged item");
+        let id = env.create_bare("XX", "judged each");
+        let judge = json!({
+            "text": "Every step is asked about",
+            "inputs": ["src/lib.rs"],
+            "each": "fn run",
+            "ask": [{ "id": "works", "ask": "Does this step do the work?" }],
+        });
+        let file = judge_dir(&env).join("judge.json");
+        fs::write(&file, judge.to_string()).unwrap();
+        env.json(&["criterion", "add", &id, "--judge", file.to_str().unwrap()]);
+        reply(&env, "no");
+        env.json(&["start", &id]);
+        fs::write(&lib, "fn run() {\n    step();\n}\n").unwrap();
+        git_commit_all(env.work.path(), &format!("feat({id}): the work"));
+        reply(&env, "yes");
+        let output = env.json(&["submit", &id]);
+        assert_eq!(output["result"], "done", "{output}");
+        let digest = digest_of(&env, "XX");
+        let questions = digest["verified"][0]["questions"].as_array().unwrap();
+        assert!(!questions.is_empty(), "{digest}");
+        for question in questions {
+            assert!(
+                question["ref"].as_str().unwrap().ends_with(":works"),
+                "{digest}"
+            );
+            assert_eq!(question["ask"], "Does this step do the work?", "{digest}");
+        }
+        let shown = text(&env, &["digest", "--project", "XX"]);
+        assert!(shown.contains("Does this step do the work?"), "{shown}");
+    }
+
+    #[test]
     fn tr55_c5_an_action_before_the_ack_is_left_out_and_one_after_is_listed() {
         let env = two_projects();
         env.create("XX", "before");
