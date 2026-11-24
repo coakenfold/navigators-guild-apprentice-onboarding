@@ -3007,13 +3007,20 @@ fn unsure_text(judges: &[judge::Answered]) -> String {
     text
 }
 
+/// The width of the widest trigger among `holds`, so the messages of the
+/// holds printed together start in one column.
+fn widest_trigger<'a>(holds: impl Iterator<Item = &'a item::Hold>) -> usize {
+    holds.map(|hold| hold.trigger.len()).max().unwrap_or(0)
+}
+
 /// Each hold on its own line, its trigger, then why, indented.
 fn holds_text(holds: &[item::Hold]) -> String {
+    let width = widest_trigger(holds.iter());
     holds
         .iter()
         .map(|hold| {
             format!(
-                "  {}  {}\n",
+                "  {:width$}  {}\n",
                 hold.trigger,
                 text::for_terminal(&hold.message, false)
             )
@@ -4559,6 +4566,7 @@ fn decision_warning(
         .iter()
         .filter(|old| !holds.iter().any(|hold| hold.trigger == old.trigger))
         .collect();
+    let width = widest_trigger(holds.iter().chain(gone.iter().copied()));
     if holds.is_empty() {
         warning.push_str(", and nothing holds it now.\n");
     } else {
@@ -4569,12 +4577,15 @@ fn decision_warning(
             } else {
                 " (new since the submit)"
             };
-            warning.push_str(&format!("  {}  {}{new}\n", hold.trigger, hold.message));
+            warning.push_str(&format!(
+                "  {:width$}  {}{new}\n",
+                hold.trigger, hold.message
+            ));
         }
     }
     for hold in gone {
         warning.push_str(&format!(
-            "  {}  {} (no longer fires)\n",
+            "  {:width$}  {} (no longer fires)\n",
             hold.trigger, hold.message
         ));
     }

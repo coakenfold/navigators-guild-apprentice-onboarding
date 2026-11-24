@@ -164,7 +164,7 @@ pub fn check_inputs(criterion: &Criterion, root: &Path, key: &str) -> Result<(),
     let mut files = Vec::new();
     for input in criterion.inputs.iter().filter(|input| *input != "diff") {
         let text = read_file(root, input, key)?;
-        files.push((input.clone(), strip(criterion, input, &text)));
+        files.push((input.clone(), strip(criterion, input, &text, root)));
     }
     let only_files = files.len() == criterion.inputs.len();
     if let Some(each) = &criterion.each
@@ -210,7 +210,7 @@ pub fn nothing_at_start(
             read_file(root, input, &item.project)
         };
         match text {
-            Ok(text) => inputs.push((input.clone(), strip(criterion, input, &text))),
+            Ok(text) => inputs.push((input.clone(), strip(criterion, input, &text, root))),
             Err(why) => return Some(format!("{what} {why} {stub}")),
         }
     }
@@ -351,7 +351,7 @@ pub struct Answered {
     pub reason: String,
     /// The answer that passes.
     pub passing: Answer,
-    /// The model that answered.
+    /// The model asked for.
     pub model: String,
     /// The fingerprint of the request it was asked in.
     pub request: String,
@@ -437,7 +437,7 @@ pub fn grade(
             read_file(root, input, &item.project)
         };
         match text {
-            Ok(text) => inputs.push((input.clone(), strip(criterion, input, &text))),
+            Ok(text) => inputs.push((input.clone(), strip(criterion, input, &text, root))),
             Err(why) => {
                 graded
                     .failures
@@ -594,11 +594,11 @@ fn read_diff(item: &Item, root: &Path) -> Result<String, String> {
 
 /// `text`, read from `input`, with its comments stripped unless the
 /// criterion keeps them.
-fn strip(criterion: &Criterion, input: &str, text: &str) -> String {
+fn strip(criterion: &Criterion, input: &str, text: &str, root: &Path) -> String {
     if criterion.keep_comments {
         text.to_string()
     } else if input == "diff" {
-        strip_diff(text)
+        strip_diff_in(text, Some(root))
     } else {
         strip_comments(text, style_for(input))
     }
@@ -986,44 +986,186 @@ fn char_literal(chars: &[char]) -> Option<usize> {
 /// A diff, as `git show` prints it, with comments stripped from each
 /// file's changed and context lines in that file's style. Every other line,
 /// such as a commit's subject or a hunk header, is kept as it is.
-fn strip_diff(diff: &str) -> String {
+///
+/// With a `root`, each file's before and after versions are read from git
+/// and stripped whole, and each hunk line is taken from the stripped
+/// version by its `@@` line numbers, so a hunk that starts inside a block
+/// comment is stripped right. A hunk whose files can't be read is stripped
+/// on its own, starting with no comment open.
+fn strip_diff_in(diff: &str, root: Option<&Path>) -> String {
     let mut out: Vec<String> = Vec::new();
     let mut hunk: Vec<(char, String)> = Vec::new();
-    let mut style = Style::None;
+    let mut header = String::new();
+    let mut file = DiffFile {
+        style: Style::None,
+        before: None,
+        after: None,
+    };
+    let mut sha = String::new();
     let mut in_hunk = false;
-    let flush = |hunk: &mut Vec<(char, String)>, out: &mut Vec<String>, style: Style| {
+    let flush = |hunk: &mut Vec<(char, String)>,
+                 out: &mut Vec<String>,
+                 header: &str,
+                 file: &DiffFile,
+                 sha: &str| {
         if hunk.is_empty() {
             return;
         }
-        let text: Vec<&str> = hunk.iter().map(|(_, line)| line.as_str()).collect();
-        let stripped = strip_comments(&text.join("\n"), style);
-        for ((marker, _), line) in hunk.iter().zip(stripped.split('\n')) {
+        let whole = root.and_then(|root| file.stripped(root, sha));
+        let lines = match whole.and_then(|versions| map_hunk(header, hunk, &versions)) {
+            Some(lines) => lines,
+            None => {
+                // The `\ No newline` markers aren't code, so they're left out.
+                let text: Vec<&str> = hunk
+                    .iter()
+                    .filter(|(marker, _)| *marker != '\\')
+                    .map(|(_, line)| line.as_str())
+                    .collect();
+                let stripped = strip_comments(&text.join("\n"), file.style);
+                let mut stripped = stripped.split('\n').map(str::to_string);
+                hunk.iter()
+                    .map(|(marker, line)| {
+                        if *marker == '\\' {
+                            line.clone()
+                        } else {
+                            stripped.next().unwrap_or_default()
+                        }
+                    })
+                    .collect()
+            }
+        };
+        for ((marker, _), line) in hunk.iter().zip(lines) {
             out.push(format!("{marker}{line}"));
         }
         hunk.clear();
     };
     for line in diff.split('\n') {
         let marker = line.chars().next();
-        if in_hunk && matches!(marker, Some('+' | '-' | ' ')) {
+        if in_hunk && matches!(marker, Some('+' | '-' | ' ' | '\\')) {
             let marker = marker.unwrap_or(' ');
             hunk.push((marker, line[marker.len_utf8()..].to_string()));
             continue;
         }
-        // git's `\ No newline at end of file` sits inside a hunk.
-        if in_hunk && line.starts_with('\\') {
-            flush(&mut hunk, &mut out, style);
-            out.push(line.to_string());
-            continue;
+        flush(&mut hunk, &mut out, &header, &file, &sha);
+        if let Some(id) = line.strip_prefix("commit ") {
+            sha = id.to_string();
         }
-        flush(&mut hunk, &mut out, style);
+        // A header line is never a hunk line, whatever the last line was.
+        // git ends a path that holds a space with a tab.
         if let Some(rest) = line.strip_prefix("diff --git ") {
-            style = style_for(rest.rsplit(" b/").next().unwrap_or(rest));
+            let name = rest.rsplit(" b/").next().unwrap_or(rest);
+            file = DiffFile {
+                style: style_for(name),
+                before: Some(name.to_string()),
+                after: Some(name.to_string()),
+            };
+        } else if let Some(path) = line.strip_prefix("--- ") {
+            file.before = path
+                .trim_end_matches('\t')
+                .strip_prefix("a/")
+                .map(str::to_string);
+        } else if let Some(path) = line.strip_prefix("+++ ") {
+            file.after = path
+                .trim_end_matches('\t')
+                .strip_prefix("b/")
+                .map(str::to_string);
         }
         in_hunk = line.starts_with("@@");
+        if in_hunk {
+            header = line.to_string();
+        }
         out.push(line.to_string());
     }
-    flush(&mut hunk, &mut out, style);
+    flush(&mut hunk, &mut out, &header, &file, &sha);
     out.join("\n")
+}
+
+/// `strip_diff_in` without git, for the unit tests.
+#[cfg(test)]
+fn strip_diff(diff: &str) -> String {
+    strip_diff_in(diff, None)
+}
+
+/// One file of a diff: its comment style, and its path before and after
+/// the commit, `None` for a file that was added or deleted.
+struct DiffFile {
+    style: Style,
+    before: Option<String>,
+    after: Option<String>,
+}
+
+impl DiffFile {
+    /// The file's before and after versions in commit `sha`, as lines, each
+    /// both as it is and stripped whole. A missing side (an added or
+    /// deleted file) is empty.
+    fn stripped(&self, root: &Path, sha: &str) -> Option<Versions> {
+        let side = |path: &Option<String>, rev: String| match path {
+            None => Some((Vec::new(), Vec::new())),
+            Some(path) => {
+                let text = git::file_at(root, &rev, path)?;
+                let stripped = strip_comments(&text, style_for(path));
+                let lines = |text: &str| text.split('\n').map(str::to_string).collect();
+                Some((lines(&text), lines(&stripped)))
+            }
+        };
+        let (raw_before, before) = side(&self.before, format!("{sha}^"))?;
+        let (raw_after, after) = side(&self.after, sha.to_string())?;
+        Some(Versions {
+            raw_before,
+            before,
+            raw_after,
+            after,
+        })
+    }
+}
+
+/// A file's lines before and after a commit, as they are and stripped.
+struct Versions {
+    raw_before: Vec<String>,
+    before: Vec<String>,
+    raw_after: Vec<String>,
+    after: Vec<String>,
+}
+
+/// Each line of `hunk`, as the stripped versions have it, found by the line
+/// numbers in `header`, `@@ -a,b +c,d @@`. A `\ No newline at end of file`
+/// line moves neither number. `None` if the header or a line number doesn't
+/// fit, or a line isn't the one the diff shows, so the hunk is stripped on
+/// its own instead.
+fn map_hunk(header: &str, hunk: &[(char, String)], files: &Versions) -> Option<Vec<String>> {
+    if header.starts_with("@@@") {
+        return None;
+    }
+    let mut numbers = header.split(' ').skip(1).take(2).map(|range| {
+        let start = range[1..].split(',').next()?;
+        start.parse::<usize>().ok()
+    });
+    let mut old = numbers.next()??;
+    let mut new = numbers.next()??;
+    let mut lines = Vec::new();
+    for (marker, text) in hunk {
+        if *marker == '\\' {
+            lines.push(text.clone());
+            continue;
+        }
+        let (raw, stripped, at) = if *marker == '-' {
+            (&files.raw_before, &files.before, old)
+        } else {
+            (&files.raw_after, &files.after, new)
+        };
+        let at = at.checked_sub(1)?;
+        if raw.get(at)? != text {
+            return None;
+        }
+        lines.push(stripped.get(at)?.clone());
+        if *marker != '+' {
+            old += 1;
+        }
+        if *marker != '-' {
+            new += 1;
+        }
+    }
+    Some(lines)
 }
 
 #[cfg(test)]
@@ -1066,5 +1208,43 @@ mod tr45_tests {
             strip_diff(diff),
             "diff --git a/a.rs b/a.rs\n--- a/a.rs\n+++ b/a.rs\n@@ -1,2 +1,3 @@\n-fn b() {  }\n\\ No newline at end of file\n+fn b() {  }\n+fn c() {}\n\\ No newline at end of file\n"
         );
+    }
+
+    #[test]
+    fn tr57_the_fallback_strips_each_file_in_its_own_style() {
+        let diff = "diff --git a/a.js b/a.js\n--- a/a.js\n+++ b/a.js\n@@ -1 +1 @@\n-a();\n+b();\ndiff --git a/b.py b/b.py\n--- a/b.py\n+++ b/b.py\n@@ -1 +1 @@\n-x = 1\n+x = 7 // 2  # floor\n";
+        assert!(
+            strip_diff(diff).ends_with("-x = 1\n+x = 7 // 2\n"),
+            "{}",
+            strip_diff(diff)
+        );
+    }
+
+    #[test]
+    fn tr57_a_mapped_line_that_differs_from_the_diffs_line_falls_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+                .args(args)
+                .current_dir(dir.path())
+                .output()
+                .unwrap();
+            assert!(out.status.success());
+            String::from_utf8(out.stdout).unwrap()
+        };
+        git(&["init", "-q"]);
+        std::fs::write(dir.path().join("f.js"), "old();\n").unwrap();
+        git(&["add", "f.js"]);
+        git(&["commit", "-q", "-m", "one"]);
+        std::fs::write(dir.path().join("f.js"), "a(); // c\nb();\n").unwrap();
+        git(&["commit", "-q", "-am", "two"]);
+        let sha = git(&["rev-parse", "HEAD"]);
+        let diff = format!(
+            "commit {}\ndiff --git a/f.js b/f.js\n--- a/f.js\n+++ b/f.js\n@@ -1 +1,2 @@\n-old();\n+other(); // note\n+b();",
+            sha.trim()
+        );
+        let out = strip_diff_in(&diff, Some(dir.path()));
+        assert!(out.ends_with("-old();\n+other();\n+b();"), "{out}");
     }
 }

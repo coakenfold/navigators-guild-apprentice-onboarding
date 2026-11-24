@@ -279,6 +279,21 @@ pub fn patches(root: &Path, shas: &[String]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// The text of `path` (from the top of the repository) as commit `rev`
+/// holds it, or `None` if it has none there or isn't UTF-8.
+pub fn file_at(root: &Path, rev: &str, path: &str) -> Option<String> {
+    let output = Command::new("git")
+        .current_dir(root)
+        .args(["show", "--no-textconv", &format!("{rev}:{path}")])
+        .stdin(Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout).ok()
+}
+
 /// The project root's path from the top of its repository, with a
 /// trailing `/`, such as `tracker/`, or empty when the root is the top.
 pub fn prefix(root: &Path) -> Result<String> {
@@ -360,6 +375,22 @@ pub fn changes(root: &Path, shas: &[String]) -> Result<Vec<FileChange>> {
     }
     all.append(&mut commit);
     Ok(all)
+}
+
+/// Fails with exit 3, naming `base` and how to start item `id` over, if git
+/// no longer has the commit `id` started at (after a gc of a rewritten
+/// branch, say). A lost base can't show every commit since start, so T4 and
+/// T14 stay fail-closed (§2.4).
+pub fn require_started_head(root: &Path, id: &str, base: &str) -> Result<()> {
+    if git(root, &["cat-file", "-e", &format!("{base}^{{commit}}")]).is_ok() {
+        return Ok(());
+    }
+    let short: String = base.chars().take(7).collect();
+    Err(Error::store(format!(
+        "Git no longer has commit {short}, where {id} started, so it can't show every commit \
+         made since. To start {id} over, shelve it, reopen it, then start it again (if it's in \
+         review, it has to be rejected first)."
+    )))
 }
 
 /// The commits `HEAD` reaches that `base` doesn't, as full SHAs.
