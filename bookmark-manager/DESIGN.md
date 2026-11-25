@@ -106,19 +106,22 @@ The goal is the fewest moving parts: no frameworks, no build tools, nothing to i
 | Part       | Choice                             | Why                                                                                         |
 | ---------- | ---------------------------------- | ------------------------------------------------------------------------------------------- |
 | Structure  | **HTML**                           | The page and the form.                                                                      |
-| Styling    | **CSS**                            | One stylesheet for the look.                                                                |
-| Behavior   | **Plain JavaScript**               | Handles adding, editing, searching, and filtering. No framework to learn first.             |
+| Styling    | **CSS**                            | One `<style>` block in `index.html` for the look.                                           |
+| Behavior   | **Plain JavaScript**               | One `<script>` block in `index.html`. Handles adding, editing, searching, and filtering. No framework to learn first. |
 | Storage    | **Browser `localStorage`**         | Saves data in the browser. It survives page refreshes, and no server or database is needed. |
 | Running it | **Open `index.html` in a browser** | No setup required. Optionally use VS Code's "Live Server" extension for auto-reload.        |
 
 ### File structure
 
+The whole app is a single file, as Step 3 of the guild's first-build guide asks ("Plain HTML, CSS, and JavaScript in a single file called index.html"):
+
 ```
 bookmark-manager/
-├── index.html    # page layout and form
-├── style.css     # all styling
-└── app.js        # all behavior and data handling
+└── index.html    # page layout and form, <style> with all styling,
+                  # <script> with all behavior and data handling
 ```
+
+Until 2026-11-24 the app was split into `index.html`, `style.css` and `app.js`. The build plan in §6 still names those files, because it records the order the app was built in.
 
 ### Data model
 
@@ -179,11 +182,11 @@ These features were added on purpose during the build (slice 6 and the follow-up
 ### A.1 Collapsible add form (changes §3)
 
 - The add form starts **collapsed**. A full-width toggle button with a round "+" icon sits where the form was, labelled "Add a bookmark".
-- Activating the toggle opens the form and moves focus to the URL field. While the form is open, the "+" turns into an "×" and the label reads "Close form", in add mode and edit mode alike. The toggle always names its action.
-- The form starts with a visible heading that carries the edit status: "Add a bookmark" in add mode, or "Edit bookmark: <title>" while editing, using the title the bookmark had when the edit started. The form takes its accessible name from this heading (`aria-labelledby`).
-- The buttons read **Save** and **Cancel** in add mode, and **Save changes** and **Discard changes** in edit mode.
-- The form closes after a successful save, and also when you press the toggle again, press **Cancel** / **Discard changes**, or press **Escape** inside the form. Deleting the bookmark being edited closes it too. Closing the form clears it and returns it to add mode; the heading and buttons switch back to their add-mode names once the drawer has closed.
-- **Edit** on a bookmark opens the form if it is closed. Pressing Edit on another bookmark while editing switches the form, and its heading, to that bookmark.
+- Activating the toggle opens the form and moves focus to the URL field. While the form is open, the "+" turns into an "×" and the label reads "Close form". The toggle always names its action.
+- This form is only for adding. Editing happens inside the bookmark's card (see A.8).
+- The form starts with a visible heading, "Add a bookmark", and takes its accessible name from it (`aria-labelledby`).
+- The buttons read **Save** and **Cancel**.
+- The form closes after a successful save, and also when you press the toggle again, press **Cancel**, or press **Escape** inside the form. Closing the form clears it.
 - The toggle uses `aria-expanded` and `aria-controls`, so its state is announced.
 - If a search or tag filter is active when a save succeeds, a short "Saved" message (`role="status"`) appears above the list for about 3 seconds. The new bookmark may be hidden by the search or filter, so the message confirms the save. The search and filter are left as they are. No message shows when neither is active.
 
@@ -194,16 +197,17 @@ These features were added on purpose during the build (slice 6 and the follow-up
 - **List items** fade in briefly when the list is drawn.
 - **Reduced motion:** with `prefers-reduced-motion: reduce`, all of these animations are skipped, in both the CSS and the JavaScript.
 
-### A.3 Dark mode (moved from §7 into version 1)
+### A.3 Dark mode (moved from §7 into version 1; changes §3 Colors)
 
-- The colours follow the operating system's `prefers-color-scheme` setting. All colours are CSS custom properties on `:root`, with a dark set: a dark navy background, light text and a lighter blue accent.
-- There is no manual toggle. The page follows the system setting.
+- The page always uses one dark colour scheme: a dark navy background, light text and a lighter blue accent. This follows Layer 6 of the guild's first-build guide, which asks for "a subtle color scheme (dark background with light text, dark mode)". It replaces the light colours in §3.
+- All colours are CSS custom properties on `:root`, and `color-scheme: dark` makes form controls and scrollbars match.
+- It doesn't follow the operating system's light or dark setting, and there is no manual toggle. (Until 2026-11-24 the page followed `prefers-color-scheme` and was light by default.)
 
 ### A.4 Bookmark display (adds to §2.2)
 
 - Each bookmark shows its **domain** (for example `developer.mozilla.org`, with `www.` removed) as a small muted label next to the title, as well as the full URL line.
 - **Edit** and **Delete** are icon buttons: a pencil and a trash can. Their accessible names are "Edit <title>" and "Delete <title>", and they show tooltips.
-- In edit mode the form's heading reads **Edit bookmark: <title>**, the submit button reads **Save changes** instead of Save, and the cancel button reads **Discard changes** instead of Cancel (see A.1).
+- While a bookmark is being edited, its card shows the inline edit form instead of these details (see A.8).
 
 ### A.5 Validation and errors (adds to §2.1)
 
@@ -220,6 +224,18 @@ These features were added on purpose during the build (slice 6 and the follow-up
 
 - The app still needs nothing installed to run. You can open `index.html` directly.
 - For development only, `package.json` provides `npm run start`, which serves the app at http://localhost:3000. It also provides a Playwright test suite in `tests/`. Neither is needed to use the app.
+
+### A.8 Inline edit (changes §2.3, 2026-11-24)
+
+Layer 3 of the guild's first-build guide asks that "Clicking edit should let me change the title, URL, note, and tags inline." Until 2026-11-24, Edit filled the add form at the top instead.
+
+- **Edit** replaces that bookmark's card with an edit form, in place in the list. It has URL, Title, Notes and Tags fields filled with the bookmark's values, and focus moves to URL.
+- The form's heading, and its accessible name, is **Edit bookmark: <title>**, using the title the bookmark had when the edit started.
+- **Save changes** checks the fields with the same rules and messages as the add form (§2.1, A.5). The error shows inside the card, and the bad field is marked `aria-invalid` and focused. A good save updates the bookmark in place, keeping its `id`, `createdAt` and position, and focus moves to its Edit button.
+- **Discard changes** or **Escape** puts the card back as it was, with nothing saved, and moves focus to its Edit button.
+- Only one bookmark is edited at a time. Pressing Edit on another bookmark switches to it and drops the unsaved edit.
+- An unsaved edit survives typing in the search box, changing the tag filter, adding a bookmark or deleting another one. If a search or filter hides the card, the edit is still there when it reappears.
+- The add form and its toggle are unaffected by editing.
 
 ### Known gaps
 

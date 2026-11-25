@@ -1,5 +1,6 @@
 // @ts-check
 import { test, expect } from "@playwright/test";
+import path from "node:path";
 
 const MDN = {
   url: "https://developer.mozilla.org",
@@ -275,120 +276,19 @@ test.describe("Add & list", () => {
   });
 });
 
-test.describe("Edit", () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto("/");
-    await addBookmark(page, MDN);
-    await addBookmark(page, EXAMPLE);
-  });
-
-  test("updates in place, keeping id, createdAt and position, and survives refresh", async ({
-    page,
-  }) => {
-    const before = await storedBookmarks(page);
-    const original = before.find((b) => b.title === MDN.title);
-
-    await page.getByRole("button", { name: `Edit ${MDN.title}` }).click();
-    await expect(page.getByLabel("Tags")).toHaveValue("javascript, reference");
-    await expect(
-      page.getByRole("button", { name: "Save changes", exact: true }),
-    ).toBeVisible();
-
-    await page.getByLabel("Title").fill("MDN Renamed");
-    await page.getByLabel("Tags").fill("Docs, HTML");
-    await page
-      .getByRole("button", { name: "Save changes", exact: true })
-      .click();
-
-    await page.reload();
-    const after = await storedBookmarks(page);
-    expect(after).toHaveLength(2);
-    const edited = after.find((b) => b.id === original.id);
-    expect(edited).toMatchObject({
-      title: "MDN Renamed",
-      tags: ["docs", "html"],
-      createdAt: original.createdAt,
-    });
-    await expect(page.locator(".bookmark")).toHaveCount(2);
-  });
-
-  test("rejects invalid input, and a later submit creates a new bookmark", async ({
-    page,
-  }) => {
-    await page.getByRole("button", { name: `Edit ${MDN.title}` }).click();
-    await page.getByLabel("Title").fill("");
-    await page
-      .getByRole("button", { name: "Save changes", exact: true })
-      .click();
-    await expect(page.getByRole("alert")).toBeVisible();
-    expect((await storedBookmarks(page))[0].title).toBe(MDN.title);
-
-    await page.getByLabel("Title").fill("Changed");
-    await page
-      .getByRole("button", { name: "Save changes", exact: true })
-      .click();
-    await openForm(page);
-    await expect(
-      page.getByRole("button", { name: "Save", exact: true }),
-    ).toBeVisible();
-    await expect(page.getByLabel("Title")).toHaveValue("");
-
-    await addBookmark(page, {
-      url: "https://example.org",
-      title: "Third",
-      notes: "",
-      tags: "",
-    });
-    expect(await storedBookmarks(page)).toHaveLength(3);
-  });
-
-  test("deleting the bookmark mid-edit resets to add mode", async ({
-    page,
-  }) => {
-    page.on("dialog", (dialog) => dialog.accept());
-    await page.getByRole("button", { name: `Edit ${MDN.title}` }).click();
-    await page.getByRole("button", { name: `Delete ${MDN.title}` }).click();
-    await openForm(page);
-    await expect(
-      page.getByRole("button", { name: "Save", exact: true }),
-    ).toBeVisible();
-    await expect(page.getByLabel("Title")).toHaveValue("");
-
-    const errors = [];
-    page.on("pageerror", (e) => errors.push(e));
-    await addBookmark(page, {
-      url: "https://example.org",
-      title: "Third",
-      notes: "",
-      tags: "",
-    });
-    expect(errors).toHaveLength(0);
-    expect(await storedBookmarks(page)).toHaveLength(2);
-  });
-});
-
-test.describe("Edit mode names", () => {
+// 05-first-build.md Layer 3: "Clicking edit should let me change the title,
+// URL, note, and tags inline." Edit happens inside the bookmark's own card;
+// the add form at the top is only for adding.
+test.describe("Edit (inline)", () => {
   /** @type {string[]} */
   let consoleErrors;
-  const toggle = (/** @type {import('@playwright/test').Page} */ page) =>
-    page.locator("#form-toggle");
   const button = (/** @type {import('@playwright/test').Page} */ page, name) =>
     page.getByRole("button", { name, exact: true });
-
-  /** Opening the form in add mode shows the add-mode names. */
-  async function expectAddMode(page) {
-    await expect(
-      page.getByRole("form", { name: "Add a bookmark" }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Add a bookmark", exact: true }),
-    ).toBeVisible();
-    await expect(button(page, "Save")).toBeVisible();
-    await expect(button(page, "Cancel")).toBeVisible();
-    await expect(button(page, "Save changes")).toHaveCount(0);
-    await expect(button(page, "Discard changes")).toHaveCount(0);
-    await expect(page.getByLabel("Title")).toHaveValue("");
-  }
+  /** The inline edit form, found by its accessible name. */
+  const editForm = (/** @type {import('@playwright/test').Page} */ page, title) =>
+    page.getByRole("form", { name: `Edit bookmark: ${title}` });
+  const toggle = (/** @type {import('@playwright/test').Page} */ page) =>
+    page.locator("#form-toggle");
 
   test.beforeEach(async ({ page }) => {
     consoleErrors = [];
@@ -405,94 +305,220 @@ test.describe("Edit mode names", () => {
     expect(consoleErrors).toEqual([]);
   });
 
+  test("Edit opens filled-in fields inside that bookmark's card, not the add form", async ({
+    page,
+  }) => {
+    await button(page, `Edit ${MDN.title}`).click();
+
+    const form = editForm(page, MDN.title);
+    await expect(form).toBeVisible();
+    const stored = await storedBookmarks(page);
+    const mdnId = stored.find((b) => b.title === MDN.title).id;
+    await expect(page.locator(`.bookmark[data-id="${mdnId}"] .edit-form`)).toHaveCount(1);
+    await expect(page.locator(".edit-form")).toHaveCount(1);
+
+    await expect(form.getByLabel("URL")).toHaveValue(MDN.url);
+    await expect(form.getByLabel("Title")).toHaveValue(MDN.title);
+    await expect(form.getByLabel("Notes")).toHaveValue(MDN.notes);
+    await expect(form.getByLabel("Tags")).toHaveValue("javascript, reference");
+    await expect(form.getByLabel("URL")).toBeFocused();
+    await expect(form.getByRole("button", { name: "Save changes" })).toBeVisible();
+    await expect(form.getByRole("button", { name: "Discard changes" })).toBeVisible();
+
+    // The add form stays closed, and the other card is untouched.
+    await expect(page.locator("#bookmark-form")).toBeHidden();
+    await expect(toggle(page)).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByRole("link", { name: EXAMPLE.title })).toBeVisible();
+  });
+
+  test("updates in place, keeping id, createdAt and position, and survives refresh", async ({
+    page,
+  }) => {
+    const before = await storedBookmarks(page);
+    const original = before.find((b) => b.title === MDN.title);
+
+    await button(page, `Edit ${MDN.title}`).click();
+    const form = editForm(page, MDN.title);
+    await form.getByLabel("Title").fill("MDN Renamed");
+    await form.getByLabel("URL").fill("https://developer.mozilla.org/en-US/");
+    await form.getByLabel("Notes").fill("New note");
+    await form.getByLabel("Tags").fill("Docs, HTML");
+    await form.getByRole("button", { name: "Save changes" }).click();
+
+    await expect(page.locator(".edit-form")).toHaveCount(0);
+    await expect(page.locator(".bookmark .bookmark-title")).toHaveText([
+      EXAMPLE.title,
+      "MDN Renamed",
+    ]);
+
+    await page.reload();
+    const after = await storedBookmarks(page);
+    expect(after).toHaveLength(2);
+    expect(after.find((b) => b.id === original.id)).toEqual({
+      id: original.id,
+      url: "https://developer.mozilla.org/en-US/",
+      title: "MDN Renamed",
+      notes: "New note",
+      tags: ["docs", "html"],
+      createdAt: original.createdAt,
+    });
+    await expect(page.locator(".bookmark .bookmark-title")).toHaveText([
+      EXAMPLE.title,
+      "MDN Renamed",
+    ]);
+  });
+
+  test("saving moves focus to that bookmark's Edit button", async ({ page }) => {
+    await button(page, `Edit ${MDN.title}`).click();
+    const form = editForm(page, MDN.title);
+    await form.getByLabel("Title").fill("MDN 2");
+    await form.getByRole("button", { name: "Save changes" }).click();
+    await expect(button(page, "Edit MDN 2")).toBeFocused();
+  });
+
+  test("rejects invalid input inside the card, then saves once it is fixed", async ({
+    page,
+  }) => {
+    await button(page, `Edit ${MDN.title}`).click();
+    const form = editForm(page, MDN.title);
+    await form.getByLabel("Title").fill("");
+    await form.getByRole("button", { name: "Save changes" }).click();
+
+    const alert = form.getByRole("alert");
+    await expect(alert).toHaveText("Please fill in both URL and Title.");
+    const title = form.getByLabel("Title");
+    await expect(title).toHaveAttribute("aria-invalid", "true");
+    await expect(title).toHaveAttribute("aria-describedby", /.+/);
+    await expect(title).toBeFocused();
+    expect((await storedBookmarks(page)).map((b) => b.title)).toContain(
+      MDN.title,
+    );
+
+    await form.getByLabel("URL").fill("ftp://x.com");
+    await title.fill("Changed");
+    await form.getByRole("button", { name: "Save changes" }).click();
+    await expect(alert).toHaveText("URL must start with http:// or https://");
+
+    await form.getByLabel("URL").fill(MDN.url);
+    await form.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.locator(".edit-form")).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Changed" })).toBeVisible();
+    expect(await storedBookmarks(page)).toHaveLength(2);
+  });
+
+  /** @type {[string, (page: import('@playwright/test').Page) => Promise<void>][]} */
+  const exits = [
+    [
+      "Discard changes",
+      (page) =>
+        editForm(page, MDN.title)
+          .getByRole("button", { name: "Discard changes" })
+          .click(),
+    ],
+    [
+      "Escape",
+      (page) => editForm(page, MDN.title).getByLabel("Title").press("Escape"),
+    ],
+  ];
+  for (const [name, exit] of exits) {
+    test(`${name} reverts the edit and returns focus to Edit`, async ({
+      page,
+    }) => {
+      const before = await storedBookmarks(page);
+      await button(page, `Edit ${MDN.title}`).click();
+      const form = editForm(page, MDN.title);
+      await form.getByLabel("Title").fill("Changed");
+      await form.getByLabel("Tags").fill("other");
+      await exit(page);
+
+      await expect(page.locator(".edit-form")).toHaveCount(0);
+      await expect(page.getByRole("link", { name: MDN.title })).toBeVisible();
+      await expect(
+        page.locator(".bookmark", { hasText: MDN.title }).locator(".tag"),
+      ).toHaveText(["javascript", "reference"]);
+      expect(await storedBookmarks(page)).toEqual(before);
+      await expect(button(page, `Edit ${MDN.title}`)).toBeFocused();
+
+      await page.reload();
+      expect(await storedBookmarks(page)).toEqual(before);
+    });
+  }
+
+  test("the heading keeps the title from when the edit started", async ({
+    page,
+  }) => {
+    await button(page, `Edit ${MDN.title}`).click();
+    const form = editForm(page, MDN.title);
+    await form.getByLabel("Title").fill("Something else");
+    await expect(form.locator(".form-heading")).toHaveText(
+      `Edit bookmark: ${MDN.title}`,
+    );
+  });
+
+  test("editing a second bookmark switches the inline form to it", async ({
+    page,
+  }) => {
+    await button(page, `Edit ${MDN.title}`).click();
+    await button(page, `Edit ${EXAMPLE.title}`).click();
+    await expect(page.locator(".edit-form")).toHaveCount(1);
+    await expect(editForm(page, EXAMPLE.title)).toBeVisible();
+    await expect(page.getByRole("link", { name: MDN.title })).toBeVisible();
+  });
+
+  test("an unsaved edit survives typing in the search box and deleting another bookmark", async ({
+    page,
+  }) => {
+    await button(page, `Edit ${MDN.title}`).click();
+    await editForm(page, MDN.title).getByLabel("Title").fill("Draft title");
+
+    await page.getByLabel("Search bookmarks").fill("mozilla");
+    await expect(editForm(page, MDN.title).getByLabel("Title")).toHaveValue(
+      "Draft title",
+    );
+    await page.getByLabel("Search bookmarks").fill("");
+
+    page.once("dialog", (dialog) => dialog.accept());
+    await button(page, `Delete ${EXAMPLE.title}`).click();
+    await expect(page.locator(".bookmark")).toHaveCount(1);
+    await expect(editForm(page, MDN.title).getByLabel("Title")).toHaveValue(
+      "Draft title",
+    );
+  });
+
+  test("the add form stays in add mode while a bookmark is being edited", async ({
+    page,
+  }) => {
+    await button(page, `Edit ${MDN.title}`).click();
+    await openForm(page);
+    const add = page.getByRole("form", { name: "Add a bookmark" });
+    await expect(add).toBeVisible();
+    await expect(add.getByRole("button", { name: "Save", exact: true })).toBeVisible();
+    await expect(add.getByRole("button", { name: "Cancel", exact: true })).toBeVisible();
+    await expect(add.getByLabel("Title")).toHaveValue("");
+    await expect(editForm(page, MDN.title)).toBeVisible();
+
+    // Adding a bookmark leaves the edit alone.
+    await add.getByLabel("URL").fill("https://example.org");
+    await add.getByLabel("Title").fill("Third");
+    await add.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByRole("link", { name: "Third" })).toBeVisible();
+    await expect(editForm(page, MDN.title)).toBeVisible();
+    expect(await storedBookmarks(page)).toHaveLength(3);
+  });
+
   test('opening the form shows add-mode names and a "Close form" toggle', async ({
     page,
   }) => {
     await expect(toggle(page)).toHaveAccessibleName("Add a bookmark");
     await expect(toggle(page)).toHaveAttribute("aria-expanded", "false");
     await openForm(page);
-    await expectAddMode(page);
+    await expect(
+      page.getByRole("heading", { name: "Add a bookmark", exact: true }),
+    ).toBeVisible();
+    await expect(button(page, "Save")).toBeVisible();
+    await expect(button(page, "Cancel")).toBeVisible();
     await expect(toggle(page)).toHaveAccessibleName("Close form");
     await expect(toggle(page)).toHaveAttribute("aria-expanded", "true");
-  });
-
-  test("editing names the form after the bookmark and renames the buttons", async ({
-    page,
-  }) => {
-    await button(page, `Edit ${MDN.title}`).click();
-
-    await expect(
-      page.getByRole("form", { name: `Edit bookmark: ${MDN.title}` }),
-    ).toBeVisible();
-    await expect(page.locator("#form-heading")).toHaveText(
-      `Edit bookmark: ${MDN.title}`,
-    );
-    await expect(toggle(page)).toHaveAccessibleName("Close form");
-    await expect(toggle(page)).toHaveAttribute("aria-expanded", "true");
-    await expect(button(page, "Save changes")).toBeVisible();
-    await expect(button(page, "Discard changes")).toBeVisible();
-    await expect(button(page, "Save")).toHaveCount(0);
-    await expect(button(page, "Cancel")).toHaveCount(0);
-  });
-
-  test("the heading keeps the title from when the edit started", async ({
-    page,
-  }) => {
-    await button(page, `Edit ${MDN.title}`).click();
-    await page.getByLabel("Title").fill("Something else");
-    await expect(page.locator("#form-heading")).toHaveText(
-      `Edit bookmark: ${MDN.title}`,
-    );
-  });
-
-  test("editing a second bookmark switches the heading to its title", async ({
-    page,
-  }) => {
-    await button(page, `Edit ${MDN.title}`).click();
-    await button(page, `Edit ${EXAMPLE.title}`).click();
-    await expect(
-      page.getByRole("form", { name: `Edit bookmark: ${EXAMPLE.title}` }),
-    ).toBeVisible();
-    await expect(button(page, "Save changes")).toBeVisible();
-  });
-
-  /** @type {[string, (page: import('@playwright/test').Page) => Promise<void>][]} */
-  const exits = [
-    ["saving", (page) => button(page, "Save changes").click()],
-    ["Discard changes", (page) => button(page, "Discard changes").click()],
-    ["Escape", (page) => page.getByLabel("Title").press("Escape")],
-    ["the toggle", (page) => toggle(page).click()],
-    [
-      "deleting the bookmark",
-      async (page) => {
-        page.once("dialog", (dialog) => dialog.accept());
-        await button(page, `Delete ${MDN.title}`).click();
-      },
-    ],
-  ];
-  for (const [name, exit] of exits) {
-    test(`${name} returns the form to add mode`, async ({ page }) => {
-      await button(page, `Edit ${MDN.title}`).click();
-      await exit(page);
-      await expect(page.locator("#bookmark-form")).toBeHidden();
-      await expect(toggle(page)).toHaveAccessibleName("Add a bookmark");
-      await openForm(page);
-      await expectAddMode(page);
-    });
-  }
-
-  test("reopening the form while it is still closing shows add mode", async ({
-    page,
-  }) => {
-    await button(page, `Edit ${MDN.title}`).click();
-    await expect(page.locator("#bookmark-form")).not.toHaveAttribute(
-      "style",
-      /height/,
-    );
-    await page.getByLabel("Title").press("Escape");
-    await toggle(page).click(); // well inside the 450ms close
-    await expectAddMode(page);
-    await expect(toggle(page)).toHaveAccessibleName("Close form");
   });
 
   test("with reduced motion the toggle label switches without animating", async ({
@@ -513,7 +539,7 @@ test.describe("Edit mode names", () => {
     await expect(page.locator("#form-toggle-label .roll-text")).toHaveCount(1);
   });
 
-  test("a 120-character title in the heading does not scroll sideways at 375px", async ({
+  test("a 120-character title in the inline form does not scroll sideways at 375px", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 375, height: 800 });
@@ -526,7 +552,8 @@ test.describe("Edit mode names", () => {
       tags: "",
     });
     await button(page, `Edit ${longTitle}`).click();
-    await expect(page.locator("#form-heading")).toHaveText(
+    const form = editForm(page, longTitle);
+    await expect(form.locator(".form-heading")).toHaveText(
       `Edit bookmark: ${longTitle}`,
     );
 
@@ -536,14 +563,20 @@ test.describe("Edit mode names", () => {
         document.documentElement.clientWidth,
     );
     expect(overflow).toBeLessThanOrEqual(0);
-    const heading = await page.locator("#form-heading").boundingBox();
-    const form = await page.locator("#bookmark-form").boundingBox();
-    expect(heading.x + heading.width).toBeLessThanOrEqual(
-      form.x + form.width + 0.5,
+    const heading = await form.locator(".form-heading").boundingBox();
+    const box = await form.boundingBox();
+    expect(heading.x + heading.width).toBeLessThanOrEqual(box.x + box.width + 0.5);
+
+    // Phone-sized targets inside the inline form too.
+    const tooShort = await form.evaluate((el) =>
+      [...el.querySelectorAll("button, input, textarea")]
+        .map((c) => c.getBoundingClientRect().height)
+        .filter((h) => h > 0 && h < 43.5),
     );
+    expect(tooShort).toEqual([]);
   });
 
-  test("the form opens, edits and closes by keyboard with visible focus rings", async ({
+  test("the add form opens and closes, and a bookmark edits inline, by keyboard with visible focus rings", async ({
     page,
     browserName,
   }) => {
@@ -563,8 +596,7 @@ test.describe("Edit mode names", () => {
     await expect(toggle(page)).toBeFocused();
     expect(await outline()).toBe("solid");
     await page.keyboard.press("Enter");
-    await expect(page.getByLabel("URL")).toBeFocused();
-    await expectAddMode(page);
+    await expect(page.locator("#url")).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(page.locator("#bookmark-form")).toBeHidden();
 
@@ -575,10 +607,9 @@ test.describe("Edit mode names", () => {
     await expect(edit).toBeFocused();
     expect(await outline()).toBe("solid");
     await page.keyboard.press("Enter");
-    await expect(
-      page.getByRole("form", { name: `Edit bookmark: ${MDN.title}` }),
-    ).toBeVisible();
-    await expect(page.getByLabel("URL")).toBeFocused();
+    const form = editForm(page, MDN.title);
+    await expect(form).toBeVisible();
+    await expect(form.getByLabel("URL")).toBeFocused();
 
     await page.keyboard.press(tab);
     await page.keyboard.press("ArrowRight"); // Tab selects the field's text
@@ -594,10 +625,11 @@ test.describe("Edit mode names", () => {
     expect(await outline()).toBe("solid");
     await page.keyboard.press("Enter");
 
-    await expect(page.locator("#bookmark-form")).toBeHidden();
+    await expect(page.locator(".edit-form")).toHaveCount(0);
     await expect(
       page.getByRole("link", { name: `${MDN.title} (edited)` }),
     ).toBeVisible();
+    await expect(button(page, `Edit ${MDN.title} (edited)`)).toBeFocused();
   });
 });
 
@@ -847,17 +879,23 @@ test.describe("Review fixes", () => {
       expect(await focused(page)).toMatchObject({ id: "form-toggle" });
     });
 
-    test("a successful update moves focus to the form toggle", async ({
+    // Edit is inline (guide Layer 3), so focus returns to the edited card.
+    test("a successful update moves focus to that bookmark's Edit button", async ({
       page,
     }) => {
       await press(page.getByRole("button", { name: "Edit Second" }));
-      await page.getByLabel("Title").fill("Second edited");
-      await page.locator(SUBMIT).focus();
-      await page.locator(SUBMIT).press("Enter");
+      const edit = page.locator(".edit-form");
+      await edit.getByLabel("Title").fill("Second edited");
+      await edit.locator('button[type="submit"]').focus();
+      await edit.locator('button[type="submit"]').press("Enter");
       await expect(
         page.locator(".bookmark-title", { hasText: "Second edited" }),
       ).toBeVisible();
-      expect(await focused(page)).toMatchObject({ id: "form-toggle" });
+      expect(await focused(page)).toMatchObject({
+        tag: "BUTTON",
+        className: "edit-button",
+        bookmark: "Second edited",
+      });
     });
   });
 
@@ -1325,8 +1363,9 @@ test.describe("Tag filter", () => {
     await expect(titles(page)).toHaveText(["Solo"]);
 
     await page.getByRole("button", { name: "Edit Solo" }).click();
-    await page.getByLabel("Tags").fill("");
-    await page.locator(SUBMIT_BUTTON).click();
+    const edit = page.locator(".edit-form");
+    await edit.getByLabel("Tags").fill("");
+    await edit.locator('button[type="submit"]').click();
 
     await expect(chip(page, "solo")).toHaveCount(0);
     await expect(allChip(page)).toHaveClass(/selected/);
@@ -1689,4 +1728,89 @@ test.describe("R1 malformed stored data", () => {
       expect(hrefs.some((h) => h.startsWith("javascript:"))).toBe(false);
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Guide deviations: 05-first-build.md Layer 6 asks for "dark background with
+// light text, dark mode", so the page is dark whatever the OS setting is.
+// ---------------------------------------------------------------------------
+
+test.describe("Guide: dark colour scheme", () => {
+  /** Relative luminance of an "rgb(r, g, b)" string, 0 (black) to 1 (white). */
+  const luminance = (css) => {
+    const [r, g, b] = css
+      .match(/[\d.]+/g)
+      .slice(0, 3)
+      .map((v) => {
+        const c = Number(v) / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+
+  for (const scheme of ["light", "dark", "no-preference"]) {
+    test(`${scheme} OS setting: dark background with light text`, async ({
+      page,
+    }) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.goto("/");
+      const colours = await page.evaluate(() => {
+        const body = getComputedStyle(document.body);
+        const panel = getComputedStyle(document.querySelector(".panel"));
+        return {
+          bodyBg: body.backgroundColor,
+          panelBg: panel.backgroundColor,
+          text: body.color,
+          scheme: getComputedStyle(document.documentElement).colorScheme,
+        };
+      });
+      expect(luminance(colours.bodyBg)).toBeLessThan(0.05);
+      expect(luminance(colours.panelBg)).toBeLessThan(0.05);
+      expect(luminance(colours.text)).toBeGreaterThan(0.6);
+      expect(colours.scheme).toBe("dark");
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Guide deviations: 05-first-build.md Step 3 asks for "Plain HTML, CSS, and
+// JavaScript in a single file called index.html".
+// ---------------------------------------------------------------------------
+
+test.describe("Guide: single index.html", () => {
+  test("the page loads no separate stylesheet or script", async ({ page }) => {
+    /** @type {string[]} */
+    const requested = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.origin === "http://localhost:3000" && url.pathname !== "/favicon.ico")
+        requested.push(url.pathname);
+    });
+    await page.goto("/");
+    await expect(
+      page.getByText("No bookmarks yet. Add your first one above."),
+    ).toBeVisible();
+
+    await expect(page.locator('link[rel="stylesheet"], script[src]')).toHaveCount(0);
+    expect(requested).toEqual(["/"]);
+  });
+
+  test("opening index.html straight from disk works, styled", async ({
+    page,
+  }) => {
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto(`file://${path.join(__dirname, "..", "index.html")}`);
+
+    await expect(
+      page.getByText("No bookmarks yet. Add your first one above."),
+    ).toBeVisible();
+    await openForm(page);
+    await expect(page.getByLabel("URL")).toBeFocused();
+    const background = await page.evaluate(
+      () => getComputedStyle(document.body).backgroundColor,
+    );
+    expect(background).toBe("rgb(15, 23, 42)"); // --bg from the inline styles
+    expect(errors).toEqual([]);
+  });
 });
