@@ -1,7 +1,7 @@
 # Bookmark Manager
 
 Plain HTML/CSS/JS app (no framework, no build step). Spec: `DESIGN.md`. Build steps: `docs/prompts/prompt-slice-*.md`.
-Files: `index.html`, `style.css`, `app.js`. Data lives in `localStorage` under the key `bookmarks`.
+The whole app is one file, `index.html`: the CSS is in its `<style>` and the JavaScript in its `<script>`, as the guild's first-build guide asks. Keep it that way; don't split them back into separate files. Data lives in `localStorage` under the key `bookmarks`.
 
 ## Checking progress
 
@@ -15,4 +15,4 @@ Run everything from this directory (`bookmark-manager/`).
 ## Notes
 
 - `localStorage` is per origin, so data saved on another port (e.g. Live Server on 5500) will not appear on port 3000. Tests should start from a clean browser context.
-- Match the existing style in `app.js`: small functions, DOM built with `createElement` and `textContent` (never `innerHTML` with user data).
+- Match the existing style in the `<script>` in `index.html`: small functions, DOM built with `createElement` and `textContent` (never `innerHTML` with user data).

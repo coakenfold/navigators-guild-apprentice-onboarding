@@ -1,5 +1,6 @@
 // @ts-check
 import { test, expect } from "@playwright/test";
+import path from "node:path";
 
 const MDN = {
   url: "https://developer.mozilla.org",
@@ -1769,4 +1770,47 @@ test.describe("Guide: dark colour scheme", () => {
       expect(colours.scheme).toBe("dark");
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Guide deviations: 05-first-build.md Step 3 asks for "Plain HTML, CSS, and
+// JavaScript in a single file called index.html".
+// ---------------------------------------------------------------------------
+
+test.describe("Guide: single index.html", () => {
+  test("the page loads no separate stylesheet or script", async ({ page }) => {
+    /** @type {string[]} */
+    const requested = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.origin === "http://localhost:3000" && url.pathname !== "/favicon.ico")
+        requested.push(url.pathname);
+    });
+    await page.goto("/");
+    await expect(
+      page.getByText("No bookmarks yet. Add your first one above."),
+    ).toBeVisible();
+
+    await expect(page.locator('link[rel="stylesheet"], script[src]')).toHaveCount(0);
+    expect(requested).toEqual(["/"]);
+  });
+
+  test("opening index.html straight from disk works, styled", async ({
+    page,
+  }) => {
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto(`file://${path.join(__dirname, "..", "index.html")}`);
+
+    await expect(
+      page.getByText("No bookmarks yet. Add your first one above."),
+    ).toBeVisible();
+    await openForm(page);
+    await expect(page.getByLabel("URL")).toBeFocused();
+    const background = await page.evaluate(
+      () => getComputedStyle(document.body).backgroundColor,
+    );
+    expect(background).toBe("rgb(15, 23, 42)"); // --bg from the inline styles
+    expect(errors).toEqual([]);
+  });
 });

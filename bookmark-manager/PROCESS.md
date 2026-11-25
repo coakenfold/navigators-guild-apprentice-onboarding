@@ -181,6 +181,12 @@ I checked the build against the explicit instructions in the guild's [first-buil
 - **Tests:** this changed behaviour that existing tests encoded, so I replaced the "Edit" and "Edit mode names" blocks with one "Edit (inline)" block (15 tests). It keeps their intent where it still applies: in-place update keeping `id` and `createdAt`, validation, the heading, switching bookmarks, reduced motion, a long title at 375px, and keyboard use with focus rings. It drops the tests about the add form's edit mode. It adds the guide's own check, "Try editing and then canceling. Does it revert correctly?", for both Discard changes and Escape. Two other tests that edited through the top form were pointed at the inline form: D1 "a successful update", which now expects focus on the bookmark's Edit button rather than the toggle, and the Tag filter "edited to drop it" test.
 - **Verification:** before the change, 9 of the new and updated tests failed in Chromium, including "Edit opens filled-in fields inside that bookmark's card, not the add form". After it, the full suite passed in Chromium, Firefox and WebKit (297 tests). Not done: checking the inline form by eye, or with a screen reader.
 
+### Single `index.html` (Step 3)
+
+- **Deviation:** Step 3 asks for "Plain HTML, CSS, and JavaScript in a single file called index.html". My design doc planned three files (`index.html`, `style.css`, `app.js`) and I built it that way. I didn't edit the design doc to match the guide, as Step 1 says to.
+- **Fix:** `style.css` is now a `<style>` block in the `<head>` of `index.html`, and `app.js` is a `<script>` block at the end of the `<body>`. The contents were moved unchanged, only indented, and the two files are deleted. `DESIGN.md` §4, `CLAUDE.md` and a note in `REVIEW.md` (whose line links point at the old files) say so.
+- **Verification:** a new "Guide: single index.html" block checks that the page has no `<link rel="stylesheet">` or `<script src>`, and that it requests nothing but `index.html`. It failed in all three browsers before the merge and passes after. A second test opens `index.html` over `file://`, as the guide does, and checks that the styles apply and the form opens. It passed both before and after, as a regression guard. The full suite passed in Chromium, Firefox and WebKit (303 tests).
+
 ## Learnings
 
 Generating a design document worked quite well. Applying the `/decomposition` skill against that document provided me with vertical slices that I could work on in phases. Scope can creep very easily in the slices with a single sentence.

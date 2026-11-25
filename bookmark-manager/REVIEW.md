@@ -246,3 +246,7 @@ O7, O8 and O9 are done and marked above. O1 and O2 were checked: the fixes-3 foc
 ## Update (2026-11-12): R2, R4 and O3 fixed
 
 The "no fixes are planned" updates above are out of date for these three. `loadBookmarks()` now passes every stored record through `normaliseRecord()` ([app.js](app.js)), in commit `37e2a0f`. It defaults a missing `notes` or `tags`, drops records with no usable `id`, `url` or `title`, and drops records whose URL fails `validateUrl()`, so a stored `javascript:` URL never becomes a link. The tests are in the "R1 malformed stored data" block of `tests/bookmarks.spec.js` (named by a later review's numbering). R1, R3, R6, O4, O5 and O6 are still open.
+
+## Update (2026-11-24): `app.js` and `style.css` merged into `index.html`
+
+To follow the first-build guide's "single file called index.html", the CSS and JavaScript now live in a `<style>` and a `<script>` inside `index.html`, and `app.js` and `style.css` are deleted. The `app.js#L…` and `style.css#L…` links in this review point at files that no longer exist. To see the code they cite, check out a commit from before the merge (any commit up to `ecf32c5`). The findings and their statuses are unchanged.

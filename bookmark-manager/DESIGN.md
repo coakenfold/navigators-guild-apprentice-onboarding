@@ -106,19 +106,22 @@ The goal is the fewest moving parts: no frameworks, no build tools, nothing to i
 | Part       | Choice                             | Why                                                                                         |
 | ---------- | ---------------------------------- | ------------------------------------------------------------------------------------------- |
 | Structure  | **HTML**                           | The page and the form.                                                                      |
-| Styling    | **CSS**                            | One stylesheet for the look.                                                                |
-| Behavior   | **Plain JavaScript**               | Handles adding, editing, searching, and filtering. No framework to learn first.             |
+| Styling    | **CSS**                            | One `<style>` block in `index.html` for the look.                                           |
+| Behavior   | **Plain JavaScript**               | One `<script>` block in `index.html`. Handles adding, editing, searching, and filtering. No framework to learn first. |
 | Storage    | **Browser `localStorage`**         | Saves data in the browser. It survives page refreshes, and no server or database is needed. |
 | Running it | **Open `index.html` in a browser** | No setup required. Optionally use VS Code's "Live Server" extension for auto-reload.        |
 
 ### File structure
 
+The whole app is a single file, as Step 3 of the guild's first-build guide asks ("Plain HTML, CSS, and JavaScript in a single file called index.html"):
+
 ```
 bookmark-manager/
-├── index.html    # page layout and form
-├── style.css     # all styling
-└── app.js        # all behavior and data handling
+└── index.html    # page layout and form, <style> with all styling,
+                  # <script> with all behavior and data handling
 ```
+
+Until 2026-11-24 the app was split into `index.html`, `style.css` and `app.js`. The build plan in §6 still names those files, because it records the order the app was built in.
 
 ### Data model
 
