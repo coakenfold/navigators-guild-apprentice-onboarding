@@ -511,7 +511,7 @@ Each item is a plain, readable JSON file, so you can query the store with `jq`. 
 ## Further reading
 
 - [docs/DESIGN.md](docs/DESIGN.md): the full design and spec.
-- [docs/walkthrough.html](docs/walkthrough.html): mockup of the tool in use, screen by screen, on a bookmarks app.
+- [docs/walkthrough.html](docs/walkthrough.html): the tool in use, screen by screen, on a bookmarks app, with output recorded from `tracker 0.1.0` at `e5dbdd4`.
 - [docs/PLAN.md](docs/PLAN.md): the build plan, in 16 vertical slices.
 - [docs/slice-1-readme.md](docs/slice-1-readme.md) to [docs/slice-16-readme.md](docs/slice-16-readme.md): what each slice built, how it works, and how to test it.
 - [docs/self-tracking-walkthrough.md](docs/self-tracking-walkthrough.md) and [docs/creating-items-walkthrough.md](docs/creating-items-walkthrough.md): how `tracker` was used to track its own build, from slice 7 on.
