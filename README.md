@@ -1,4 +1,4 @@
-# guild-portfolio
+# navigators-guild-apprentice-onboarding
 
 **My apprentice portfolio for the Navigators Guild: projects built with coding agents, and the record of how each one was built.**
 
@@ -13,10 +13,10 @@ So each project folder holds the design, the build log, the reviews and how each
 
 ## Projects
 
-| Project                                  | What it is                                                                          | Built with                        | Start with                                   |
-| ---------------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------- | -------------------------------------------- |
-| [bookmark-manager](bookmark-manager/)    | Portfolio project #1: a one-file web app for saving links with notes and tags       | Plain HTML, CSS and JavaScript    | [README](bookmark-manager/README.md)         |
-| [tracker](tracker/)                      | Portfolio project #2: a work tracker that won't mark anything done until it's proven | Rust                              | [README](tracker/README.md)                  |
+| Project                               | What it is                                                                           | Built with                     | Start with                           |
+| ------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------ | ------------------------------------ |
+| [bookmark-manager](bookmark-manager/) | Portfolio project #1: a one-file web app for saving links with notes and tags        | Plain HTML, CSS and JavaScript | [README](bookmark-manager/README.md) |
+| [tracker](tracker/)                   | Portfolio project #2: a work tracker that won't mark anything done until it's proven | Rust                           | [README](tracker/README.md)          |
 
 ### bookmark-manager
 
@@ -43,27 +43,27 @@ Portfolio project #2, from [Tracking Your Work](https://github.com/Navigators-Gu
 
 [chapters/](chapters/) holds my answers to the exercises in each curriculum chapter. Its folders follow the curriculum's.
 
-| Folder                                                                                       | What's in it                                                                                     |
-| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| [01-talking-to-agents/02-the-art-of-intent](chapters/01-talking-to-agents/02-the-art-of-intent/)         | Prompts written to state intent clearly                                                          |
-| [01-talking-to-agents/03-context-is-everything](chapters/01-talking-to-agents/03-context-is-everything/) | Context for a prompt, the assumptions an agent makes without it, and a context summary           |
-| [01-talking-to-agents/04-breaking-problems-down](chapters/01-talking-to-agents/04-breaking-problems-down/) | Project ideas broken into ordered pieces                                                         |
-| [01-talking-to-agents/05-first-build](chapters/01-talking-to-agents/05-first-build/)                     | Pointers to the bookmark manager's design and process docs                                       |
-| [01-talking-to-agents/06-when-things-break](chapters/01-talking-to-agents/06-when-things-break/)         | Bugs introduced on purpose, and debugging them with an agent                                     |
-| [01-talking-to-agents/07-finding-answers](chapters/01-talking-to-agents/07-finding-answers/)             | Finding answers in crate docs, version mismatches, and searching error messages before asking     |
-| [02-the-methodology/01-how-we-build](chapters/02-the-methodology/01-how-we-build/)                       | Further adversarial reviews of the bookmark manager (Reviews 2 to 5), and fixes for their findings |
+| Folder                                                                                                     | What's in it                                                                                       |
+| ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| [01-talking-to-agents/02-the-art-of-intent](chapters/01-talking-to-agents/02-the-art-of-intent/)           | Prompts written to state intent clearly                                                            |
+| [01-talking-to-agents/03-context-is-everything](chapters/01-talking-to-agents/03-context-is-everything/)   | Context for a prompt, the assumptions an agent makes without it, and a context summary             |
+| [01-talking-to-agents/04-breaking-problems-down](chapters/01-talking-to-agents/04-breaking-problems-down/) | Project ideas broken into ordered pieces                                                           |
+| [01-talking-to-agents/05-first-build](chapters/01-talking-to-agents/05-first-build/)                       | Pointers to the bookmark manager's design and process docs                                         |
+| [01-talking-to-agents/06-when-things-break](chapters/01-talking-to-agents/06-when-things-break/)           | Bugs introduced on purpose, and debugging them with an agent                                       |
+| [01-talking-to-agents/07-finding-answers](chapters/01-talking-to-agents/07-finding-answers/)               | Finding answers in crate docs, version mismatches, and searching error messages before asking      |
+| [02-the-methodology/01-how-we-build](chapters/02-the-methodology/01-how-we-build/)                         | Further adversarial reviews of the bookmark manager (Reviews 2 to 5), and fixes for their findings |
 
 ## Agent setup
 
 [.claude/](.claude/) holds the Claude Code skills and agents I wrote for this work. They're shared by every project in the repo:
 
-| Name                                                        | What it does                                                                                                         |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| [decompose](.claude/skills/decompose/SKILL.md)              | Breaks a large task into small, dependency-ordered vertical slices, following the "Breaking Problems Down" chapter.  |
-| [slice-cycle](.claude/skills/slice-cycle/SKILL.md)          | Runs `tracker`'s remaining slices end to end: build, readme, two reviews with fixes, as stacked pull requests.         |
-| [slice-review](.claude/skills/slice-review/SKILL.md)        | Reviews how faithfully one `tracker` slice implements the plan and the design.                                       |
-| [slice-readme](.claude/skills/slice-readme/SKILL.md)        | Writes a slice's readme, for developers who weren't there when it was built.                                         |
-| `tracker-docs` and `tracker-fixer` agents                   | Write slice docs, and build small review-fix items through the `tracker` workflow.                                   |
+| Name                                                 | What it does                                                                                                        |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| [decompose](.claude/skills/decompose/SKILL.md)       | Breaks a large task into small, dependency-ordered vertical slices, following the "Breaking Problems Down" chapter. |
+| [slice-cycle](.claude/skills/slice-cycle/SKILL.md)   | Runs `tracker`'s remaining slices end to end: build, readme, two reviews with fixes, as stacked pull requests.      |
+| [slice-review](.claude/skills/slice-review/SKILL.md) | Reviews how faithfully one `tracker` slice implements the plan and the design.                                      |
+| [slice-readme](.claude/skills/slice-readme/SKILL.md) | Writes a slice's readme, for developers who weren't there when it was built.                                        |
+| `tracker-docs` and `tracker-fixer` agents            | Write slice docs, and build small review-fix items through the `tracker` workflow.                                  |
 
 Each project also has its own `CLAUDE.md`, with the notes an agent needs to work in that folder.
 
