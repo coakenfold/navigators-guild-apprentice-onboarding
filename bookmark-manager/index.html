@@ -90,6 +90,33 @@
     </li>
   </template>
 
+  <!-- Inline edit form, shown inside a bookmark's card. Only one bookmark is
+       edited at a time, so its ids are unique on the page. -->
+  <template id="edit-template">
+    <form class="edit-form" aria-labelledby="edit-heading" novalidate>
+      <h3 id="edit-heading" class="form-heading"></h3>
+
+      <label for="edit-url">URL</label>
+      <input type="url" id="edit-url" name="url" required>
+
+      <label for="edit-title">Title</label>
+      <input type="text" id="edit-title" name="title" required>
+
+      <label for="edit-notes">Notes</label>
+      <textarea id="edit-notes" name="notes" rows="3"></textarea>
+
+      <label for="edit-tags">Tags</label>
+      <input type="text" id="edit-tags" name="tags">
+
+      <p id="edit-error" class="form-error" role="alert" hidden></p>
+
+      <div class="form-actions">
+        <button type="button" class="secondary edit-cancel">Discard changes</button>
+        <button type="submit">Save changes</button>
+      </div>
+    </form>
+  </template>
+
   <script src="app.js"></script>
 </body>
 </html>

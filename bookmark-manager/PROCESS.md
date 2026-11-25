@@ -174,6 +174,13 @@ I checked the build against the explicit instructions in the guild's [first-buil
 - **Fix:** `style.css` now has one dark palette on `:root` with `color-scheme: dark`. The light palette is gone. `DESIGN.md` A.3 says so.
 - **Verification:** a new "Guide: dark colour scheme" block checks the background, panel and text luminance under light, dark and no-preference OS settings. It failed 3 of 3 before the change and passes after. The full suite passed in Chromium, Firefox and WebKit (303 tests). The R5 border-contrast test still passes for both OS settings, because both now get the dark palette.
 
+### Inline edit (Layer 3)
+
+- **Deviation:** Layer 3 asks that "Clicking edit should let me change the title, URL, note, and tags inline." My slice 3 prompt reused the add form at the top instead, and slice 6 and the Q2 review fix then built an "edit mode" into that form.
+- **Fix:** Edit now swaps the bookmark's card for an inline edit form (a new `<template id="edit-template">` in `index.html`), with Save changes and Discard changes. The add form at the top is add-only, so its edit-mode heading and button names are gone (`setFormMode` is deleted). Add and edit share one `readFields()` check, so validation and messages are the same in both. Unsaved edits are kept in a draft, so a search, a tag click or deleting another bookmark doesn't lose them. `DESIGN.md` A.8 describes it.
+- **Tests:** this changed behaviour that existing tests encoded, so I replaced the "Edit" and "Edit mode names" blocks with one "Edit (inline)" block (15 tests). It keeps their intent where it still applies: in-place update keeping `id` and `createdAt`, validation, the heading, switching bookmarks, reduced motion, a long title at 375px, and keyboard use with focus rings. It drops the tests about the add form's edit mode. It adds the guide's own check, "Try editing and then canceling. Does it revert correctly?", for both Discard changes and Escape. Two other tests that edited through the top form were pointed at the inline form: D1 "a successful update", which now expects focus on the bookmark's Edit button rather than the toggle, and the Tag filter "edited to drop it" test.
+- **Verification:** before the change, 9 of the new and updated tests failed in Chromium, including "Edit opens filled-in fields inside that bookmark's card, not the add form". After it, the full suite passed in Chromium, Firefox and WebKit (297 tests). Not done: checking the inline form by eye, or with a screen reader.
+
 ## Learnings
 
 Generating a design document worked quite well. Applying the `/decomposition` skill against that document provided me with vertical slices that I could work on in phases. Scope can creep very easily in the slices with a single sentence.

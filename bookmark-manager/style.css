@@ -137,12 +137,16 @@ main {
   color: var(--accent);
 }
 
-/* Form */
-#bookmark-form {
+/* Forms: the add form, and the inline edit form inside a bookmark's card */
+#bookmark-form,
+.edit-form {
   display: grid;
   grid-template-columns: 80px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
+}
+
+#bookmark-form {
   margin-top: 12px;
 }
 
@@ -160,7 +164,8 @@ main {
   overflow-wrap: anywhere;
 }
 
-#bookmark-form label {
+#bookmark-form label,
+.edit-form label {
   padding-top: 8px;
   font-weight: 600;
 }
@@ -400,12 +405,14 @@ button.tag.selected {
     padding: 16px;
   }
 
-  #bookmark-form {
+  #bookmark-form,
+  .edit-form {
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
   }
 
-  #bookmark-form label {
+  #bookmark-form label,
+  .edit-form label {
     padding-top: 4px;
   }
 

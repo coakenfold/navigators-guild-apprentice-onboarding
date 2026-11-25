@@ -18,11 +18,13 @@
   const formToggleLabel = document.getElementById("form-toggle-label");
   const formCancel = document.getElementById("form-cancel");
 
-  const submitButton = form.querySelector('button[type="submit"]');
-  const formHeading = document.getElementById("form-heading");
-
   let bookmarks = loadBookmarks();
+  // The bookmark being edited inline, and what has been typed so far. The draft
+  // lets the edit survive a re-render (search, tag filter, another delete).
   let editingId = null;
+  let editTitle = "";
+  let editDraft = null;
+  let editError = null;
   let selectedTag = null;
   // Ids shown by the last render; null until the first one, so nothing fades in on load.
   let renderedIds = null;
@@ -98,65 +100,65 @@
     return "";
   }
 
-  // Show the message in the role="alert" region and tie it to the field.
-  function showError(message, field) {
-    formError.textContent = message;
-    formError.hidden = false;
-    if (field) {
-      field.setAttribute("aria-invalid", "true");
-      field.setAttribute("aria-describedby", formError.id);
-      field.focus();
-    }
+  // Show the message in a form's role="alert" region and tie it to the field.
+  function showError(errorEl, message, field) {
+    errorEl.textContent = message;
+    errorEl.hidden = false;
+    field.setAttribute("aria-invalid", "true");
+    field.setAttribute("aria-describedby", errorEl.id);
   }
 
-  function clearError() {
-    formError.textContent = "";
-    formError.hidden = true;
-    for (const field of form.elements) {
+  function clearError(formEl, errorEl) {
+    errorEl.textContent = "";
+    errorEl.hidden = true;
+    for (const field of formEl.elements) {
       field.removeAttribute("aria-invalid");
       field.removeAttribute("aria-describedby");
     }
   }
 
-  function handleSubmit(event) {
-    event.preventDefault();
-
-    const url = form.url.value.trim();
-    const title = form.title.value.trim();
-
-    clearError();
-
+  // Read and check the add form or an edit form.
+  // Returns { fields } when it is valid, or { message, field } when it isn't.
+  function readFields(formEl) {
+    const { elements } = formEl;
+    const url = elements.url.value.trim();
+    const title = elements.title.value.trim();
     if (!url || !title) {
-      showError(
-        "Please fill in both URL and Title.",
-        url ? form.title : form.url,
-      );
-      return;
+      return {
+        message: "Please fill in both URL and Title.",
+        field: url ? elements.title : elements.url,
+      };
     }
     const urlError = validateUrl(url);
-    if (urlError) {
-      showError(urlError, form.url);
+    if (urlError) return { message: urlError, field: elements.url };
+    return {
+      fields: {
+        url,
+        title,
+        notes: elements.notes.value.trim(),
+        tags: parseTags(elements.tags.value),
+      },
+    };
+  }
+
+  const filterActive = () =>
+    searchInput.value.trim() !== "" || selectedTag !== null;
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    clearError(form, formError);
+    const result = readFields(form);
+    if (result.message) {
+      showError(formError, result.message, result.field);
+      result.field.focus();
       return;
     }
 
-    const fields = {
-      url,
-      title,
-      notes: form.notes.value.trim(),
-      tags: parseTags(form.tags.value),
-    };
-
-    const existing = bookmarks.find((bookmark) => bookmark.id === editingId);
-    if (existing) {
-      Object.assign(existing, fields);
-    } else {
-      bookmarks.push({
-        id: Date.now().toString(),
-        ...fields,
-        createdAt: new Date().toISOString(),
-      });
-    }
-
+    bookmarks.push({
+      id: Date.now().toString(),
+      ...result.fields,
+      createdAt: new Date().toISOString(),
+    });
     saveBookmarks();
     resetForm();
     setFormOpen(false);
@@ -164,7 +166,7 @@
     formToggle.focus();
     // The saved bookmark may be hidden by the search or tag filter,
     // so confirm the save in words.
-    if (searchInput.value.trim() !== "" || selectedTag !== null) showSaved();
+    if (filterActive()) showSaved();
   }
 
   function showSaved() {
@@ -234,8 +236,6 @@
         for (const el of row.elements) el.style.opacity = "";
       }
       form.hidden = !open;
-      // Add-mode names wait until the drawer is shut so the closing rows don't change.
-      if (!open && editingId === null) setFormMode();
     };
 
     if (reduceMotion) {
@@ -316,7 +316,6 @@
 
   // Show or hide the add form; the toggle button always reflects the state.
   function setFormOpen(open) {
-    if (open && editingId === null) setFormMode();
     if (open !== formOpen) animateForm(open);
     formOpen = open;
     formToggle.setAttribute("aria-expanded", open);
@@ -342,34 +341,72 @@
     if (event.key === "Escape") cancelForm();
   }
 
-  // Name the form and its buttons for add mode, or for editing `title`.
-  function setFormMode(title) {
-    const editing = title !== undefined;
-    formHeading.textContent = editing
-      ? `Edit bookmark: ${title}`
-      : "Add a bookmark";
-    submitButton.textContent = editing ? "Save changes" : "Save";
-    formCancel.textContent = editing ? "Discard changes" : "Cancel";
-  }
-
-  // Return the form to add mode and clear it. The add-mode heading and button
-  // names are applied once the drawer has closed (see animateForm).
+  // Clear the add form. It is only for adding; editing happens inline.
   function resetForm() {
-    editingId = null;
-    clearError();
+    clearError(form, formError);
     form.reset();
   }
 
+  // Open the inline edit form in this bookmark's card (guide Layer 3).
+  // Editing another bookmark switches to it and drops the unsaved edit.
   function startEdit(bookmark) {
     editingId = bookmark.id;
-    clearError();
-    form.url.value = bookmark.url;
-    form.title.value = bookmark.title;
-    form.notes.value = bookmark.notes;
-    form.tags.value = bookmark.tags.join(", ");
-    setFormMode(bookmark.title);
-    setFormOpen(true);
-    form.url.focus();
+    editTitle = bookmark.title;
+    editDraft = {
+      url: bookmark.url,
+      title: bookmark.title,
+      notes: bookmark.notes,
+      tags: bookmark.tags.join(", "),
+    };
+    editError = null;
+    render();
+    document.getElementById("edit-url")?.focus();
+  }
+
+  function stopEdit() {
+    editingId = null;
+    editDraft = null;
+    editError = null;
+  }
+
+  // Focus a bookmark's Edit button, or the toggle if the bookmark isn't shown.
+  function focusEditButton(id) {
+    const button = list.querySelector(
+      `.bookmark[data-id="${CSS.escape(id)}"] .edit-button`,
+    );
+    (button ?? formToggle).focus();
+  }
+
+  function cancelEdit() {
+    const id = editingId;
+    stopEdit();
+    render();
+    focusEditButton(id);
+  }
+
+  function handleEditSubmit(event) {
+    event.preventDefault();
+    const editForm = event.currentTarget;
+    const errorEl = editForm.querySelector(".form-error");
+    clearError(editForm, errorEl);
+    editError = null;
+    const result = readFields(editForm);
+    if (result.message) {
+      editError = { message: result.message, name: result.field.name };
+      showError(errorEl, result.message, result.field);
+      result.field.focus();
+      return;
+    }
+
+    const id = editingId;
+    const existing = bookmarks.find((bookmark) => bookmark.id === id);
+    if (existing) Object.assign(existing, result.fields);
+    saveBookmarks();
+    stopEdit();
+    render();
+    focusEditButton(id);
+    // The edited bookmark may no longer match the search or tag filter.
+    if (filterActive()) showSaved();
   }
 
   function deleteBookmark(id) {
@@ -380,16 +417,13 @@
     );
     bookmarks = bookmarks.filter((bookmark) => bookmark.id !== id);
     saveBookmarks();
-    if (id === editingId) {
-      resetForm();
-      setFormOpen(false);
-    }
+    if (id === editingId) stopEdit();
     render();
 
     // Focus the bookmark that took its place (or the previous one), else the toggle.
-    const titles = list.querySelectorAll(".bookmark-title");
-    const next = titles[Math.min(position, titles.length - 1)];
-    (next ?? formToggle).focus();
+    // A card being edited has no title link, so focus its first field instead.
+    const next = list.children[Math.min(position, list.children.length - 1)];
+    (next?.querySelector(".bookmark-title, input") ?? formToggle).focus();
   }
 
   // "https://www.example.com/a/b" -> "example.com"
@@ -454,6 +488,44 @@
     deleteButton.setAttribute("aria-label", `Delete ${bookmark.title}`);
     deleteButton.addEventListener("click", () => deleteBookmark(bookmark.id));
 
+    return item;
+  }
+
+  const editTemplate = document.getElementById("edit-template");
+
+  // The card for the bookmark being edited: the inline form, filled from the draft.
+  function createEditItem(bookmark) {
+    const item = document.createElement("li");
+    item.className = "bookmark editing";
+    item.dataset.id = bookmark.id;
+
+    const editForm = editTemplate.content.firstElementChild.cloneNode(true);
+    // The heading keeps the title from when the edit started.
+    editForm.querySelector(".form-heading").textContent =
+      `Edit bookmark: ${editTitle}`;
+    for (const [name, value] of Object.entries(editDraft)) {
+      editForm.elements[name].value = value;
+    }
+    if (editError) {
+      showError(
+        editForm.querySelector(".form-error"),
+        editError.message,
+        editForm.elements[editError.name],
+      );
+    }
+
+    editForm.addEventListener("input", (event) => {
+      editDraft[event.target.name] = event.target.value;
+    });
+    editForm.addEventListener("submit", handleEditSubmit);
+    editForm.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") cancelEdit();
+    });
+    editForm
+      .querySelector(".edit-cancel")
+      .addEventListener("click", cancelEdit);
+
+    item.append(editForm);
     return item;
   }
 
@@ -534,7 +606,10 @@
     );
 
     for (const bookmark of newestFirst) {
-      const item = createBookmarkItem(bookmark);
+      const item =
+        bookmark.id === editingId
+          ? createEditItem(bookmark)
+          : createBookmarkItem(bookmark);
       // Only bookmarks that weren't visible last time fade in.
       if (renderedIds && !renderedIds.has(bookmark.id))
         item.classList.add("entering");
