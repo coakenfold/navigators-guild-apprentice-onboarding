@@ -41,10 +41,10 @@ jobs:
         # Copies the pages listed in github-pages.txt and writes its index.html
         run: npm run pages
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           # Only the built pages, not the whole repository
-          path: './github-pages'
+          path: "./github-pages"
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
