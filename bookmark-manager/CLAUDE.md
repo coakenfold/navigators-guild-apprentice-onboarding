@@ -1,6 +1,6 @@
 # Bookmark Manager
 
-Plain HTML/CSS/JS app (no framework, no build step). Spec: `DESIGN.md`. Build steps: `prompt-slice-*.md`.
+Plain HTML/CSS/JS app (no framework, no build step). Spec: `DESIGN.md`. Build steps: `docs/prompts/prompt-slice-*.md`.
 Files: `index.html`, `style.css`, `app.js`. Data lives in `localStorage` under the key `bookmarks`.
 
 ## Checking progress

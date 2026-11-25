@@ -34,7 +34,7 @@ I found **3 confirmed defects**, all low to medium severity. Two break a stated 
 
 ### D1. Keyboard focus is lost after tag, Delete and Update actions
 
-- **Status:** fixed (2026-11-07) via [prompt-review-fixes-3.md](prompt-review-fixes-3.md), with red/green Playwright tests in the `Review fixes` block.
+- **Status:** fixed (2026-11-07) via [prompt-review-fixes-3.md](docs/prompts/prompt-review-fixes-3.md), with red/green Playwright tests in the `Review fixes` block.
 - **Requirement:** PROCESS.md says the app "Supports keyboard navigation". `prompt-slice-6.md` sets "Can navigate by keyboard-only" as a Done-when item. DESIGN.md has no keyboard requirement of its own, so this is measured against the slice criterion.
 - **Location:**
   - [app.js:508-510](app.js#L508-L510) and [app.js:493](app.js#L493): `render()` clears the list and the chip row with `innerHTML = ""` and builds them again.
@@ -46,7 +46,7 @@ I found **3 confirmed defects**, all low to medium severity. Two break a stated 
 
 ### D2. A long tag causes sideways scrolling on phones
 
-- **Status:** fixed (2026-11-07) via [prompt-review-fixes-3.md](prompt-review-fixes-3.md), with red/green Playwright tests in the `Review fixes` block.
+- **Status:** fixed (2026-11-07) via [prompt-review-fixes-3.md](docs/prompts/prompt-review-fixes-3.md), with red/green Playwright tests in the `Review fixes` block.
 - **Requirement:** DESIGN §3, Phones: "No sideways scrolling."
 - **Location:** [style.css:313-326](style.css#L313-L326) (`.tag` / `button.tag`) and [style.css:346-349](style.css#L346-L349) (`.tag-filter`). Long URLs and titles wrap correctly thanks to `overflow-wrap: anywhere`, but tag buttons have no wrapping or width limit.
 - **Impact:** one unbroken tag of about 50+ characters makes the whole page scroll sideways. Typical tags are fine, so this is an edge case, but the requirement has no exceptions.
@@ -54,7 +54,7 @@ I found **3 confirmed defects**, all low to medium severity. Two break a stated 
 
 ### D3. URL validation accepts URLs that don't start with `http://`/`https://`
 
-- **Status:** fixed (2026-11-07) via [prompt-review-fixes-3.md](prompt-review-fixes-3.md), with red/green Playwright tests in the `Review fixes` block.
+- **Status:** fixed (2026-11-07) via [prompt-review-fixes-3.md](docs/prompts/prompt-review-fixes-3.md), with red/green Playwright tests in the `Review fixes` block.
 - **Requirement:** DESIGN §2.1: URL "must be a valid link starting with `http://` or `https://`."
 - **Location:** [app.js:55-69](app.js#L55-L69) (`validateUrl`), which checks `parsed.protocol` rather than the text the user typed.
 - **Impact:** the `URL` parser forgives some typos, so these are accepted and **stored exactly as typed**:
@@ -81,7 +81,7 @@ I found **3 confirmed defects**, all low to medium severity. Two break a stated 
 
 ### R2. One malformed stored record blanks the whole list (reproduced)
 
-- **Status:** acknowledged (2026-11-05). No fix is planned.
+- **Status:** acknowledged (2026-11-05), then fixed (2026-11-12, commit `37e2a0f`): `normaliseRecord()` in `app.js`.
 - **Requirement:** DESIGN §4, On page load: "read and parse it. If nothing is there, use an empty array." This is met. DESIGN §7 names import as "the first thing to add", and import will feed this same path.
 - **Location:** [app.js:24-31](app.js#L24-L31) checks only that the data is an array. [app.js:424](app.js#L424) (`bookmark.tags.length`) and [app.js:503-504](app.js#L503-L504) (`text.toLowerCase()` on `notes`) assume every field is present.
 - **Impact:** one record without `tags` or `notes` throws inside `render()`. **No bookmarks render at all**, and the user sees no error.
@@ -96,14 +96,14 @@ I found **3 confirmed defects**, all low to medium severity. Two break a stated 
 
 ### R4. Stored URLs are used as links without re-validation
 
-- **Status:** acknowledged (2026-11-05). No fix is planned.
+- **Status:** acknowledged (2026-11-05), then fixed (2026-11-12, commit `37e2a0f`): `normaliseRecord()` re-validates stored URLs.
 - **Location:** [app.js:392](app.js#L392) (`link.href = bookmark.url`).
 - **Impact:** the form validates URLs, but anything already in storage is trusted. Today only you can write to storage, so the risk is small. Once JSON import (DESIGN §7) exists, an imported `javascript:` URL would become a clickable script link.
 - **Verify:** store a record with `url: "javascript:alert(1)"` through DevTools, reload, and inspect the title link's `href`.
 
 ### R5. Light-mode input borders are below 3:1 contrast
 
-- **Status:** fixed (2026-11-07) via [prompt-review-fixes-3.md](prompt-review-fixes-3.md), with red/green Playwright tests in the `Review fixes` block.
+- **Status:** fixed (2026-11-07) via [prompt-review-fixes-3.md](docs/prompts/prompt-review-fixes-3.md), with red/green Playwright tests in the `Review fixes` block.
 - **Requirement:** `prompt-slice-6.md`, "Text has adequate contrast". Text passes. Control boundaries are a related WCAG 1.4.11 concern that PROCESS.md notes were never checked.
 - **Location:** [style.css:10](style.css#L10) (`--field-border: #94a3b8`) and [style.css:179-180](style.css#L179-L180).
 - **Measured:** the field border against the white panel is **2.56:1** (WCAG 1.4.11 asks for 3:1). Dark mode is 3.33:1. All text pairs pass at 5.17:1 or better, for example muted text 5.98:1, link 5.17:1 and Delete 6.47:1.
@@ -130,16 +130,16 @@ I found **3 confirmed defects**, all low to medium severity. Two break a stated 
 
 ## Optional improvements
 
-- O1. **Done by [prompt-review-fixes-3.md](prompt-review-fixes-3.md) (D1); confirmed 2026-11-07 by fixes-4.** **Restore focus after render (fixes D1).** Give chips a `data-tag` attribute and refocus the matching chip after `render()`. After a delete, focus the next bookmark, or the list. After an update, focus the toggle or the edited item.
-- O2. **Done by [prompt-review-fixes-3.md](prompt-review-fixes-3.md) (D2); confirmed 2026-11-07 by fixes-4.** **Let tags wrap (fixes D2).** Add `overflow-wrap: anywhere` and `max-width: 100%` to `.tag`, then add a 375px `scrollWidth` test.
+- O1. **Done by [prompt-review-fixes-3.md](docs/prompts/prompt-review-fixes-3.md) (D1); confirmed 2026-11-07 by fixes-4.** **Restore focus after render (fixes D1).** Give chips a `data-tag` attribute and refocus the matching chip after `render()`. After a delete, focus the next bookmark, or the list. After an update, focus the toggle or the edited item.
+- O2. **Done by [prompt-review-fixes-3.md](docs/prompts/prompt-review-fixes-3.md) (D2); confirmed 2026-11-07 by fixes-4.** **Let tags wrap (fixes D2).** Add `overflow-wrap: anywhere` and `max-width: 100%` to `.tag`, then add a 375px `scrollWidth` test.
 - **Stricter URL check (fixes D3).** Before parsing, test `/^https?:\/\//i.test(text)`. Either remove the unreachable hostname branch or add a comment explaining why it stays.
-- O3. **Acknowledged (2026-11-05). No change is planned.** **Normalize on load (R2).** A small `normalizeBookmark()` that defaults `tags` to `[]` and `notes` to `""`, and drops records with no `url`, `title` or `id`. Import will need it too.
+- O3. **Done (2026-11-12, commit `37e2a0f`) as `normaliseRecord()`.** **Normalize on load (R2).** A small `normalizeBookmark()` that defaults `tags` to `[]` and `notes` to `""`, and drops records with no `url`, `title` or `id`. Import will need it too.
 - O4. **Acknowledged (2026-11-05). No change is planned.** **Handle the `storage` event (R1).** Add `window.addEventListener("storage", …)` to reload `bookmarks` and re-render. It's about five lines.
 - O5. **Acknowledged (2026-11-05). No change is planned.** **Wrap `saveBookmarks` in try/catch (R3)** and show the error through `showError`.
 - O6. **Acknowledged (2026-11-05). No change is planned.** **Readability.** `form.title` and `form.url` ([app.js:94-95](app.js#L94-L95)) only work because form controls shadow built-in properties. `form.title` would normally be the form's own `title` attribute. `form.elements.title` is clearer, which supports the "understand every line" goal.
-- O7. **Done (2026-11-07) by [prompt-review-fixes-4.md](prompt-review-fixes-4.md).** **Animation.** Every item replays the `fade-in` animation on every keystroke and filter click, because the list is rebuilt each time ([style.css:246](style.css#L246), [app.js:535](app.js#L535)). Consider animating only newly added items.
-- O8. **Done (2026-11-07) by [prompt-review-fixes-4.md](prompt-review-fixes-4.md).** **Tag buttons on bookmarks.** Their accessible name is only the tag (for example "recipes"), and they don't show the selected state. `aria-label="Filter by recipes"` and the `selected` class would match the chips.
-- O9. **Done (2026-11-07) by [prompt-review-fixes-4.md](prompt-review-fixes-4.md).** **Test gaps** (PROCESS.md already names some of these):
+- O7. **Done (2026-11-07) by [prompt-review-fixes-4.md](docs/prompts/prompt-review-fixes-4.md).** **Animation.** Every item replays the `fade-in` animation on every keystroke and filter click, because the list is rebuilt each time ([style.css:246](style.css#L246), [app.js:535](app.js#L535)). Consider animating only newly added items.
+- O8. **Done (2026-11-07) by [prompt-review-fixes-4.md](docs/prompts/prompt-review-fixes-4.md).** **Tag buttons on bookmarks.** Their accessible name is only the tag (for example "recipes"), and they don't show the selected state. `aria-label="Filter by recipes"` and the `selected` class would match the chips.
+- O9. **Done (2026-11-07) by [prompt-review-fixes-4.md](docs/prompts/prompt-review-fixes-4.md).** **Test gaps** (PROCESS.md already names some of these):
   - There is no permanent tag-filter test block. Cover: a chip filters, clicking it again clears, "All" clears, clicking a bookmark's tag filters, and the filter resets when its last tag disappears ([app.js:491](app.js#L491)).
   - There are no tests for the URL error messages, the phone layout, keyboard focus or reduced motion.
   - The `openForm` helper uses `isVisible()`, which doesn't retry ([tests/bookmarks.spec.js:18-21](tests/bookmarks.spec.js#L18-L21)), and fields are filled while the drawer is still animating. Everything passes today, but this pattern tends to become flaky.
@@ -178,7 +178,7 @@ The author chose to keep the toggle's name about its action and move the edit st
 - **Form heading:** a visible `<h2 id="form-heading">` inside the form reads "Add a bookmark" or "Edit bookmark: <title>". The form uses `aria-labelledby="form-heading"` instead of its fixed `aria-label`, so screen readers hear the same name that sighted users see.
 - **Buttons in edit mode:** the submit button reads "Save changes" (replacing "Update") and the cancel button reads "Discard changes". They read "Save" and "Cancel" in add mode.
 
-The work is described in [prompt-review-fixes-2.md](prompt-review-fixes-2.md), which keeps Escape behaviour (Question 3) and focus handling (D1) out of scope. **It has not been built yet.** Question 2 is marked "Decided, fix pending" until that prompt has run and its tests pass. Then it can be marked resolved.
+The work is described in [prompt-review-fixes-2.md](docs/prompts/prompt-review-fixes-2.md), which keeps Escape behaviour (Question 3) and focus handling (D1) out of scope. **It has not been built yet.** Question 2 is marked "Decided, fix pending" until that prompt has run and its tests pass. Then it can be marked resolved.
 
 - **Built (2026-11-07):** prompt-review-fixes-2.md has run and Question 2 is resolved. The toggle, form heading and buttons now use the names above, DESIGN.md Addendum A.1 and A.4 describe them, and new `Edit mode names` Playwright tests cover them (105 tests pass in Chromium, Firefox and WebKit).
 
@@ -186,7 +186,7 @@ The work is described in [prompt-review-fixes-2.md](prompt-review-fixes-2.md), w
 
 The author confirmed that all three behaviours are intentional for version 1:
 
-- **Question 3, Escape and switching edits discard unsaved changes:** this is intended. Escape is a quick way out of the form, and choosing Edit on another bookmark replaces the current edit without asking. This doesn't affect [prompt-review-fixes-2.md](prompt-review-fixes-2.md), which already leaves Escape behaviour unchanged. Once that fix lands, the cancel button in edit mode reads "Discard changes", which makes this behaviour visible.
+- **Question 3, Escape and switching edits discard unsaved changes:** this is intended. Escape is a quick way out of the form, and choosing Edit on another bookmark replaces the current edit without asking. This doesn't affect [prompt-review-fixes-2.md](docs/prompts/prompt-review-fixes-2.md), which already leaves Escape behaviour unchanged. Once that fix lands, the cancel button in edit mode reads "Discard changes", which makes this behaviour visible.
 - **Question 4, duplicate URLs:** allowed on purpose. Saving the same URL twice, for example with different notes or tags, is not treated as an error.
 - **Question 5, URL shown twice:** the domain label and the full URL line are both intended, as described in DESIGN.md Addendum A.4.
 
@@ -194,18 +194,18 @@ All the review's questions now have an answer. Question 2 was waiting on its fix
 
 ## Update (2026-11-05): fix planned for D1, D2, D3 and R5
 
-[prompt-review-fixes-3.md](prompt-review-fixes-3.md) addresses these four findings test-first. For each finding, a Playwright test that reproduces it is added and run first, and must fail (red). Then the code is fixed until the test passes (green), and finally the full suite runs in Chromium, Firefox and WebKit.
+[prompt-review-fixes-3.md](docs/prompts/prompt-review-fixes-3.md) addresses these four findings test-first. For each finding, a Playwright test that reproduces it is added and run first, and must fail (red). Then the code is fixed until the test passes (green), and finally the full suite runs in Chromium, Firefox and WebKit.
 
 - **D1:** focus goes back to the re-rendered chip or tag after filtering. After a delete it moves to the next bookmark's title (or the form toggle if the list is empty), and after a save it moves to the form toggle.
 - **D2:** tag pills are allowed to wrap. Tests check for no sideways scrolling at 320px and 375px with a 56-character tag.
 - **D3:** a URL must start with `http://` or `https://`, ignoring case, and contain no spaces. The unreachable hostname check is removed or explained with a comment. The space-in-host test is expected to fail before the fix only in Chromium.
 - **R5:** the light-mode `--field-border` is darkened to at least 3:1 against both the panel and the field background. For example, `#64748b` measures 4.76:1 and 4.40:1. A test measures the contrast in both themes.
 
-The prompt finds the submit button with a selector rather than by its label, so it works whether it runs before or after [prompt-review-fixes-2.md](prompt-review-fixes-2.md). R1–R4 and R6 are still open and out of scope. The four findings stay marked "fix planned" until the prompt has run. The prompt then marks them fixed and records the red and green results in PROCESS.md.
+The prompt finds the submit button with a selector rather than by its label, so it works whether it runs before or after [prompt-review-fixes-2.md](docs/prompts/prompt-review-fixes-2.md). R1–R4 and R6 are still open and out of scope. The four findings stay marked "fix planned" until the prompt has run. The prompt then marks them fixed and records the red and green results in PROCESS.md.
 
 ## Update (2026-11-05): plan for O7, O8 and O9
 
-[prompt-review-fixes-4.md](prompt-review-fixes-4.md) covers these improvements test-first and **must run after [prompt-review-fixes-3.md](prompt-review-fixes-3.md)**. O1 and O2 are the same work as D1 and D2, which fixes-3 already does, so fixes-4 only checks that those tests pass. If they don't, it stops.
+[prompt-review-fixes-4.md](docs/prompts/prompt-review-fixes-4.md) covers these improvements test-first and **must run after [prompt-review-fixes-3.md](docs/prompts/prompt-review-fixes-3.md)**. O1 and O2 are the same work as D1 and D2, which fixes-3 already does, so fixes-4 only checks that those tests pass. If they don't, it stops.
 
 - **O7:** the fade-in plays only for bookmarks that **enter** the visible list: a new bookmark, or one revealed when a filter or search is cleared. Bookmarks that stay in view no longer replay it on every keystroke or chip press. Nothing animates on first load or with reduced motion. This keeps the "smooth transitions when filtering and searching" that slice 6 asked for.
 - **O8:** a bookmark's tag buttons are named "Filter by <tag>" and show their pressed state with `aria-pressed` and the `selected` class, matching the chips. The visible text and the filter-row chip names don't change.
@@ -218,7 +218,7 @@ Tests for behaviour that already works can't fail first, so each one has to be *
 
 ## Update (2026-11-05): remaining risks acknowledged
 
-The author has acknowledged risks **R1, R2, R3, R4 and R6** and accepted them for now. **No fixes are planned.** R5 is being handled separately in [prompt-review-fixes-3.md](prompt-review-fixes-3.md).
+The author has acknowledged risks **R1, R2, R3, R4 and R6** and accepted them for now. **No fixes are planned.** R5 is being handled separately in [prompt-review-fixes-3.md](docs/prompts/prompt-review-fixes-3.md).
 
 The matching optional improvements (O3 for R2, O4 for R1, O5 for R3) stay listed in case this changes. Two risks are worth revisiting before JSON import (DESIGN §7) is built, because import would make them more likely to happen:
 
@@ -229,8 +229,8 @@ The matching optional improvements (O3 for R2, O4 for R1, O5 for R3) stay listed
 
 The author has acknowledged optional improvements **O3, O4, O5 and O6**. **No changes are planned.** The others are already covered:
 
-- **O1 and O2:** done by [prompt-review-fixes-3.md](prompt-review-fixes-3.md) and confirmed by [prompt-review-fixes-4.md](prompt-review-fixes-4.md).
-- **O7–O9:** planned in [prompt-review-fixes-4.md](prompt-review-fixes-4.md).
+- **O1 and O2:** done by [prompt-review-fixes-3.md](docs/prompts/prompt-review-fixes-3.md) and confirmed by [prompt-review-fixes-4.md](docs/prompts/prompt-review-fixes-4.md).
+- **O7–O9:** planned in [prompt-review-fixes-4.md](docs/prompts/prompt-review-fixes-4.md).
 - **The unnumbered "Stricter URL check":** covered by fixes-3, as part of D3.
 
 Every finding in this review now has a status: planned, decided, resolved or acknowledged.
@@ -242,3 +242,7 @@ D1, D2, D3 and R5 are fixed and marked as such above. The new tests are in the `
 ## Update (2026-11-07): O7, O8 and O9 done, O1 and O2 confirmed
 
 O7, O8 and O9 are done and marked above. O1 and O2 were checked: the fixes-3 focus and long-tag tests pass. The new tests are in these blocks of `tests/bookmarks.spec.js`: `O7 animate only bookmarks that enter the list` (8 tests), `O8 tag buttons on bookmarks` (4), `Tag filter` (7), `Form errors` (7), `Phone layout (375x640)` (5), `Keyboard and focus rings` (3) and `Reduced motion` (3). The `openForm` and `addBookmark` helpers now wait instead of checking once. CLAUDE.md describes what the spec covers.
+
+## Update (2026-11-12): R2, R4 and O3 fixed
+
+The "no fixes are planned" updates above are out of date for these three. `loadBookmarks()` now passes every stored record through `normaliseRecord()` ([app.js](app.js)), in commit `37e2a0f`. It defaults a missing `notes` or `tags`, drops records with no usable `id`, `url` or `title`, and drops records whose URL fails `validateUrl()`, so a stored `javascript:` URL never becomes a link. The tests are in the "R1 malformed stored data" block of `tests/bookmarks.spec.js` (named by a later review's numbering). R1, R3, R6, O4, O5 and O6 are still open.
