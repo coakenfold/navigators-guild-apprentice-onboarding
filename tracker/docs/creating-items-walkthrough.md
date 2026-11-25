@@ -4,7 +4,9 @@ This walks through creating `tracker`'s own items for slices 8 to 16, by hand, w
 
 **In the real store the IDs are four higher than shown here, not two.** TR-2 and TR-3 were made first, as out-of-scope fixes found while building slice 7, so these nine items were created after them with the commands below unchanged, as TR-4 to TR-12: slice N is TR-(N−4). The IDs in this walkthrough's comments and output are from the throwaway store.
 
-[The self-tracking walkthrough](self-tracking-walkthrough.md) tells the story before this one: registering `TR`, creating TR-1 for slice 7, and fixing one of its criteria by hand. This one gives every command in full, with what it prints. The output is from a throwaway store (`TRACKER_HOME` set to a temporary folder) set up the same way, so only the timestamps differ from a run in the real store at `~/.tracker`.
+[The self-tracking walkthrough](self-tracking-walkthrough.md) tells the story before this one: registering `TR`, creating TR-1 for slice 7, and fixing one of its criteria by hand. This one gives every command in full, with what it prints. The output is from a throwaway store (`HOME` set to a temporary folder, so the store is its `~/.tracker`) set up the same way, so only the timestamps differ from a run in the real store at `~/.tracker`.
+
+> **Tracker version.** These items were first created with the slice 6 binary. Every command and output here was re-run on 2026-11-24 with `tracker 0.1.0` built from commit `e5dbdd4` (TR-57). That build has all 16 slices of PLAN.md and their review fixes. The commands are unchanged. The one output that changed is `gates` in [step 4](#step-4-check-the-results), which now also reports G5.
 
 ## Contents
 
@@ -20,7 +22,7 @@ This walks through creating `tracker`'s own items for slices 8 to 16, by hand, w
 
 ## Before you start
 
-- **The checkpoint's first step is done.** `tracker` is installed from slice 6, the store exists, and `TR` is registered with its checks in `config.json` ([self-tracking walkthrough, step 1](self-tracking-walkthrough.md#1-set-up-the-store-and-register-the-project)).
+- **The checkpoint's first step is done.** `tracker` is installed (from slice 6 at the time, though the current build takes the same commands), the store exists, and `TR` is registered with its checks in `config.json` ([self-tracking walkthrough, step 1](self-tracking-walkthrough.md#1-set-up-the-store-and-register-the-project)).
 - **TR-1 exists**, for slice 7. So slice 8 becomes TR-2, and in general slice N becomes **TR-(N−6)**, as long as the items are created in order and nothing else is created in `TR` in between.
 - **Each create is permanent in two ways:**
   - IDs are never reused, even after a delete. An item made by mistake uses up its number for good.
@@ -314,15 +316,18 @@ Verification: none.
 History: none yet.
 ```
 
-Every criterion says "manual, no evidence yet", and that's expected. A `gates` dry run shows the same thing from the gates' side: G2 refuses each manual criterion that has no evidence. The design section passes G6, since no G6 line appears.
+Every criterion says "manual, no evidence yet", and that's expected. A `gates` dry run shows the same thing from the gates' side: G2 refuses each manual criterion that has no evidence. G5 refuses too, because nothing has been committed for TR-4 yet. The design section passes G6, since no G6 line appears. G6 checks that `docs/DESIGN.md` has a heading numbered 2.5 with text under it.
 
 ```text
 $ tracker gates TR-4
-error: TR-4 would be refused at submit: G2 failed. This was a dry run, so nothing was changed.
+error: TR-4 would be refused at submit: G2 and G5 failed. This was a dry run, so nothing was changed.
   G2  Criterion 1, "Each of the six triggers (T1, T2, T3, T4, T7 and T8) has one test where it fires and one where it stays quiet.", is manual and has no evidence. Record where to look with `tracker evidence TR-4 1 "…"`, or give it a check with `tracker criterion set TR-4 1 --check "…"`.
   ...
+  G5  TR-4 has no commits. Commit its work with a message headed `<type>(TR-4): …`, such as `feat(TR-4): …`, so the proof matches a real commit (§2.1).
   It's open, and only an in-progress item can be submitted.
 ```
+
+It exits 2, as a refused submit would. Both refusals go away as the slice is built: its tests are committed as `test(TR-4): …` before `start`, and each criterion gets a check.
 
 ## If something goes wrong
 
@@ -333,7 +338,18 @@ Created TR-11: Get items auto-verified against a commit, with saved output and a
 8 manual criteria: give each a check with `tracker criterion set TR-11 <n> --check "…"`.
 ```
 
-From then on, slice N is no longer TR-(N−6). Note which ID each slice really got. To get rid of the copy, run `tracker delete TR-11` in a real terminal and type the ID to confirm. Delete only works from an interactive terminal, so an agent can't do it. If you'd rather keep a record, `tracker shelve TR-11 --reason "duplicate of TR-2"` does that instead. Either way, its number is used up.
+From then on, slice N is no longer TR-(N−6). Note which ID each slice really got. To get rid of the copy, run `tracker delete TR-11` in a real terminal. It says what will be lost and asks you to type the ID:
+
+```text
+$ tracker delete TR-11
+TR-11 "Get items auto-verified against a commit, with saved output and a pinned ref" is open.
+Deleting it removes its file and its 8 criteria.
+Any commits scoped to it stay in git, the ID won't be used again, and deleted.json records the delete for the digest.
+Type TR-11 to confirm, or anything else to cancel: TR-11
+Deleted TR-11. Its line in deleted.json records the delete, and TR-11 won't be used again.
+```
+
+Delete only works from an interactive terminal. Run by an agent, or with stdin piped, it's refused with exit 1 and changes nothing. The refusal points to `shelve` instead. If you'd rather keep a record, `tracker shelve TR-11 --reason "duplicate of TR-2"` does that, and prints `TR-11: open → shelved`. Either way, its number is used up: the next item created is TR-12. The next `tracker digest` lists the delete or the shelve.
 
 **A text came out wrong.** Fix it before the item starts. Edit that criterion's `text` in `~/.tracker/items/TR-n.json`, leaving `written` alone, then run `tracker criterion accept TR-n` in a terminal and type the ID. `criterion accept` shows what it records and what it drops before asking, as in the [self-tracking walkthrough](self-tracking-walkthrough.md#5-fix-a-mistaken-criterion-with-my-approval). It refuses a done item.
 
@@ -353,4 +369,4 @@ The items stay open until their slice comes up. `TR` works on one item at a time
    Each check runs once by hand first, and its output says `1 failed`. Output saying `running 0 tests` means the filter matched nothing, and `cargo test` exits 0 then, so the check would always pass.
 3. `tracker start TR-n`, build with commits scoped to the item, `tracker gates TR-n`, then `tracker submit TR-n`.
 
-Slice 13's last criterion ("By hand: one real item is judged…") can't be a script check. It stays manual and gets evidence instead, `tracker evidence TR-7 4 "…"`, saying where to look. From slice 9 on, a manual criterion with evidence holds its item for review (T6).
+Slice 13's last criterion ("By hand: one real item is judged…") can't be a script check. It stays manual and gets evidence instead, `tracker evidence TR-7 4 "…"`, saying where to look. A manual criterion with evidence holds its item for review (T6, built in slice 9).

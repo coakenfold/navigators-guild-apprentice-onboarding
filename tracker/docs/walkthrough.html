@@ -1,0 +1,1208 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tracker in Use</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one row per scene, notes column beside the terminal screens; stacks to one column on phones */
+:root {
+  --bg: #eef1f0; --surface: #f8faf9; --fg: #16201c; --muted: #56635e; --line: #d3dbd8;
+  --accent: #0e7c6b; --you: #2f5bd3; --agent: #7a4fd6;
+  --ok: #1f8a4c; --hold: #9a6200; --bad: #c23b2e;
+  --term-bg: #111816; --term-bar: #1a2320; --term-line: #25302c;
+  --term-fg: #d4ddd9; --term-dim: #7f8d88; --term-bright: #f3f7f5;
+  --term-ok: #5ad08a; --term-bad: #ff7d72; --term-hold: #f0bf4c;
+  --term-you: #8fb0ff; --term-agent: #c3a6ff;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c110f; --surface: #141b18; --fg: #e3eae7; --muted: #9aa8a2; --line: #26312d;
+    --accent: #3cc2a9; --you: #8fb0ff; --agent: #c3a6ff;
+    --ok: #5ad08a; --hold: #f0bf4c; --bad: #ff7d72;
+    --term-bg: #080c0b; --term-bar: #111816; --term-line: #1f2926;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c110f; --surface: #141b18; --fg: #e3eae7; --muted: #9aa8a2; --line: #26312d;
+  --accent: #3cc2a9; --you: #8fb0ff; --agent: #c3a6ff;
+  --ok: #5ad08a; --hold: #f0bf4c; --bad: #ff7d72;
+  --term-bg: #080c0b; --term-bar: #111816; --term-line: #1f2926;
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 4rem;
+}
+.wrap { max-width: 1180px; margin: 0 auto; }
+code, .mono { font-family: var(--font-mono); font-size: 0.88em; }
+a { color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+/* Header */
+header { padding-block: 3rem 2rem; display: grid; gap: 1.25rem; border-bottom: 1px solid var(--line); }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+h1 { font-size: clamp(2rem, 4vw, 2.75rem); line-height: 1.1; margin: 0; font-weight: 600; letter-spacing: -0.02em; text-wrap: balance; }
+h1 code { font-size: 0.9em; font-weight: 500; }
+.lede { margin: 0; max-width: 68ch; color: var(--muted); font-size: 1.05rem; }
+.lede strong { color: var(--fg); font-weight: 500; }
+.legend { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; align-items: center; font-size: 13px; color: var(--muted); }
+.legend .group { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+
+/* Chips */
+.actor { display: inline-flex; align-items: center; gap: 0.4rem; font-family: var(--font-mono); font-size: 12px; font-weight: 600; padding: 0.15rem 0.55rem; border-radius: 999px; }
+.actor::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.actor.you { color: var(--you); background: color-mix(in srgb, var(--you) 13%, transparent); }
+.actor.agent { color: var(--agent); background: color-mix(in srgb, var(--agent) 13%, transparent); }
+.pill { display: inline-flex; gap: 0.35rem; align-items: baseline; font-family: var(--font-mono); font-size: 12px; padding: 0.15rem 0.55rem; border-radius: 4px; border: 1px solid var(--line); background: var(--surface); }
+.pill b { font-weight: 600; }
+.pill.done { border-color: color-mix(in srgb, var(--ok) 45%, transparent); color: var(--ok); }
+.pill.held { border-color: color-mix(in srgb, var(--hold) 50%, transparent); color: var(--hold); }
+.pill.refused { border-color: color-mix(in srgb, var(--bad) 45%, transparent); color: var(--bad); }
+.pill.moving { color: var(--fg); }
+
+/* Contents */
+nav { padding-block: 1.5rem; border-bottom: 1px solid var(--line); }
+nav ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.35rem 1.5rem; }
+nav a { display: flex; gap: 0.6rem; align-items: baseline; text-decoration: none; color: var(--fg); padding: 0.2rem 0; font-size: 14px; }
+nav a:hover span.t { text-decoration: underline; text-underline-offset: 3px; }
+nav .n { font-family: var(--font-mono); font-size: 12px; color: var(--muted); min-width: 1.5rem; font-variant-numeric: tabular-nums; }
+nav .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; transform: translateY(-1px); }
+nav .dot.you { background: var(--you); }
+nav .dot.agent { background: var(--agent); }
+nav .dot.both { background: linear-gradient(90deg, var(--you) 50%, var(--agent) 50%); }
+
+/* Acts */
+.act { padding-block: 2.5rem 0.5rem; display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap; }
+.act h2 { margin: 0; font-size: 13px; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 500; }
+.act p { margin: 0; color: var(--muted); font-size: 14px; }
+
+/* Scenes */
+.scene { display: grid; grid-template-columns: minmax(0, 19rem) minmax(0, 1fr); gap: 1.5rem 2.5rem; padding-block: 2rem; border-top: 1px dashed var(--line); scroll-margin-top: 1rem; }
+.act + .scene { border-top: none; }
+.notes { display: flex; flex-direction: column; gap: 0.85rem; min-width: 0; }
+.notes .meta { display: flex; gap: 0.6rem; align-items: center; }
+.notes .num { font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.notes h3 { margin: 0; font-size: 1.3rem; line-height: 1.25; font-weight: 600; letter-spacing: -0.01em; text-wrap: balance; }
+.notes p { margin: 0; }
+.notice { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.5rem; font-size: 14px; color: var(--muted); }
+.notice li { padding-left: 1rem; position: relative; }
+.notice li::before { content: ""; position: absolute; left: 0; top: 0.6em; width: 6px; height: 1px; background: var(--muted); }
+.notice strong { color: var(--fg); font-weight: 500; }
+.refs { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.states { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.screens { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+
+/* Terminal */
+.term { margin: 0; background: var(--term-bg); color: var(--term-fg); border-radius: 8px; overflow: hidden; border: 1px solid var(--term-line); min-width: 0; }
+.term figcaption { display: flex; justify-content: space-between; gap: 1rem; align-items: center; background: var(--term-bar); padding: 0.45rem 0.85rem; font-family: var(--font-mono); font-size: 11.5px; color: var(--term-dim); border-bottom: 1px solid var(--term-line); flex-wrap: wrap; }
+.term figcaption .who { display: inline-flex; gap: 0.5rem; align-items: center; color: var(--term-fg); font-weight: 500; }
+.term figcaption .who::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--term-dim); }
+.term.you figcaption .who::before { background: var(--term-you); }
+.term.agent figcaption .who::before { background: var(--term-agent); }
+.term.file figcaption .who::before { border-radius: 1px; background: var(--term-dim); }
+.term pre { margin: 0; padding: 0.9rem 1rem 1rem; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; overflow-x: auto; tab-size: 4; }
+.term.file pre { color: #c5cfcb; }
+.term .p { color: var(--term-dim); user-select: none; }
+.term.you .p { color: var(--term-you); }
+.term.agent .p { color: var(--term-agent); }
+.term .k { color: var(--term-bright); }
+.term .o { color: var(--term-ok); }
+.term .x { color: var(--term-bad); }
+.term .h { color: var(--term-hold); }
+.term .d { color: var(--term-dim); }
+.term .c { color: var(--term-dim); font-style: italic; }
+.term .b { color: var(--term-bright); font-weight: 600; }
+.term .e { color: var(--term-dim); font-size: 11px; }
+.term .cc { color: var(--term-agent); }
+.term .y { color: var(--term-you); }
+
+/* Questions */
+.questions { margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--line); display: grid; gap: 1.5rem; }
+.questions > header { padding: 0; border: none; gap: 0.5rem; }
+.questions h2 { margin: 0; font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em; }
+.qgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: 1rem; }
+.q { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 1rem 1.15rem; display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+.q h3 { margin: 0; font-size: 1rem; font-weight: 600; text-wrap: balance; }
+.q p { margin: 0; font-size: 14px; color: var(--muted); }
+.q p strong { color: var(--fg); font-weight: 500; }
+.q .refs a { color: var(--muted); }
+
+footer { margin-top: 3rem; font-size: 13px; color: var(--muted); }
+
+@media (max-width: 860px) {
+  .scene { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+
+/* Version note */
+.version { margin: 0; max-width: 76ch; padding: 0.85rem 1rem; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; background: var(--surface); font-size: 14px; color: var(--muted); display: grid; gap: 0.4rem; }
+.version p { margin: 0; }
+.version strong { color: var(--fg); font-weight: 600; }
+.version code { color: var(--fg); }
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Design doc companion · 02 Tracking your work</div>
+  <h1><code>tracker</code>, screen by screen</h1>
+  <p class="lede">The same tool as <code>DESIGN.md</code>, shown as a sequence of terminal sessions instead of tables. It follows a week of work on a small bookmarks app. <strong>You</strong> set things up and plan the work. An <strong>agent</strong> picks up items, does the work, and submits. The tool decides what reaches done and what waits for you.</p>
+  <div class="legend">
+    <span class="group"><span class="actor you">You</span> at an interactive terminal</span>
+    <span class="group"><span class="actor agent">Agent</span> Claude Code running shell commands</span>
+    <span class="group"><span class="pill done"><b>done</b></span><span class="pill held"><b>review</b></span><span class="pill refused"><b>refused</b></span> where each item ends up</span>
+  </div>
+  <div class="version" role="note">
+    <p><strong>Tracker version.</strong> This page shows <code>tracker 0.1.0</code> built from commit <code>e5dbdd4</code> (TR-57), which has all 16 slices of <code>PLAN.md</code> and their review fixes. Every <code>tracker</code> command and line of its output was captured on 2026-11-24 by running that build against a throwaway store and a small Node bookmarks app. Long outputs are trimmed where you see <code>…</code>, and paths are shortened to <code>~</code>.</p>
+    <p><strong>Two stand-ins.</strong> <code>npx playwright test</code> runs the app's <code>node:test</code> tests with a Playwright-style reporter. <code>tracker-judge</code> answers from a script instead of calling <code>claude-haiku-5-5</code>, so you can see a wrong pass, an unsure answer and a wrong fail on cue. Its reasons are written in the style of the real model's answers in <code>judge-eval/results/claude-haiku-5-5.json</code>.</p>
+    <p><strong>One sitting.</strong> The story spans a week, but the run took minutes, so the timestamps are minutes apart. They're in UTC, which is why they read 2026-11-25. To show an overdue digest in <a href="#s8">scene 8</a>, <code>review.digest.every_days</code> was set to 0 for that one command.</p>
+  </div>
+</header>
+
+<nav aria-label="Scenes">
+  <ol>
+    <li><a href="#s1"><span class="n">01</span><span class="dot you"></span><span class="t">Register a project</span></a></li>
+    <li><a href="#s2"><span class="n">02</span><span class="dot you"></span><span class="t">Turn a plan into items</span></a></li>
+    <li><a href="#s3"><span class="n">03</span><span class="dot agent"></span><span class="t">Write failing tests, then start</span></a></li>
+    <li><a href="#s4"><span class="n">04</span><span class="dot agent"></span><span class="t">Ask "what's left?"</span></a></li>
+    <li><a href="#s5"><span class="n">05</span><span class="dot agent"></span><span class="t">Fix the regression the suite caught</span></a></li>
+    <li><a href="#s6"><span class="n">06</span><span class="dot agent"></span><span class="t">Submit: auto-verified</span></a></li>
+    <li><a href="#s7"><span class="n">07</span><span class="dot agent"></span><span class="t">A risky change is held</span></a></li>
+    <li><a href="#s8"><span class="n">08</span><span class="dot you"></span><span class="t">Clear the inbox</span></a></li>
+    <li><a href="#s9"><span class="n">09</span><span class="dot both"></span><span class="t">A judge for what tests can't measure</span></a></li>
+    <li><a href="#s10"><span class="n">10</span><span class="dot both"></span><span class="t">Dispute a wrong fail</span></a></li>
+    <li><a href="#s11"><span class="n">11</span><span class="dot you"></span><span class="t">Audit the digest</span></a></li>
+    <li><a href="#s12"><span class="n">12</span><span class="dot both"></span><span class="t">Guardrails in action</span></a></li>
+    <li><a href="#s13"><span class="n">13</span><span class="dot agent"></span><span class="t">The agent's view: one whole session</span></a></li>
+    <li><a href="#questions"><span class="n">?</span><span class="dot"></span><span class="t">Decisions it settled</span></a></li>
+  </ol>
+</nav>
+
+<!-- ============ ACT 1 ============ -->
+<div class="act"><h2>Setting up</h2><p>Done once per project.</p></div>
+
+<section class="scene" id="s1">
+  <div class="notes">
+    <div class="meta"><span class="num">01</span><span class="actor you">You</span></div>
+    <h3>Register a project</h3>
+    <p>One store in <code>~/.tracker</code> holds every project. A project needs a key, a name and a root to start. <code>project add</code> writes those to <code>config.json</code>, and you add the checks and review policy there by hand.</p>
+    <ul class="notice">
+      <li>The root can be the top of a git repo or <strong>a folder inside a larger one</strong>, such as one package in a monorepo. Either way, the gates and triggers look only inside it.</li>
+      <li><strong>Project checks</strong> run on every submit (G4), whatever the item is about.</li>
+      <li><code>source_paths</code> adds <code>*.js</code> to the <code>src/**</code> default, because this app keeps <code>app.js</code> at the top level and the rest of its code in <code>src/</code>. It decides which files count as source code, so adding a new one holds the item (T1).</li>
+      <li>There are no judge settings here. Judges run only for items whose criteria ask for one, and the defaults do: the command is <code>tracker-judge</code> and the model is <code>claude-haiku-5-5</code>, chosen by comparing models on judge-eval's labelled cases. Its latest run, 54 cases through <code>tracker-judge</code>, gave 52 correct, 2 unsure and no wrong passes.</li>
+      <li>Two lines in Claude Code's settings let agents run <code>tracker</code> <strong>without asking you each time</strong>, and stop its edit tools from touching the store.</li>
+    </ul>
+    <div class="refs">§2.1 Root · §3 Setup · §4.2 Config · §5 Claude Code settings</div>
+  </div>
+  <div class="screens">
+    <figure class="term you">
+      <figcaption><span class="who">You · zsh</span><span>~</span></figcaption>
+<pre><span class="p">$ </span><span class="k">tracker init</span>
+Created the store at ~/.tracker.
+
+<span class="p">$ </span><span class="k">tracker project add BM --name bookmarks --root ~/code/bookmarks --design DESIGN.md</span>
+Registered BM (bookmarks) at ~/code/bookmarks.
+
+<span class="p">$ </span><span class="k">$EDITOR ~/.tracker/config.json</span></pre>
+    </figure>
+    <figure class="term file">
+      <figcaption><span class="who">~/.tracker/config.json</span><span>after your edit</span></figcaption>
+<pre>{
+  "projects": {
+    "BM": {
+      "name": "bookmarks",
+      "root": "~/code/bookmarks",
+      "design": "DESIGN.md",
+      "checks": ["npx playwright test --project=chromium"],
+      "review": {
+        "source_paths": ["*.js", "src/**"],
+        "test_paths": ["tests/**"],
+        "manifests": ["package.json", "package-lock.json"],
+        "risky_paths": ["src/storage.js"]
+      }
+    }
+  }
+}</pre>
+    </figure>
+    <figure class="term file">
+      <figcaption><span class="who">~/.claude/settings.json</span><span>excerpt</span></figcaption>
+<pre>{
+  "permissions": {
+    "allow": ["Bash(tracker:*)"],
+    "deny": ["Edit(~/.tracker/**)"]
+  }
+}</pre>
+    </figure>
+  </div>
+</section>
+
+<section class="scene" id="s2">
+  <div class="notes">
+    <div class="meta"><span class="num">02</span><span class="actor you">You</span></div>
+    <h3>Turn a plan into items</h3>
+    <p>A couple of weeks in, BM-1 to BM-11 already exist. A <code>/decompose</code> plan gives you three new slices. Each slice's outcome becomes a title, and its "Done when" lines become criteria.</p>
+    <ul class="notice">
+      <li>You write criteria in your own words. <strong>The agent gives them checks</strong> in the next scene. Each text is saved in the item's <code>written</code> list, and rewording or dropping one holds the item (T5).</li>
+      <li>Every new criterion is <strong>manual</strong> until it gets a check or a judge, and <code>create</code> says how to give it one.</li>
+      <li>Running from inside <code>~/code/bookmarks</code> makes BM the default project, so there's no <code>--project</code>, and <code>list</code> shows only BM. <code>--all</code> shows every project.</li>
+      <li><code>list</code> sorts high before medium before low, and hides done and shelved items unless you ask for them.</li>
+    </ul>
+    <div class="refs">§2.1 Items · §2.3 Done when · §5 /decompose</div>
+    <div class="states"><span class="pill moving">BM-12 <b>open</b></span><span class="pill moving">BM-13 <b>open</b></span><span class="pill moving">BM-14 <b>open</b></span></div>
+  </div>
+  <div class="screens">
+    <figure class="term you">
+      <figcaption><span class="who">You · zsh</span><span>~/code/bookmarks</span></figcaption>
+<pre><span class="p">$ </span><span class="k">tracker create 'Search filters bookmarks by tag' --priority high --label feature \
+    --design DESIGN.md#2.5 \
+    --done-when 'Clicking a tag shows only bookmarks with that tag' \
+    --done-when 'Search text narrows results within the selected tag'</span>
+Created BM-12: Search filters bookmarks by tag
+2 manual criteria: give each a check with `tracker criterion set BM-12 &lt;n&gt; --check "…"`.
+
+<span class="p">$ </span><span class="k">tracker create 'Import errors say how to fix the file' --label ux --design DESIGN.md#3.2 \
+    --done-when 'A file with a missing URL column is rejected, and nothing is imported' \
+    --done-when 'Every import error says what went wrong and how to fix the file'</span>
+Created BM-13: Import errors say how to fix the file
+2 manual criteria: give each a check with `tracker criterion set BM-13 &lt;n&gt; --check "…"`.
+
+<span class="p">$ </span><span class="k">tracker create 'Fuzzy search tolerates typos' --label feature --design DESIGN.md#2.6 \
+    --done-when "Searching 'bokmark' finds 'Bookmark basics'"</span>
+Created BM-14: Fuzzy search tolerates typos
+1 manual criterion: give it a check with `tracker criterion set BM-14 1 --check "…"`.
+
+<span class="p">$ </span><span class="k">tracker list</span>
+  ID     PRIORITY  KIND    STATUS  TITLE                                  LABELS
+<span class="b">BM  bookmarks</span>
+  BM-12  <span class="h">high</span>      change  open    Search filters bookmarks by tag        [feature]
+  BM-7   medium    chore   open    Remove unused favicon fetcher
+  BM-13  medium    change  open    Import errors say how to fix the file  [ux]
+  BM-14  medium    change  open    Fuzzy search tolerates typos           [feature]
+
+<span class="d">BM only. `--all` for every project.
+Open, in-progress and review items. `--status done,shelved` for the others.</span></pre>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ ACT 2 ============ -->
+<div class="act"><h2>The agent works BM-12</h2><p>No human involved from here to done.</p></div>
+
+<section class="scene" id="s3">
+  <div class="notes">
+    <div class="meta"><span class="num">03</span><span class="actor agent">Agent</span></div>
+    <h3>Write failing tests, then start</h3>
+    <p>Following the instructions in <code>CLAUDE.md</code>, the agent reads the item, turns each manual criterion into a script check, writes the tests those checks run, commits them as <code>test(BM-12): …</code>, and starts.</p>
+    <ul class="notice">
+      <li><code>start</code> runs every check once and <strong>expects it to fail</strong>, because the feature doesn't exist yet. It warns about one that already passes, and that one holds the item at submit (T13, <a href="#s12">scene 12</a>).</li>
+      <li>It records each result, the commit <code>HEAD</code> pointed to, and a fingerprint of the criteria under <code>Started:</code> in <code>show</code> (<a href="#s6">scene 6</a>). Changing the criteria after this point holds the item (T5).</li>
+      <li>"Failed at start, passed at submit" is what makes a check mean something.</li>
+      <li>Every criterion has a check, so T6 will stay quiet and nothing here will need you.</li>
+    </ul>
+    <div class="refs">§2.2 States · G1 · §2.4 Checks must fail first · T5 · T13</div>
+    <div class="states"><span class="pill moving">BM-12 open → <b>in-progress</b></span></div>
+  </div>
+  <div class="screens">
+    <figure class="term agent">
+      <figcaption><span class="who">Agent · Claude Code</span><span>~/code/bookmarks</span></figcaption>
+<pre><span class="p">$ </span><span class="k">tracker show BM-12</span>
+<span class="b">BM-12  Search filters bookmarks by tag</span>
+  project   BM (bookmarks)
+  kind      change
+  status    open
+  priority  high
+  labels    feature
+  design    DESIGN.md#2.5
+  created   2026-11-25T00:12:03Z
+  updated   2026-11-25T00:12:03Z
+
+<span class="b">Done when:</span>
+  1. Clicking a tag shows only bookmarks with that tag
+       <span class="d">manual, no evidence yet</span>
+  2. Search text narrows results within the selected tag
+       <span class="d">manual, no evidence yet</span>
+
+Verification: none.
+
+History: none yet.
+
+<span class="p">$ </span><span class="k">tracker criterion set BM-12 1 --check "npx playwright test -g 'filters by tag'"</span>
+Criterion 1 of BM-12 now has a check.
+<span class="p">$ </span><span class="k">tracker criterion set BM-12 2 --check "npx playwright test -g 'search within tag'"</span>
+Criterion 2 of BM-12 now has a check.
+
+<span class="c"># …writes 'filters by tag' and 'search within tag' in tests/bookmarks.spec.js.</span>
+<span class="p">$ </span><span class="k">git commit -am "test(BM-12): filter by tag and search within tag"</span>
+[main 2effe76] test(BM-12): filter by tag and search within tag
+ 1 file changed, 24 insertions(+)
+<span class="c"># The feature doesn't exist yet, so both should fail.</span>
+<span class="p">$ </span><span class="k">tracker start BM-12</span>
+<span class="d">Running criterion 1's check: `npx playwright test -g 'filters by tag'`
+Running criterion 2's check: `npx playwright test -g 'search within tag'`</span>
+BM-12: open → <span class="b">in-progress</span></pre>
+    </figure>
+  </div>
+</section>
+
+<section class="scene" id="s4">
+  <div class="notes">
+    <div class="meta"><span class="num">04</span><span class="actor agent">Agent</span></div>
+    <h3>Ask "what's left?"</h3>
+    <p>The agent writes the code, commits with the item ID as the scope of each message, and runs <code>gates</code>. This dry run shows what a submit would refuse, without changing anything. It finds two problems at once.</p>
+    <ul class="notice">
+      <li><strong>Every problem is listed at once</strong>, so the agent can fix them in one pass. The checks run even though G5 failed. Only judges wait until every other gate passes, so a broken test never costs a model call.</li>
+      <li>G5: everything under the project root must be committed, including <strong>no untracked files</strong>, so the commit holds everything the tests ran with. Files outside the root don't count.</li>
+      <li>G4: BM-12's own checks pass, but the project's full suite doesn't. The new code broke "persists across reloads", which BM-10 already took to done. <strong>Project checks</strong> run on every submit, and that's what stops later work from breaking done items.</li>
+      <li>The failure shows the command, the exit code and the last lines of output, so the agent can go straight to the cause.</li>
+      <li>The scope in <code>feat(BM-12): …</code> is how the tool finds this item's changed files. A commit since <code>start</code> that touches the project but has no item scope would hold the item (T14).</li>
+    </ul>
+    <div class="refs">§2.1 Commits · §2.4 Gates · G4 · G5 · T14 · exit code 2</div>
+    <div class="states"><span class="pill refused">BM-12 <b>G5 and G4 would fail</b></span></div>
+  </div>
+  <div class="screens">
+    <figure class="term agent">
+      <figcaption><span class="who">Agent · Claude Code</span><span>~/code/bookmarks</span></figcaption>
+<pre><span class="c"># …writes selectTag() in app.js, and init() restores the saved tag on load…</span>
+<span class="p">$ </span><span class="k">git commit -am "feat(BM-12): filter bookmarks by tag chip"</span>
+[main cad0a66] feat(BM-12): filter bookmarks by tag chip
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+<span class="c"># …starts on highlighting the selected chip, with notes in notes.md…</span>
+
+<span class="p">$ </span><span class="k">tracker gates BM-12</span>
+<span class="d">Running criterion 1's check: `npx playwright test -g 'filters by tag'`
+Running criterion 2's check: `npx playwright test -g 'search within tag'`
+Running project check: `npx playwright test --project=chromium`</span>
+<span class="x">error:</span> BM-12 would be refused at submit: <span class="b">G5 and G4 failed</span>. This was a dry run, so nothing was changed.
+  <span class="x">G5</span>  BM's root has uncommitted changes: modified app.js and untracked notes.md. Commit them, scoped to BM-12, or remove them: the proof has to match a real commit.
+  <span class="x">G4</span>  A project check failed: `npx playwright test --project=chromium` (exit 1). Its last lines of output follow.
+          <span class="d">…</span>
+          <span class="o">✓</span>  13 [chromium] › bookmarks.spec.js:45:1 › search within tag (0.0s)
+          <span class="o">✓</span>  14 [chromium] › empty.spec.js:5:1 › empty state button (0.0s)
+          <span class="x">✘</span>  15 [chromium] › persistence.spec.js:8:1 › persists across reloads (0.0s)
+
+          1) [chromium] › persistence.spec.js:8:1 › persists across reloads
+            Error: expected 12 items, received 0
+
+          1 failed
+          14 passed (0.1s)
+<span class="e">[exit 2]</span>
+
+<span class="c"># notes.md was the agent's scratch file. The app.js change is finished work.</span>
+<span class="p">$ </span><span class="k">rm notes.md</span>
+<span class="p">$ </span><span class="k">git commit -am "feat(BM-12): highlight the selected tag chip"</span>
+[main 69a802c] feat(BM-12): highlight the selected tag chip
+ 1 file changed, 2 insertions(+)</pre>
+    </figure>
+  </div>
+</section>
+
+<section class="scene" id="s5">
+  <div class="notes">
+    <div class="meta"><span class="num">05</span><span class="actor agent">Agent</span></div>
+    <h3>Fix the regression the suite caught</h3>
+    <p><code>persistence.spec.js</code> is BM-10's proof. The agent finds the cause in its own code, fixes it, and runs <code>gates</code> again.</p>
+    <ul class="notice">
+      <li>The fix is in the code, not the test. Changing BM-10's test would hold the item for you (T4), and the test is right.</li>
+      <li>With every gate passing, <code>gates</code> also runs the triggers and lists any hold a submit would get. <strong>There's none</strong>, so none is listed.</li>
+      <li>BM-12's criteria are all tests, so <strong>no judge runs</strong> and the model is never called. Judges run only for items whose criteria ask for one (<a href="#s9">scene 9</a>).</li>
+      <li>A refusal changes nothing. BM-12 stayed in progress the whole time, and nothing here needed you.</li>
+    </ul>
+    <div class="refs">§2.4 Gates · G3 · G4 · T4 · §6 Trust table</div>
+    <div class="states"><span class="pill moving">BM-12 <b>gates pass</b></span></div>
+  </div>
+  <div class="screens">
+    <figure class="term agent">
+      <figcaption><span class="who">Agent · Claude Code</span><span>~/code/bookmarks</span></figcaption>
+<pre><span class="c"># selectTag() calls saveState(store, { tag }), which replaces the saved state instead of</span>
+<span class="c"># merging into it. init() calls selectTag() on every load, so the bookmarks are gone after</span>
+<span class="c"># one reload. …changes it to saveState(store, { ...state, tag })…</span>
+<span class="p">$ </span><span class="k">git commit -am "fix(BM-12): keep bookmarks when saving the selected tag"</span>
+[main d184c7a] fix(BM-12): keep bookmarks when saving the selected tag
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+<span class="p">$ </span><span class="k">tracker gates BM-12</span>
+<span class="d">Running criterion 1's check: `npx playwright test -g 'filters by tag'`
+Running criterion 2's check: `npx playwright test -g 'search within tag'`
+Running project check: `npx playwright test --project=chromium`</span>
+<span class="o">BM-12 passes the gates submit runs: G2, G5, G6, G3 and G4.</span></pre>
+    </figure>
+  </div>
+</section>
+
+<section class="scene" id="s6">
+  <div class="notes">
+    <div class="meta"><span class="num">06</span><span class="actor agent">Agent</span></div>
+    <h3>Submit: auto-verified</h3>
+    <p>Every gate passes and no review trigger fires: no new file, no new dependency, no test edited, criteria unchanged since start. The item goes straight to done with nobody asked.</p>
+    <ul class="notice">
+      <li>No judge ran. Both criteria are tests, so BM-12 reached done without the model.</li>
+      <li>The verification record is the proof: <strong>which commit, which checks, and what they printed</strong>. An item with a judge also records each answer and the model that gave it.</li>
+      <li>Each check's <strong>last lines of output are saved at done</strong>, so the record shows which tests actually ran, not what anyone claims ran.</li>
+      <li><code>Started:</code> shows both checks failed at start. With the record, that's "failed at start, passed at submit".</li>
+      <li><code>refs/tracker/BM-12</code> keeps that commit, even if its branch is rebased or squashed, so the tests as they ran can still be read.</li>
+      <li>You'll see BM-12 later in the digest, not now.</li>
+    </ul>
+    <div class="refs">§2.3 Done when · §2.5 Triggers · §2.7 Verification record · §4.3 Item file</div>
+    <div class="states"><span class="pill done">BM-12 in-progress → <b>done (auto)</b></span></div>
+  </div>
+  <div class="screens">
+    <figure class="term agent">
+      <figcaption><span class="who">Agent · Claude Code</span><span>~/code/bookmarks</span></figcaption>
+<pre><span class="p">$ </span><span class="k">tracker submit BM-12</span>
+<span class="d">Running criterion 1's check: `npx playwright test -g 'filters by tag'`
+Running criterion 2's check: `npx playwright test -g 'search within tag'`
+Running project check: `npx playwright test --project=chromium`</span>
+BM-12: in-progress → <span class="b">done</span>
+<span class="o">Verified automatically: every gate passed at d184c7a, and refs/tracker/BM-12 keeps that commit.</span>
+
+<span class="p">$ </span><span class="k">tracker show BM-12</span>
+<span class="b">BM-12  Search filters bookmarks by tag</span>
+  project   BM (bookmarks)
+  kind      change
+  status    done
+  <span class="d">…</span>
+
+<span class="b">Done when:</span>
+  1. Clicking a tag shows only bookmarks with that tag
+       check: npx playwright test -g 'filters by tag'
+  2. Search text narrows results within the selected tag
+       check: npx playwright test -g 'search within tag'
+
+<span class="b">Started:</span>
+  at      2026-11-25T00:12:22Z
+  hash    51baefe4489b1fb95474112cb670610f7f4c061f56e3f536687348f630e0507c
+  head    2effe76d00480dfe5e405b51d7a29a99032c1930
+  checks  criterion 1 failed, criterion 2 failed
+
+<span class="b">Verification:</span>
+  by      auto
+  at      2026-11-25T00:12:55Z
+  commit  d184c7af3c8c0ae42ec9b393f655a7150e187a34
+  ref     refs/tracker/BM-12
+  checks:
+    criterion 1, <span class="o">passed</span> in 0s: `npx playwright test -g 'filters by tag'`
+        <span class="d">✓  1 [chromium] › bookmarks.spec.js:39:1 › filters by tag (0.0s)
+
+        1 passed (0.1s)</span>
+    criterion 2, <span class="o">passed</span> in 0s: `npx playwright test -g 'search within tag'`
+        <span class="d">✓  1 [chromium] › bookmarks.spec.js:45:1 › search within tag (0.0s)
+
+        1 passed (0.1s)</span>
+    project, <span class="o">passed</span> in 0s: `npx playwright test --project=chromium`
+        <span class="d">✓  1 [chromium] › backlog.spec.js:5:1 › backlog 1 (0.0s)
+        …
+        ✓  15 [chromium] › persistence.spec.js:8:1 › persists across reloads (0.0s)
+
+        15 passed (0.1s)</span>
+
+<span class="b">History, oldest first (2 entries):</span>
+  2026-11-25T00:12:22Z  start   open → in-progress  not from a terminal
+  2026-11-25T00:12:55Z  submit  in-progress → done  not from a terminal</pre>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ ACT 3 ============ -->
+<div class="act"><h2>When the tool wants you</h2><p>Gates passed, but something risky happened.</p></div>
+
+<section class="scene" id="s7">
+  <div class="notes">
+    <div class="meta"><span class="num">07</span><span class="actor agent">Agent</span></div>
+    <h3>A risky change is held</h3>
+    <p>BM-14 adds fuzzy search with a new library and edits an existing test. The work passes every gate, but two triggers fire, so the item waits for you.</p>
+    <ul class="notice">
+      <li>A held submit still exits <code>0</code>. Being held isn't an error; the output says where the item ended up.</li>
+      <li>The triggers come from git history, not from what the agent says: <code>package.json</code>, <code>package-lock.json</code> and a file under <code>tests/</code> are among BM-14's changed files.</li>
+      <li>T4 counts the item's own <code>test(BM-14)</code> commit, <strong>even though it came before start</strong>, and says so.</li>
+      <li>An edited test may no longer prove the done items that relied on it, which is why T4 holds. G4 already ran the full suite, so nothing done is broken: what you check is <strong>whether the edit weakened a test</strong>.</li>
+      <li>The agent can't approve its own work. It <strong>stops and reports</strong>.</li>
+    </ul>
+    <div class="refs">§2.5 · T3 New dependency · T4 Tests touched</div>
+    <div class="states"><span class="pill held">BM-14 in-progress → <b>review</b></span></div>
+  </div>
+  <div class="screens">
+    <figure class="term agent">
+      <figcaption><span class="who">Agent · Claude Code</span><span>~/code/bookmarks</span></figcaption>
+<pre><span class="c"># test(BM-14) changed 'search with a typo finds nothing' to 'search tolerates a typo'.</span>
+<span class="c"># feat(BM-14) added fuse.js; fix(BM-14) tuned its threshold.</span>
+<span class="p">$ </span><span class="k">tracker submit BM-14</span>
+<span class="d">Running criterion 1's check: `npx playwright test -g 'search tolerates a typo'`
+Running project check: `npx playwright test --project=chromium`</span>
+BM-14: in-progress → <span class="h">review</span>
+Every gate passed, and BM-14 is <span class="h">held for review</span>:
+  <span class="h">T3</span>  dependency manifests changed: package-lock.json and package.json
+  <span class="h">T4</span>  existing test file modified: tests/bookmarks.spec.js (7bc75d9 before start)
+It waits in `tracker review` for a human to approve or reject it. `tracker show BM-14 --diff` shows its work.
+
+<span class="cc">⏺</span> BM-14 passed every gate but is held for your review:
+  · T3: I added fuse.js 7.0.0 for the fuzzy matching. It has no dependencies
+    of its own.
+  · T4: I changed the test at tests/bookmarks.spec.js:19. It asserted that
+    "bokmark" finds nothing, which is the behaviour this item replaces.
+  I've stopped here. Run `tracker review` when you have a moment.</pre>
+    </figure>
+  </div>
+</section>
+
+<section class="scene" id="s8">
+  <div class="notes">
+    <div class="meta"><span class="num">08</span><span class="actor you">You</span></div>
+    <h3>Clear the inbox</h3>
+    <p><code>tracker review</code> is the one command you need to remember. It lists what's waiting and why, and flags a digest you haven't read in time. You read BM-14's change with <code>show --diff</code> and approve it.</p>
+    <ul class="notice">
+      <li><code>show --diff</code> lists <strong>the files that fired a trigger</strong> before the commits and their diffs, so you know what to read first.</li>
+      <li><code>approve</code> shows the holds again and asks you to <strong>type the item ID</strong>. That needs an interactive terminal, which an agent's shell isn't.</li>
+      <li>Then it runs the gates again at <code>HEAD</code>, so nothing that broke since the submit gets through.</li>
+      <li>Deciding BM-14 also frees the project. Only <strong>one item at a time</strong> can be in progress or in review (G1), so BM-13 couldn't start until now.</li>
+    </ul>
+    <div class="refs">§2.6 Digest · §2.7 Human actions · §3 Human workflow · G1</div>
+    <div class="states"><span class="pill done">BM-14 review → <b>done (you)</b></span></div>
+  </div>
+  <div class="screens">
+    <figure class="term you">
+      <figcaption><span class="who">You · zsh</span><span>~/code/bookmarks</span></figcaption>
+<pre><span class="p">$ </span><span class="k">tracker review</span>
+<span class="b">1 item is held for review</span>, waiting for you to approve or reject each one:
+
+<span class="h">BM-14</span>  Fuzzy search tolerates typos
+  <span class="h">T3</span>  dependency manifests changed: package-lock.json and package.json
+  <span class="h">T4</span>  existing test file modified: tests/bookmarks.spec.js (7bc75d9 before start)
+  See its work with `tracker show BM-14 --diff`, then run `tracker approve BM-14` or `tracker reject BM-14 --reason "…"`.
+
+<span class="h">BM's digest is overdue</span>: 3 entries, the oldest from 2026-11-25T00:11:43Z, last acknowledged at 2026-11-25T00:11:06Z, from a terminal, with 7 items and 1 action. Read it with `tracker digest --project BM`, then run `tracker digest ack --project BM`.
+
+<span class="p">$ </span><span class="k">tracker show BM-14 --diff</span>
+<span class="d">…</span>
+<span class="b">Held for review by:</span>
+  <span class="h">T3</span>  dependency manifests changed: package-lock.json and package.json
+  <span class="h">T4</span>  existing test file modified: tests/bookmarks.spec.js (7bc75d9 before start)
+
+<span class="b">Files that fired a trigger:</span>
+  <span class="h">T3</span>  package-lock.json
+  <span class="h">T3</span>  package.json
+  <span class="h">T4</span>  tests/bookmarks.spec.js
+
+<span class="b">Commits, newest first (3):</span>
+  35dcb73  fix(BM-14): tune the match threshold
+  7fdf1d9  feat(BM-14): fuzzy search with fuse.js
+  7bc75d9  test(BM-14): a typo still finds the bookmark
+
+<span class="b">Diff, oldest first:</span>
+commit 7bc75d947603485bf80808443a5d19dfb40a7420
+test(BM-14): a typo still finds the bookmark
+
+diff --git a/tests/bookmarks.spec.js b/tests/bookmarks.spec.js
+index 99acab9..8c5eff7 100644
+--- a/tests/bookmarks.spec.js
++++ b/tests/bookmarks.spec.js
+@@ -16,9 +16,9 @@ test('search ignores case', () =&gt; {
+   assert.equal(visible(state, 'BOOKMARK').length, 1);
+ });
+ 
+<span class="x">-test('search with a typo finds nothing', () =&gt; {</span>
+<span class="o">+test('search tolerates a typo', () =&gt; {</span>
+   const { state } = withBookmarks(['Bookmark basics']);
+<span class="x">-  assert.equal(visible(state, 'bokmark').length, 0);</span>
+<span class="o">+  assert.equal(visible(state, 'bokmark').length, 1);</span>
+ });
+ 
+<span class="d">…</span>
+diff --git a/package.json b/package.json
+<span class="d">…</span>
+<span class="o">+  "dependencies": {</span>
+<span class="o">+    "fuse.js": "^7.0.0"</span>
+<span class="o">+  }</span>
+<span class="d">…</span>
+<span class="c"># The old test said "bokmark" finds nothing, which is what BM-14 replaces. Fair change.</span>
+<span class="c"># BM-12's tests at :39 and :45 weren't touched, so its proof still holds.</span>
+
+<span class="p">$ </span><span class="k">tracker approve BM-14</span>
+BM-14 "Fuzzy search tolerates typos" is in review, held by:
+  <span class="h">T3</span>  dependency manifests changed: package-lock.json and package.json
+  <span class="h">T4</span>  existing test file modified: tests/bookmarks.spec.js (7bc75d9 before start)
+Approving it runs the gates again at 35dcb73, and if they pass, moves it to done, verified by a human, with refs/tracker/BM-14 keeping that commit.
+`tracker show BM-14 --diff` shows its work.
+Type BM-14 to confirm, or anything else to cancel: <span class="y">BM-14</span>
+<span class="d">Running criterion 1's check: `npx playwright test -g 'search tolerates a typo'`
+Running project check: `npx playwright test --project=chromium`</span>
+BM-14: review → <span class="b">done</span>
+<span class="o">Approved: every gate passed again at 35dcb73, and refs/tracker/BM-14 keeps that commit.</span></pre>
+    </figure>
+  </div>
+</section>
+
+<section class="scene" id="s9">
+  <div class="notes">
+    <div class="meta"><span class="num">09</span><span class="actor agent">Agent</span><span class="actor you">You</span></div>
+    <h3>A judge for what tests can't measure</h3>
+    <p>BM-13's first criterion is a normal test. Its second asks whether every import error is helpful, which a script can't decide. So the agent writes a judge: two short yes/no questions, asked once for each error in <code>src/import.js</code>. One answer comes back unsure, and you send the item back with a concrete note.</p>
+    <ul class="notice">
+      <li><code>each</code> splits the work in code: one request per match, two questions each, and <strong>every answer must pass</strong>. A pattern that matches nothing is refused, because a judge with nothing to grade would pass without asking anything.</li>
+      <li>The judge runs at <code>start</code> too, against the old <code>'Invalid file.'</code> messages. It <strong>should not pass yet</strong>. If it did, its questions couldn't tell bad messages from good ones (T13).</li>
+      <li>Unsure means <strong>the excerpt doesn't show enough to decide</strong>. It's not a confidence score. In judge-eval's run of <code>claude-haiku-5-5</code>, 2 of 54 answers were unsure and none was a wrong pass. Unsure isn't a fail, so the gates pass. It's not proof either, so T10 holds the item.</li>
+      <li>The excerpt and the model's reason come with the hold, so you can decide without opening the file.</li>
+      <li>Your reject covers <strong>this submit only</strong>. v1 saves no rulings, so if the agent resubmits the same code, the cached unsure answer holds it again.</li>
+    </ul>
+    <div class="refs">§2.3.1 Judges · each · T10 Judge unsure · §2.3.2</div>
+    <div class="states"><span class="pill held">BM-13 in-progress → <b>review</b></span><span class="pill moving">BM-13 review → <b>in-progress</b></span></div>
+  </div>
+  <div class="screens">
+    <figure class="term file">
+      <figcaption><span class="who">~/code/bookmarks/judges/import-errors.json</span><span>written by the agent</span></figcaption>
+<pre>{
+  "text": "Every import error says what went wrong and how to fix the file",
+  "inputs": ["src/import.js"],
+  "each": "new ImportError\\(",
+  "context_lines": 4,
+  "ask": [
+    {
+      "id": "names_problem",
+      "ask": "Does this error message name the specific problem, such as the row or field that was wrong?",
+      "yes": "the message says what was wrong",
+      "no": "the message is generic, such as 'invalid file'"
+    },
+    {
+      "id": "suggests_next_step",
+      "ask": "Does this error message tell the user what to do next, such as a value to add or a row to fix?",
+      "yes": "the message gives a concrete next step",
+      "no": "the message only reports the problem"
+    }
+  ]
+}</pre>
+    </figure>
+    <figure class="term agent">
+      <figcaption><span class="who">Agent · Claude Code</span><span>~/code/bookmarks</span></figcaption>
+<pre><span class="p">$ </span><span class="k">tracker criterion set BM-13 1 --check "npx playwright test -g 'missing URL column'"</span>
+Criterion 1 of BM-13 now has a check.
+<span class="c"># The first draft of the judge file had "each": "throw ImportError\\(".</span>
+<span class="p">$ </span><span class="k">tracker criterion set BM-13 2 --judge judges/import-errors.json</span>
+<span class="x">error:</span> The judge file judges/import-errors.json has nothing to grade: its each, `throw ImportError\(`, matches nothing in src/import.js, once comments are stripped.
+<span class="e">[exit 1]</span>
+
+<span class="c"># The code says `throw new ImportError(`. Fixes "each" to "new ImportError\\(" (JSON doubles the backslash).</span>
+<span class="p">$ </span><span class="k">tracker criterion set BM-13 2 --judge judges/import-errors.json</span>
+Criterion 2 of BM-13 now has a judge.
+Its 2 questions are asked at start, and at submit once every other gate passes.
+<span class="c"># …writes the missing-URL-column test in tests/import.spec.js…</span>
+<span class="p">$ </span><span class="k">git add -A &amp;&amp; git commit -m "test(BM-13): missing URL column test and import errors judge"</span>
+[main 05ddc6e] test(BM-13): missing URL column test and import errors judge
+ 2 files changed, 31 insertions(+)
+<span class="p">$ </span><span class="k">tracker start BM-13</span>
+<span class="d">Running criterion 1's check: `npx playwright test -g 'missing URL column'`
+Asking criterion 2's judge 2 questions at src/import.js:11: `tracker-judge`
+Asking criterion 2's judge 2 questions at src/import.js:15: `tracker-judge`
+Asking criterion 2's judge 2 questions at src/import.js:23: `tracker-judge`</span>
+BM-13: open → <span class="b">in-progress</span>
+<span class="c"># Started: records "criterion 1 failed, criterion 2 failed", as it should.</span>
+<span class="c"># …rewrites each error, adds the missing url column check, commits "fix(BM-13): …"…</span>
+
+<span class="p">$ </span><span class="k">tracker submit BM-13</span>
+<span class="d">Running criterion 1's check: `npx playwright test -g 'missing URL column'`
+Running project check: `npx playwright test --project=chromium`
+Asking criterion 2's judge 2 questions at src/import.js:11: `tracker-judge`
+Asking criterion 2's judge 2 questions at src/import.js:15: `tracker-judge`
+Asking criterion 2's judge 2 questions at src/import.js:18: `tracker-judge`
+Asking criterion 2's judge 2 questions at src/import.js:26: `tracker-judge`</span>
+BM-13: in-progress → <span class="h">review</span>
+Every gate passed, and BM-13 is <span class="h">held for review</span>:
+  <span class="h">T10</span>  a judge answered unsure to <span class="b">c2:src/import.js:26:suggests_next_step</span>, so a human decides: It says to check the file, but not what to add; how the error is shown isn't in the excerpt.
+    c2:src/import.js:26:suggests_next_step: Does this error message tell the user what to do next, such as a value to add or a row to fix?
+      <span class="h">unsure</span>: It says to check the file, but not what to add; how the error is shown isn't in the excerpt.
+      [match]
+      src/import.js:26: throw new ImportError(`Row ${n + 2} has no URL. Check the file and try again.`, n + 2);
+
+      [code]
+          return Object.fromEntries(columns.map((c, i) =&gt; [c, cells[i]]));
+        });
+        for (const [n, row] of rows.entries()) {
+          if (!row.url) {
+            throw new ImportError(`Row ${n + 2} has no URL. Check the file and try again.`, n + 2);
+          }
+        }
+        return rows;
+      }
+It waits in `tracker review` for a human to approve or reject it. `tracker show BM-13 --diff` shows its work.</pre>
+    </figure>
+    <figure class="term you">
+      <figcaption><span class="who">You · zsh</span><span>~/code/bookmarks</span></figcaption>
+<pre><span class="p">$ </span><span class="k">tracker review</span>
+<span class="b">1 item is held for review</span>, waiting for you to approve or reject each one:
+
+<span class="h">BM-13</span>  Import errors say how to fix the file
+  <span class="h">T10</span>  a judge answered unsure to c2:src/import.js:26:suggests_next_step, so a human decides: It says to check the file, but not what to add; how the error is shown isn't in the excerpt.
+  `tracker gates BM-13` shows each unsure answer's question and excerpt.
+  See its work with `tracker show BM-13 --diff`, then run `tracker approve BM-13` or `tracker reject BM-13 --reason "…"`.
+
+<span class="p">$ </span><span class="k">tracker reject BM-13 --reason "import.js:26 should say what to do, e.g. 'Row 12 has no URL. Add one in the url column, or delete the row.'"</span>
+BM-13 "Import errors say how to fix the file" is in review, held by:
+  <span class="h">T10</span>  a judge answered unsure to c2:src/import.js:26:suggests_next_step, so a human decides: …
+Rejecting it sends it back to in-progress, with this reason in its history for the agent: "import.js:26 should say what to do, e.g. 'Row 12 has no URL. Add one in the url column, or delete the row.'"
+`tracker show BM-13 --diff` shows its work.
+Type BM-13 to confirm, or anything else to cancel: <span class="y">BM-13</span>
+BM-13: review → <span class="b">in-progress</span>
+The reason is in its history, for the agent working on it to read.</pre>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ ACT 4 ============ -->
+<div class="act"><h2>When the judge is wrong</h2><p>The model fails good work, and the agent can't overrule it alone.</p></div>
+
+<section class="scene" id="s10">
+  <div class="notes">
+    <div class="meta"><span class="num">10</span><span class="actor agent">Agent</span><span class="actor you">You</span></div>
+    <h3>Dispute a wrong fail</h3>
+    <p>The agent reworks BM-13 using your note. Instead of repeating the next step in every message, <code>importMessage()</code> in <code>app.js</code> now adds it after every row error, so the message at :26 only names the problem. The judge sees a few lines around :26, not <code>app.js</code>, and answers no to <code>suggests_next_step</code>, confident and wrong about what the user sees. The agent can show it's wrong, so it disputes the answer.</p>
+    <ul class="notice">
+      <li>A fail refuses the submit. Without disputes, that would be a dead end, because the item could never reach review.</li>
+      <li><code>--dispute</code> <strong>can't pass anything</strong>. It moves the decision from the model to you, under T12, with the model's reason and the agent's side by side.</li>
+      <li>A judge sees <strong>only its excerpt</strong>. A next step that lives somewhere else, here in <code>app.js</code>, is exactly what it can miss.</li>
+      <li>Answers are cached by content, so the unchanged excerpts at :11, :15 and :18 aren't asked again, and neither is :26 on the disputed submit or the approve.</li>
+      <li>Your approval covers <strong>this submit only</strong>. v1 saves no rulings, so if BM-13 ever comes back with the same code, it needs the same dispute.</li>
+      <li>Your decisions count toward <code>tracker judges</code>. If <code>suggests_next_step</code> keeps getting overruled, the question itself needs fixing.</li>
+    </ul>
+    <div class="refs">§2.3.2 When a judge is wrong · T12 · §2.7</div>
+    <div class="states"><span class="pill refused">BM-13 <b>G3 refused</b></span><span class="pill held">BM-13 in-progress → <b>review</b></span><span class="pill done">BM-13 review → <b>done (you)</b></span></div>
+  </div>
+  <div class="screens">
+    <figure class="term agent">
+      <figcaption><span class="who">Agent · Claude Code</span><span>~/code/bookmarks</span></figcaption>
+<pre><span class="c"># …import.js:26 now says `Row ${n + 2} is invalid: it has no URL.`, and importMessage() in</span>
+<span class="c"># app.js adds NEXT_STEP after it…</span>
+<span class="p">$ </span><span class="k">git commit -am "fix(BM-13): show the next step after every row error"</span>
+[main ffe0ffb] fix(BM-13): show the next step after every row error
+ 2 files changed, 11 insertions(+), 2 deletions(-)
+
+<span class="p">$ </span><span class="k">tracker submit BM-13</span>
+<span class="d">Running criterion 1's check: `npx playwright test -g 'missing URL column'`
+Running project check: `npx playwright test --project=chromium`
+Criterion 2's judge at src/import.js:11: answered from the cache
+Criterion 2's judge at src/import.js:15: answered from the cache
+Criterion 2's judge at src/import.js:18: answered from the cache
+Asking criterion 2's judge 2 questions at src/import.js:26: `tracker-judge`</span>
+<span class="x">error:</span> BM-13 can't be submitted: <span class="b">G3 failed</span>. BM-13 wasn't changed.
+  <span class="x">G3</span>  Criterion 2's judge answered no to <span class="b">c2:src/import.js:26:suggests_next_step</span>, "Does this error message tell the user what to do next, such as a value to add or a row to fix?", and only yes passes: The message says the row is invalid but not what to do about it. Its excerpt follows.
+        [match]
+        src/import.js:26: throw new ImportError(`Row ${n + 2} is invalid: it has no URL.`, n + 2);
+        <span class="d">…</span>
+<span class="e">[exit 2]</span>
+
+<span class="c"># app.js:41 importMessage() adds NEXT_STEP (app.js:34) after every row error. The next step</span>
+<span class="c"># is there, not in each message.</span>
+<span class="p">$ </span><span class="k">tracker submit BM-13 --dispute c2:src/import.js:26:suggests_next_step \
+    --reason "app.js:41 importMessage adds NEXT_STEP (app.js:34) after every row error: 'Fix that row in the file, or turn on \"Skip invalid rows\" and import again.'"</span>
+<span class="d">…
+Criterion 2's judge at src/import.js:26: answered from the cache</span>
+BM-13: in-progress → <span class="h">review</span>
+Every gate passed but the disputed judge questions, and BM-13 is <span class="h">held for review</span>:
+  <span class="h">T12</span>  the agent disputed a judge's fail, so a human decides: c2:src/import.js:26:suggests_next_step answered no
+    c2:src/import.js:26:suggests_next_step: Does this error message tell the user what to do next, such as a value to add or a row to fix?
+      <span class="d">model answered no:</span> The message says the row is invalid but not what to do about it.
+      <span class="d">agent disputes:</span> app.js:41 importMessage adds NEXT_STEP (app.js:34) after every row error: 'Fix that row in the file, or turn on "Skip invalid rows" and import again.'
+      <span class="d">…</span>
+It waits in `tracker review` for a human to approve or reject it. `tracker show BM-13 --diff` shows its work.</pre>
+    </figure>
+    <figure class="term you">
+      <figcaption><span class="who">You · zsh</span><span>~/code/bookmarks</span></figcaption>
+<pre><span class="p">$ </span><span class="k">tracker review</span>
+<span class="b">1 item is held for review</span>, waiting for you to approve or reject each one:
+
+<span class="h">BM-13</span>  Import errors say how to fix the file
+  <span class="h">T12</span>  the agent disputed a judge's fail, so a human decides: c2:src/import.js:26:suggests_next_step answered no
+    c2:src/import.js:26:suggests_next_step
+      model answered no: The message says the row is invalid but not what to do about it.
+      agent disputes: app.js:41 importMessage adds NEXT_STEP (app.js:34) after every row error: …
+  `tracker gates BM-13` shows each disputed question and excerpt, as a G3 failure.
+  See its work with `tracker show BM-13 --diff`, then run `tracker approve BM-13` or `tracker reject BM-13 --reason "…"`.
+
+<span class="p">$ </span><span class="k">sed -n 34,46p app.js</span>
+export const NEXT_STEP = 'Fix that row in the file, or turn on "Skip invalid rows" and import again.';
+<span class="d">…</span>
+export function importMessage(err) {
+  if (err instanceof ImportError &amp;&amp; err.row) {
+    return `${err.message} ${NEXT_STEP}`;
+  }
+  return err.message;
+}
+<span class="c"># Every row error is shown with the next step. The agent is right.</span>
+
+<span class="p">$ </span><span class="k">tracker approve BM-13</span>
+<span class="d">…</span>
+Approving it runs the gates again at ffe0ffb, and if they pass, moves it to done, verified by a human, with refs/tracker/BM-13 keeping that commit.
+Type BM-13 to confirm, or anything else to cancel: <span class="y">BM-13</span>
+<span class="d">…</span>
+BM-13: review → <span class="b">done</span>
+<span class="o">Approved: every gate passed again at ffe0ffb, and refs/tracker/BM-13 keeps that commit.</span>
+
+<span class="p">$ </span><span class="k">tracker judges</span>
+Each judge question, with your decisions on the items it held. Only T10 and T12 holds record their questions, so a T11 hold isn't counted.
+
+BM  "Does this error message tell the user what to do next, such as a value to add or a row to fix?"
+  unsure answer (T10): approved 0, rejected 1
+  disputed fail (T12, answered no): approved 1, rejected 0</pre>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ ACT 5 ============ -->
+<div class="act"><h2>End of the week · Checking the checker</h2><p>Auditing what passed without you.</p></div>
+
+<section class="scene" id="s11">
+  <div class="notes">
+    <div class="meta"><span class="num">11</span><span class="actor you">You</span></div>
+    <h3>Audit the digest</h3>
+    <p>Each project's digest lists everything that reached done without you since you last acknowledged it, then every shelve and human action since. Items that passed on a judge come first, because that's where a wrong pass is most likely.</p>
+    <ul class="notice">
+      <li>BM-11's judge said yes to both questions, and it was wrong: "Nothing here." isn't friendly. An answer carries <strong>no measure of doubt</strong>, so a wrong yes looks like any other (§7). judge-eval found no wrong pass in 54 cases, but the CLI has no temperature setting, so a rerun can answer differently. That's why the digest exists.</li>
+      <li>Your own approves and rejects are listed too, marked from a terminal or not. The terminal check can be got around, so you check that you really made each one.</li>
+      <li><code>reopen</code> sends BM-11 back with your reason. If it comes back with unchanged code, <strong>T13 holds it</strong>, because its check and judge already pass at start (<a href="#s12">scene 12</a>). The better fix is a test instead of a judge.</li>
+      <li>Outside every project root, <code>tracker digest</code> shows every project's digest. <code>digest ack</code> shows the digest again, asks you to type <code>ack</code>, and resets the overdue clock. BM-11 is open again, so the ack counts 2 items, not 3.</li>
+    </ul>
+    <div class="refs">§2.6 Digest · §2.3.2 When a judge is wrong · T13 · §7 Honest limits</div>
+    <div class="states"><span class="pill moving">BM-11 done → <b>open</b></span></div>
+  </div>
+  <div class="screens">
+    <figure class="term you">
+      <figcaption><span class="who">You · zsh</span><span>~</span></figcaption>
+<pre><span class="p">$ </span><span class="k">tracker digest</span>
+<span class="b">BM's digest</span>, last acknowledged at 2026-11-25T00:11:06Z, from a terminal, with 7 items and 1 action
+<span class="b">Auto-verified (3), the ones a judge passed first:</span>
+  <span class="h">BM-11</span>  Empty state explains how to add a bookmark
+    verified at 85ac1c2 on 2026-11-25T00:11:45Z
+    1. The empty state has an Add bookmark button
+    2. The empty state is friendly and says what to do next
+    judge c2:friendly_tone asked "Is this empty-state message friendly in tone?" answered <span class="h">yes</span>: "The message is short and polite."
+    judge c2:names_next_action asked "Does this empty state tell the user what to do next, such as a button to press?" answered <span class="h">yes</span>: "An 'Add bookmark' action sits next to the message."
+    criterion 1's check passed: `npx playwright test -g 'empty state button'` (0s)
+    project check passed: `npx playwright test --project=chromium` (0s)
+  BM-10  Bookmarks persist across reloads
+    verified at eab2b92 on 2026-11-25T00:11:43Z
+    1. Bookmarks are still there after the page reloads
+    criterion 1's check passed: `npx playwright test -g 'persists across reloads'` (0s)
+    project check passed: `npx playwright test --project=chromium` (0s)
+  BM-12  Search filters bookmarks by tag
+    verified at d184c7a on 2026-11-25T00:12:55Z
+    <span class="d">…</span>
+<span class="b">Shelves, human actions and edits that switch off a trigger (3), oldest first.</span> Check that you made each one marked from a terminal:
+  2026-11-25T00:13:35Z  BM-14  Fuzzy search tolerates typos
+    approve, from a terminal
+  2026-11-25T00:14:33Z  BM-13  Import errors say how to fix the file
+    reject, from a terminal: "import.js:26 should say what to do, e.g. 'Row 12 has no URL. …'"
+    T10 c2:src/import.js:26:suggests_next_step answered unsure: "It says to check the file, but not what to add; …"
+  2026-11-25T00:14:56Z  BM-13  Import errors say how to fix the file
+    approve, from a terminal
+    T12 disputed c2:src/import.js:26:suggests_next_step, answered no
+      model  "The message says the row is invalid but not what to do about it."
+      agent  "app.js:41 importMessage adds NEXT_STEP (app.js:34) after every row error: …"
+Reopen anything that looks wrong with `tracker reopen &lt;ID&gt; --reason "…"`. Once you've read it all, run `tracker digest ack --project BM`.
+
+<span class="c"># BM-11's empty state still just says "Nothing here."</span>
+<span class="p">$ </span><span class="k">tracker reopen BM-11 --reason "Empty state still just says 'Nothing here.' Replace the judge with a test that asserts the text."</span>
+BM-11: done → <span class="b">open</span>
+
+<span class="p">$ </span><span class="k">tracker digest ack --project BM</span>
+<span class="d">…the digest again…</span>
+Acknowledging it records that you've read BM's digest, so the next one lists only what happens after now.
+Type ack to confirm, or anything else to cancel: <span class="y">ack</span>
+<span class="o">Acknowledged BM's digest at 2026-11-25T00:15:11Z: 2 items auto-verified and 3 actions.</span> The next digest lists only what happens after this.</pre>
+    </figure>
+  </div>
+</section>
+
+<section class="scene" id="s12">
+  <div class="notes">
+    <div class="meta"><span class="num">12</span><span class="actor you">You</span><span class="actor agent">Agent</span></div>
+    <h3>Guardrails in action</h3>
+    <p>Short exchanges from across the week where the tool says no, or lets something through but makes sure you'll see it. Most map to a row in the trust table in §6.</p>
+    <ul class="notice">
+      <li>An agent can't approve, reject, delete or acknowledge a digest. Each needs <strong>a human typing at a terminal</strong>.</li>
+      <li>Moving the goalposts is allowed but never quiet. Neither <code>criterion set</code> nor <code>criterion remove</code> warns about it, but <code>gates</code> lists the T5 hold once the gates pass, and the submit is held. That includes dropping one of your criteria before starting.</li>
+      <li>A check that passes before the work is allowed but flagged (T13). <code>cargo test</code> with a filter that matches nothing exits 0, which is the classic case.</li>
+      <li>A dispute only works on a question that actually failed, so it can't be filed in advance.</li>
+      <li>Shelving work that's under way must leave the project checks passing. The item's tests still fail, and left on the branch they'd fail the next item's submit (G4), so the agent reverts them first.</li>
+      <li>Only you can delete, and the prompt says what goes with it. An item that won't be done is shelved by the agent, then deleted by you.</li>
+      <li><code>audit</code> catches a hand-edited status after the fact. It can't prevent one.</li>
+    </ul>
+    <div class="refs">§2.7 Human actions · §2.8 Shelve vs delete · §6 Trust table · §7</div>
+  </div>
+  <div class="screens">
+    <figure class="term agent">
+      <figcaption><span class="who">Agent · tries to approve its own work</span><span>~/code/bookmarks</span></figcaption>
+<pre><span class="p">$ </span><span class="k">tracker approve BM-13</span>
+<span class="x">error:</span> `tracker approve BM-13` needs a human at an interactive terminal, who types BM-13 to confirm it, and stdin here isn't a terminal. Nothing was changed. Only a human approves a held item. It waits in `tracker review` until one approves or rejects it.
+<span class="e">[exit 1]</span></pre>
+    </figure>
+    <figure class="term agent">
+      <figcaption><span class="who">Agent · picks up reopened BM-11, then weakens its check</span><span>~/code/bookmarks</span></figcaption>
+<pre><span class="p">$ </span><span class="k">tracker start BM-11</span>
+<span class="d">Running criterion 1's check: `npx playwright test -g 'empty state button'`
+Asking criterion 2's judge 2 questions: `tracker-judge`</span>
+<span class="h">warning:</span> Criterion 1's check, `npx playwright test -g 'empty state button'`, already passes before the work is done, so it can't be proving the new work. Make sure it tests what criterion 1 says, such as with a filter that matches a test that fails now. BM-11 started anyway.
+<span class="h">warning:</span> Criterion 2's judge already passes before the work is done: every answer is the passing one, so its questions can't tell the code now from the finished work. Make sure they ask about what the work changes, and that the judge grades a stub it fails. BM-11 started anyway, and T13 will hold it.
+BM-11: open → <span class="b">in-progress</span>
+
+<span class="p">$ </span><span class="k">tracker criterion set BM-11 1 --check "true"</span>
+<span class="d">Running criterion 1's check: `true`</span>
+<span class="h">warning:</span> Criterion 1's check, `true`, already passes before the work is done, so it can't be proving the new work. …
+Criterion 1 of BM-11 now has a check.
+
+<span class="p">$ </span><span class="k">tracker gates BM-11</span>
+<span class="d">…</span>
+BM-11 passes the gates submit runs: G2, G5, G6, G3 and G4.
+A submit would be <span class="h">held for review</span>:
+  <span class="h">T5</span>   the criteria, their checks, the kind or the design changed after start
+  <span class="h">T13</span>  criterion 1's check and criterion 2's judge already passed before the work, so they can't be proving it</pre>
+    </figure>
+    <figure class="term agent">
+      <figcaption><span class="who">Agent · drops a criterion it was given</span><span>~/code/bookmarks</span></figcaption>
+<pre><span class="p">$ </span><span class="k">tracker criterion remove BM-16 2</span>
+Removed criterion 2 from BM-16: Undo restores the deleted bookmarks with their tags
+<span class="c"># No warning, but the text stays in BM-16's written list. Run by an agent, the removal holds</span>
+<span class="c"># BM-16 under T5 at submit, until you run `tracker criterion accept BM-16` from a terminal.</span></pre>
+    </figure>
+    <figure class="term agent">
+      <figcaption><span class="who">Agent · disputes a judge ahead of time</span><span>~/code/bookmarks</span></figcaption>
+<pre><span class="p">$ </span><span class="k">tracker submit BM-13 --dispute c2:src/import.js:18:suggests_next_step --reason "the judge may not follow this"</span>
+<span class="d">…</span>
+<span class="x">error:</span> BM-13 can't be submitted with that dispute: the judge passed c2:src/import.js:18:suggests_next_step, so there's nothing to dispute. Only a judge's fail can be disputed. BM-13 wasn't changed.
+<span class="e">[exit 1]</span></pre>
+    </figure>
+    <figure class="term agent">
+      <figcaption><span class="who">Agent · a check that proves nothing</span><span>~/code/tracker</span></figcaption>
+<pre><span class="c"># The test is named list_filters_by_kind, so this filter matches nothing.</span>
+<span class="p">$ </span><span class="k">tracker start TR-1</span>
+<span class="d">Running criterion 1's check: `cargo test filter_by_kind`</span>
+<span class="h">warning:</span> Criterion 1's check, `cargo test filter_by_kind`, already passes before the work is done, so it can't be proving the new work. Make sure it tests what criterion 1 says, such as with a filter that matches a test that fails now. TR-1 started anyway.
+TR-1: open → <span class="b">in-progress</span>
+<span class="p">$ </span><span class="k">cargo test filter_by_kind</span>
+<span class="d">running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s</span></pre>
+    </figure>
+    <figure class="term agent">
+      <figcaption><span class="who">Agent · starts an item with no criteria</span><span>~/code/bookmarks</span></figcaption>
+<pre><span class="p">$ </span><span class="k">tracker start BM-15</span>
+<span class="x">error:</span> BM-15 can't be started: G1 failed. Nothing was changed.
+  <span class="x">G1</span>  BM-15 has no criteria, so nothing says when it's done. Add one with `tracker criterion add BM-15 "…" --check "…"`.
+<span class="e">[exit 2]</span></pre>
+    </figure>
+    <figure class="term agent">
+      <figcaption><span class="who">Agent · shelves work it started</span><span>~/code/bookmarks</span></figcaption>
+<pre><span class="p">$ </span><span class="k">tracker shelve BM-7 --reason "The browser fetches favicons now. Nothing to remove."</span>
+<span class="d">Running project check: `npx playwright test --project=chromium`</span>
+<span class="x">error:</span> BM-7 can't be shelved while it's in progress: G4 failed. The next item builds on this tree, so it must be clean and pass the project checks. Nothing was changed.
+  <span class="x">G4</span>  A project check failed: `npx playwright test --project=chromium` (exit 1). Its last lines of output follow.
+          <span class="d">…</span>
+          <span class="x">✘</span>  15 [chromium] › favicon.spec.js:5:1 › favicon fetcher is removed (0.0s)
+          <span class="d">…</span>
+            Error: src/favicon.js still exists
+<span class="e">[exit 2]</span>
+
+<span class="c"># Reverts its own test(BM-7) commit, so the suite passes again.</span>
+<span class="p">$ </span><span class="k">git revert --no-commit c34fcb3 &amp;&amp; git commit -m "revert(BM-7): remove the favicon test"</span>
+[main 1dd672f] revert(BM-7): remove the favicon test
+ 1 file changed, 7 deletions(-)
+<span class="p">$ </span><span class="k">tracker shelve BM-7 --reason "The browser fetches favicons now. Nothing to remove."</span>
+<span class="d">Running project check: `npx playwright test --project=chromium`</span>
+BM-7: in-progress → <span class="b">shelved</span></pre>
+    </figure>
+    <figure class="term you">
+      <figcaption><span class="who">You · tidying up</span><span>~/code/bookmarks</span></figcaption>
+<pre><span class="c"># BM-7 will show up in the next digest as shelved. It isn't coming back.</span>
+<span class="p">$ </span><span class="k">tracker delete BM-7</span>
+BM-7 "Remove unused favicon fetcher" is shelved.
+Deleting it removes its file, its criterion and its history (2 entries).
+Any commits scoped to it stay in git, the ID won't be used again, and deleted.json records the delete for the digest.
+Type BM-7 to confirm, or anything else to cancel: <span class="y">BM-7</span>
+<span class="o">Deleted BM-7.</span> Its line in deleted.json records the delete, and BM-7 won't be used again.
+
+<span class="c"># Later, someone hand-edits shelved BM-9's status to "done" in its item file.</span>
+<span class="p">$ </span><span class="k">tracker audit</span>
+<span class="x">2 problems</span> found in 15 items, counters.json and deleted.json, each a sign that the store was edited by hand, or something audit couldn't check:
+  <span class="x">BM-9</span>  BM-9 is done, but the last move in its history left it shelved, so its status was edited by hand.
+  <span class="x">BM-9</span>  BM-9 is done but has no verification record, so nothing says how it reached done.</pre>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ ACT 6 ============ -->
+<div class="act"><h2>The agent's view</h2><p>One item from prompt to done, as Claude Code runs it.</p></div>
+
+<section class="scene" id="s13">
+  <div class="notes">
+    <div class="meta"><span class="num">13</span><span class="actor agent">Agent</span></div>
+    <h3>One whole session</h3>
+    <p>You give one instruction. Every call after it is the agent's, through Claude Code's tools. The only thing you read is the report at the end.</p>
+    <ul class="notice">
+      <li>The allow rule means <strong>none of these calls needs your approval</strong>.</li>
+      <li><code>--json</code> gives the agent fields to act on: the criteria, the start results, and each failure's gate, command, exit code and output, plus <code>ref</code>, <code>answer</code> and <code>reason</code> when a judge fails. The progress lines go to stderr, so stdout is one JSON object.</li>
+      <li>Both criteria can be tested, including the toast text, so <strong>no judge</strong>. Judges are for what a test can't measure.</li>
+      <li>When it reaches for the item file to tick off a criterion, the deny rule stops it. Nobody ticks criteria: the checks prove them at submit.</li>
+      <li>The full suite (G4) catches an existing test the feature broke. Changing that test would hold the item (T4), and the test is right, so the agent fixes the code.</li>
+      <li>Every trigger's <code>fired</code> is <code>false</code>, so BM-17 auto-verified, and you'll next see it in the digest.</li>
+    </ul>
+    <div class="refs">§5 Working with agents · §3 Output for agents</div>
+    <div class="states"><span class="pill done">BM-17 open → <b>done (auto)</b></span></div>
+  </div>
+  <div class="screens">
+    <figure class="term agent">
+      <figcaption><span class="who">Claude Code session</span><span>~/code/bookmarks</span></figcaption>
+<pre><span class="y">&gt; Pick up BM-17 and get it to done.</span>
+
+<span class="cc">⏺</span> <span class="b">Bash</span>(tracker show BM-17 --json)
+  <span class="d">⎿</span> {"item":{"id":"BM-17","title":"Undo a deleted bookmark","status":"open","kind":"change",
+     "design":"DESIGN.md#2.7",
+     "criteria":[
+       {"text":"Undo within 10 seconds restores the deleted bookmark with its tags"},
+       {"text":"The undo toast names the bookmark that was deleted"}], …}}
+
+<span class="cc">⏺</span> Both criteria are behaviour a test can check. The toast text in 2 can be
+  asserted, so no judge is needed.
+
+<span class="cc">⏺</span> <span class="b">Bash</span>(tracker criterion set BM-17 1 --check "npx playwright test -g 'undo restores'")
+  <span class="d">⎿</span> Criterion 1 of BM-17 now has a check.
+<span class="cc">⏺</span> <span class="b">Bash</span>(tracker criterion set BM-17 2 --check "npx playwright test -g 'undo toast'")
+  <span class="d">⎿</span> Criterion 2 of BM-17 now has a check.
+<span class="cc">⏺</span> <span class="b">Write</span>(tests/undo.spec.js)
+  <span class="d">⎿</span> Wrote 30 lines
+<span class="cc">⏺</span> <span class="b">Bash</span>(git add tests/undo.spec.js &amp;&amp; git commit -m "test(BM-17): add undo tests")
+  <span class="d">⎿</span> [main 03d2bad] test(BM-17): add undo tests
+<span class="cc">⏺</span> <span class="b">Bash</span>(tracker start BM-17 --json)
+  <span class="d">⎿</span> {"item":{"id":"BM-17","status":"in-progress", …,
+     "started":{"head":"03d2bad…",
+       "checks":[{"criterion":1,"passed":false},{"criterion":2,"passed":false}], …}},
+     "warnings":[]}
+
+<span class="cc">⏺</span> Both fail before the work, as they should. Now the feature.
+<span class="cc">⏺</span> <span class="b">Edit</span>(app.js)
+<span class="cc">⏺</span> <span class="b">Bash</span>(git commit -am "feat(BM-17): undo a deleted bookmark")
+  <span class="d">⎿</span> [main eb05ab1] feat(BM-17): undo a deleted bookmark
+
+<span class="cc">⏺</span> <span class="b">Edit</span>(~/.tracker/items/BM-17.json)
+  <span class="d">⎿</span> <span class="x">Permission denied by your settings: Edit(~/.tracker/**)</span>
+<span class="cc">⏺</span> I was about to tick off the criteria, but nothing is ticked by hand. The
+  checks prove them at submit.
+
+<span class="cc">⏺</span> <span class="b">Bash</span>(tracker gates BM-17 --json)
+  <span class="d">⎿</span> {"error":"BM-17 would be refused at submit: G4 failed. …","exit_code":2,
+     "id":"BM-17","status":"in-progress","result":"refused","gates":[…],
+     "failures":[{"gate":"G4",
+       "message":"A project check failed: `npx playwright test --project=chromium` (exit 1). …",
+       "cmd":"npx playwright test --project=chromium","exit_code":1,"timed_out":false,
+       "output":"…  ✘  11 [chromium] › bookmarks.spec.js:24:1 › delete removes the bookmark …"}]}
+<span class="cc">⏺</span> The old delete test expects the row to disappear at once, but my change
+  keeps it on screen until the undo window closes. Changing that test would
+  hold the item (T4), and the test is right: deleting should remove the row.
+  I'll remove it at once and keep a copy in the state for undo.
+<span class="cc">⏺</span> <span class="b">Edit</span>(app.js)
+<span class="cc">⏺</span> <span class="b">Bash</span>(git commit -am "fix(BM-17): remove the row at once and keep it for undo")
+  <span class="d">⎿</span> [main 27fb11a] fix(BM-17): remove the row at once and keep it for undo
+
+<span class="cc">⏺</span> <span class="b">Bash</span>(tracker submit BM-17 --json)
+  <span class="d">⎿</span> {"id":"BM-17","result":"done","status":"done",
+     "gates":[{"gate":"G2","ok":true},{"gate":"G5","ok":true},{"gate":"G6","ok":true},
+              {"gate":"G3","ok":true,"secs":0},{"gate":"G4","ok":true,"secs":0}],
+     "triggers":[{"trigger":"T1","fired":false}, … ,{"trigger":"T14","fired":false}],
+     "holds":[],
+     "item":{ … "verification":{"by":"auto","commit":"27fb11a7…","ref":"refs/tracker/BM-17", …}}}
+
+<span class="cc">⏺</span> BM-17 is done and auto-verified at 27fb11a. Both checks failed before the
+  work and pass now. The full suite caught deleted rows staying on screen
+  until the undo window closed, and I fixed the code rather than the old
+  test. No review triggers fired.</pre>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ QUESTIONS ============ -->
+<section class="questions" id="questions">
+  <header>
+    <div class="eyebrow">What the mockup surfaced</div>
+    <h2>Decisions it settled</h2>
+    <p class="lede" style="font-size:15px">This page began as a mockup, written before the tool existed. Writing concrete screens exposed twelve gaps in the design doc, and planning the build exposed one more. Each one was decided in <code>DESIGN.md</code>, and the screens above show the build that came out of it.</p>
+  </header>
+  <div class="qgrid">
+    <article class="q">
+      <h3>A judge that fails good work is no longer a dead end</h3>
+      <p>The agent can dispute the fail, which holds the item for you under T12. <strong>Your approval decides that submit</strong>, and <code>tracker judges</code> counts it against the question (<a href="#s10">scene 10</a>).</p>
+      <div class="refs">§2.3.2 · T12 · §2.7</div>
+    </article>
+    <article class="q">
+      <h3>A wrong pass can't come back unchanged</h3>
+      <p><code>reopen</code> sends a done item back with a reason. If it returns with unchanged code, <strong>T13 holds it</strong>, because its checks or judge already pass at start (<a href="#s11">scene 11</a>, <a href="#s12">scene 12</a>).</p>
+      <div class="refs">§2.6 · T13</div>
+    </article>
+    <article class="q">
+      <h3>The check is the evidence</h3>
+      <p>Script and judge criteria need no evidence note: <strong>their own output is the proof</strong>, saved at done. Only a manual criterion gets a note, and it's left out of the T5 fingerprint because it can only be written once the work exists (<a href="#s6">scene 6</a>).</p>
+      <div class="refs">§2.3 · G2 · T5</div>
+    </article>
+    <article class="q">
+      <h3>The inbox shows the change</h3>
+      <p><code>tracker show &lt;ID&gt; --diff</code> lists the item's commits and diff, <strong>with the files that fired a trigger named first</strong>, so you never leave the tool to review a hold (<a href="#s8">scene 8</a>).</p>
+      <div class="refs">§3 Looking around</div>
+    </article>
+    <article class="q">
+      <h3>Triggers are re-checked on every submit</h3>
+      <p>After a reject, the resubmit is held again for every trigger that still applies, because the work changed since you looked. <strong>None of your earlier decisions carry over.</strong></p>
+      <div class="refs">§2.5</div>
+    </article>
+    <article class="q">
+      <h3>The record shows which tests ran</h3>
+      <p>Each check's command, result, duration and last 20 lines of output are saved at done, so <code>tracker show</code> prints what actually ran. <code>refs/tracker/&lt;ID&gt;</code> keeps the commit through rebases, and G5 refuses untracked files, so <strong>the commit holds everything the tests ran with</strong> (<a href="#s6">scene 6</a>).</p>
+      <div class="refs">§2.3 · G5 · §2.7</div>
+    </article>
+    <article class="q">
+      <h3>Checks must fail before the work</h3>
+      <p><code>start</code> runs every check and expects a fail. One that already passes, like a filter matching no tests, <strong>holds the item under T13</strong> (<a href="#s3">scene 3</a>, <a href="#s12">scene 12</a>).</p>
+      <div class="refs">§2.4 · T13 · §5</div>
+    </article>
+    <article class="q">
+      <h3>Changing a proving test is visible</h3>
+      <p>T4 ignores pure additions and holds any change to an existing test, because it may be another item's proof. <strong>G4 runs the full suite on every later submit</strong>, so a change that breaks done behaviour is refused (<a href="#s4">scene 4</a>, <a href="#s7">scene 7</a>).</p>
+      <div class="refs">T4 · G4 · §6</div>
+    </article>
+    <article class="q">
+      <h3>Your criteria can't be quietly rewritten</h3>
+      <p>The criteria text is saved in <code>written</code> at <code>create</code>. An agent can attach checks and add criteria, but <strong>rewording or dropping yours holds the item</strong> (T5), even before <code>start</code> (<a href="#s12">scene 12</a>).</p>
+      <div class="refs">§2.1 written · T5</div>
+    </article>
+    <article class="q">
+      <h3>Judges must have something to grade, and must not pass yet</h3>
+      <p>A judge whose pattern matches nothing is refused instead of passing empty. Criterion judges also run at <code>start</code>, and <strong>one that already passes is held</strong> like a check that does (<a href="#s9">scene 9</a>, <a href="#s12">scene 12</a>).</p>
+      <div class="refs">§2.3.1 · §2.4 · T13</div>
+    </article>
+    <article class="q">
+      <h3>Agents never edit tracker files</h3>
+      <p>Items change only through <code>tracker</code> commands. Claude Code's settings allow <code>tracker</code> without asking and <strong>deny its edit tools on the store</strong> (<a href="#s1">scene 1</a>, <a href="#s13">scene 13</a>).</p>
+      <div class="refs">§3 Interface · §5 settings</div>
+    </article>
+    <article class="q">
+      <h3>Output agents can parse</h3>
+      <p>Every command takes <code>--json</code>. The text can change freely, but <strong>the JSON fields are an interface</strong>, with refs and hold reasons as data, each checked against a schema in <code>schemas/</code> (<a href="#s13">scene 13</a>).</p>
+      <div class="refs">§3 Output for agents</div>
+    </article>
+    <article class="q">
+      <h3>A project can live inside a larger repo</h3>
+      <p>A root can be a folder in a bigger repository, such as one package in a monorepo. G5, T14 and the path globs <strong>look only inside the root</strong>, so a dirty file or an unscoped commit elsewhere in the repo doesn't refuse or hold the item. The price: a change to a file outside the root that the tests read isn't caught (<a href="#s1">scene 1</a>).</p>
+      <div class="refs">§2.1 · G5 · T14 · §7</div>
+    </article>
+  </div>
+</section>
+
+<footer>Companion to <code>DESIGN.md</code>, in the same folder. The build order is in <code>PLAN.md</code>. IDs, hashes and timestamps are from the recorded run described at the top: <code>tracker 0.1.0</code> at <code>e5dbdd4</code>.</footer>
+
+</div>
