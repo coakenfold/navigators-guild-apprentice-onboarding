@@ -164,6 +164,16 @@ It raised 3 defects (D1–D3), 6 risks (R1–R6), 5 questions (Q1–Q5) and 9 op
 - **`style.css`:** no change needed. No selectors target `svg` or `path`, and the buttons set `color`.
 - **Result:** the suite passed on Chromium (91 tests) with no test changes. Not done: a baseline run before the change, the other two browsers, and a look at the icons in light and dark and in hover and focus states.
 
+## Guide deviations fixed (2026-11-24)
+
+I checked the build against the explicit instructions in the guild's [first-build guide](https://github.com/Navigators-Guild/apprentice-onboarding/blob/main/01-talking-to-agents/05-first-build.md), because the exercise tests following instructions as written. Each fix below is its own commit, with its tests written and seen failing first.
+
+### Dark mode by default (Layer 6)
+
+- **Deviation:** Layer 6 asks for "a subtle color scheme (dark background with light text, dark mode)". The page followed the OS `prefers-color-scheme` setting, so it was light for most people.
+- **Fix:** `style.css` now has one dark palette on `:root` with `color-scheme: dark`. The light palette is gone. `DESIGN.md` A.3 says so.
+- **Verification:** a new "Guide: dark colour scheme" block checks the background, panel and text luminance under light, dark and no-preference OS settings. It failed 3 of 3 before the change and passes after. The full suite passed in Chromium, Firefox and WebKit (303 tests). The R5 border-contrast test still passes for both OS settings, because both now get the dark palette.
+
 ## Learnings
 
 Generating a design document worked quite well. Applying the `/decomposition` skill against that document provided me with vertical slices that I could work on in phases. Scope can creep very easily in the slices with a single sentence.

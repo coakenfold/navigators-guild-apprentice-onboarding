@@ -1690,3 +1690,45 @@ test.describe("R1 malformed stored data", () => {
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Guide deviations: 05-first-build.md Layer 6 asks for "dark background with
+// light text, dark mode", so the page is dark whatever the OS setting is.
+// ---------------------------------------------------------------------------
+
+test.describe("Guide: dark colour scheme", () => {
+  /** Relative luminance of an "rgb(r, g, b)" string, 0 (black) to 1 (white). */
+  const luminance = (css) => {
+    const [r, g, b] = css
+      .match(/[\d.]+/g)
+      .slice(0, 3)
+      .map((v) => {
+        const c = Number(v) / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+
+  for (const scheme of ["light", "dark", "no-preference"]) {
+    test(`${scheme} OS setting: dark background with light text`, async ({
+      page,
+    }) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.goto("/");
+      const colours = await page.evaluate(() => {
+        const body = getComputedStyle(document.body);
+        const panel = getComputedStyle(document.querySelector(".panel"));
+        return {
+          bodyBg: body.backgroundColor,
+          panelBg: panel.backgroundColor,
+          text: body.color,
+          scheme: getComputedStyle(document.documentElement).colorScheme,
+        };
+      });
+      expect(luminance(colours.bodyBg)).toBeLessThan(0.05);
+      expect(luminance(colours.panelBg)).toBeLessThan(0.05);
+      expect(luminance(colours.text)).toBeGreaterThan(0.6);
+      expect(colours.scheme).toBe("dark");
+    });
+  }
+});

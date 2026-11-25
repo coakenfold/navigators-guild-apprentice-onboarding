@@ -1,33 +1,18 @@
+/* One dark colour scheme (dark background, light text), whatever the OS setting. */
 :root {
-  color-scheme: light dark;
-  --accent: #2563eb;
-  --on-accent: #fff;
-  --text: #1f2937;
-  --muted: #5b6472;
-  --border: #e5e7eb;
-  --bg: #f5f6f8;
-  --surface: #fff;
+  color-scheme: dark;
+  --accent: #60a5fa;
+  --on-accent: #0b1220;
+  --text: #e5e7eb;
+  --muted: #a3acba;
+  --border: #2d3748;
+  --bg: #0f172a;
+  --surface: #1a2236;
   --field-border: #64748b;
-  --pill: #eef2ff;
-  --error: #b91c1c;
-  --on-error: #fff;
+  --pill: #26314a;
+  --error: #f87171;
+  --on-error: #1a0b0b;
   --radius: 10px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --accent: #60a5fa;
-    --on-accent: #0b1220;
-    --text: #e5e7eb;
-    --muted: #a3acba;
-    --border: #2d3748;
-    --bg: #0f172a;
-    --surface: #1a2236;
-    --field-border: #64748b;
-    --pill: #26314a;
-    --error: #f87171;
-    --on-error: #1a0b0b;
-  }
 }
 
 * {

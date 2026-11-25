@@ -194,10 +194,11 @@ These features were added on purpose during the build (slice 6 and the follow-up
 - **List items** fade in briefly when the list is drawn.
 - **Reduced motion:** with `prefers-reduced-motion: reduce`, all of these animations are skipped, in both the CSS and the JavaScript.
 
-### A.3 Dark mode (moved from §7 into version 1)
+### A.3 Dark mode (moved from §7 into version 1; changes §3 Colors)
 
-- The colours follow the operating system's `prefers-color-scheme` setting. All colours are CSS custom properties on `:root`, with a dark set: a dark navy background, light text and a lighter blue accent.
-- There is no manual toggle. The page follows the system setting.
+- The page always uses one dark colour scheme: a dark navy background, light text and a lighter blue accent. This follows Layer 6 of the guild's first-build guide, which asks for "a subtle color scheme (dark background with light text, dark mode)". It replaces the light colours in §3.
+- All colours are CSS custom properties on `:root`, and `color-scheme: dark` makes form controls and scrollbars match.
+- It doesn't follow the operating system's light or dark setting, and there is no manual toggle. (Until 2026-11-24 the page followed `prefers-color-scheme` and was light by default.)
 
 ### A.4 Bookmark display (adds to §2.2)
 
