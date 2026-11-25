@@ -2,6 +2,8 @@
 
 I built a bookmark manager using html, css, and javascript. The bookmark manager lets you add bookmarks (url, title, notes, tags), validates the form and saves to localStorage.The bookmarks can be edited and deleted. There is a search feature and it works in conjunction with any selected tag. Supports keyboard navigation and animations respect reduced motion settings.
 
+**Why:** this is the guided first project in the guild's apprentice onboarding ([first-build guide](https://github.com/Navigators-Guild/apprentice-onboarding/blob/main/01-talking-to-agents/05-first-build.md)). The point is to practise the guild workflow (design doc first, build in layers, verify each one, adversarial review) on something small enough to finish. A bookmark manager is something I'd actually use: a place to keep a link together with a note on why I saved it, and find it again by tag or search, with no account or server.
+
 ## Build process
 
 NOTE: **"First try"** means the first agent run produced code that met the slice's "Done when" list without me asking for a correction. Where a slice was run more than once, that is noted.
@@ -192,3 +194,47 @@ I checked the build against the explicit instructions in the guild's [first-buil
 Generating a design document worked quite well. Applying the `/decomposition` skill against that document provided me with vertical slices that I could work on in phases. Scope can creep very easily in the slices with a single sentence.
 
 The adversarial review found real defects my own tests and checks had missed (focus loss, long tags, loose URL validation), and it also raised findings I rejected or deferred. Writing the triage down made each decision explicit. Tests for behaviour that already worked passed straight away, so I had to break the code on purpose to show they could fail, and that exposed two weak tests.
+
+### What surprised me
+
+- One sentence in a prompt was enough to pull the next slice's work in. The slice 4 prompt said "combined with search", and the agent built search too (see slice 4).
+- The same prompt behaved differently from run to run. Slice 5 ran five times with three different outcomes. Two of the runs flagged a contradiction in my prompt that I hadn't seen.
+- A separate adversarial review found defects that my own "Done when" checks and tests had passed.
+
+### What was harder than expected
+
+- Keeping three documents in agreement: the guild guide, my design doc and my slice prompts. I renamed the layers to match the guide without checking what was inside them. The prompts and the guide drifted apart, and I only noticed when a slice misbehaved.
+- Following the guide's explicit instructions. A check on 2026-11-24, after I thought the project was finished, found four places where I hadn't: a single `index.html`, the layer contents, dark mode, and inline edit (see "Guide deviations fixed").
+- Knowing what was really verified. The agent often checked with scripts and said it hadn't looked at the page in a browser (slice 1, the follow-up polish).
+
+### What I'd do differently
+
+- Check the design doc against the guide's explicit instructions before slicing, as Step 1 says ("Edit the design doc until it matches your vision"). That includes single file, layer order and contents, and colour scheme.
+- Keep each layer's contents exactly as the guide lists them, and read every slice prompt's dependencies after reordering anything.
+- Give each review fix its own commit from the start, as Step 8f asks, rather than bundling several.
+- Keep extras out of version 1 and write them down as future ideas, so the build stays close to the "few hours" the guide sizes it at.
+- Look at each layer in a browser myself, not only through the agent's scripted checks.
+
+## Known issues
+
+These are open now (2026-11-24). The review IDs are from [Review 1](#review-1) and [`REVIEW.md`](./REVIEW.md).
+
+### In the app
+
+- **Two open tabs overwrite each other (R1).** The last tab to save replaces the bookmarks the other tab saved. Deferred until multi-tab use is a real need.
+- **A failed save is silent (R3).** If `localStorage` is full or blocked, `saveBookmarks()` throws, the change stays in memory only, and no message is shown. Deferred.
+- **Not tested with a screen reader (R6).** The error regions start `hidden`, and some screen reader and browser pairs don't announce a live region that starts hidden. This now applies to the inline edit form's error too. Nothing has been checked with VoiceOver or NVDA.
+- **Not checked by eye since the latest changes.** The inline edit form and the dark-only colours are covered by tests, but I haven't looked at them on a real phone or in each browser.
+- **No light mode.** The page is always dark, as the guide asks, so someone whose system is set to light still gets dark colours.
+- **`form.url`-style field access (O6).** Validation now reads fields through `form.elements`, but one line still uses `form.url`. It works, but `form.title` and the like can be shadowed by form properties.
+- **Data lives in one browser.** Clearing browser data deletes every bookmark, and there is no export or backup yet (`DESIGN.md` §5, §7).
+
+### Against the guide
+
+These deviations from the [first-build guide](https://github.com/Navigators-Guild/apprentice-onboarding/blob/main/01-talking-to-agents/05-first-build.md) are known and not fixed:
+
+- **Layer contents.** The guide's layers are: core (URL and title), notes and tags, edit and delete, tag filter, search, polish. My slice 1 already included notes and tags, and edit and delete were separate slices. The history can't be changed now, so the build process above records what I actually did.
+- **Search also matches the URL.** Layer 5 says titles and notes. I chose to include the URL (`DESIGN.md` §2.4).
+- **Scope.** The build has more than the guide asks for: a JavaScript drawer animation, a rolling toggle label, a "Saved" message, a Playwright suite and several review-fix rounds. The `DESIGN.md` Addendum lists them.
+- **Tooling.** The guide runs the app with Live Server. I used `npm run start` and Playwright. The app still runs by opening `index.html`, and a test checks that.
+- **Commits.** Earlier review fixes were bundled into a few commits (for example, D1, D2, D3 and R5 in one), not one per fix as Step 8f asks. They are already pushed, so I've left the history alone. The fixes from 2026-11-24 are one commit each.
