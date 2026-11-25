@@ -1,0 +1,8 @@
+{
+  "name": "guild-portfolio",
+  "private": true,
+  "description": "Apprentice portfolio for the Navigators Guild",
+  "scripts": {
+    "pages": "node scripts/copy-pages.mjs github-pages.txt"
+  }
+}

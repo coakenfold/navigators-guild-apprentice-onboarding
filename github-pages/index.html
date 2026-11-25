@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>guild-portfolio pages</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f7f8;
+      --text: #1f2933;
+      --muted: #5b6472;
+      --accent: #1d4ed8;
+      --rule: #dfe2e6;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f172a;
+        --text: #e5e7eb;
+        --muted: #a3acba;
+        --accent: #60a5fa;
+        --rule: #2d3748;
+      }
+    }
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      line-height: 1.5;
+      color: var(--text);
+      background: var(--bg);
+    }
+    main { max-width: 720px; margin: 0 auto; padding: 32px 16px; }
+    h1 { margin: 0 0 4px; font-size: 1.8rem; }
+    .intro { margin: 0 0 24px; color: var(--muted); }
+    h2 { margin: 24px 0 8px; font-size: 1.1rem; border-bottom: 1px solid var(--rule); padding-bottom: 4px; }
+    ul { list-style: none; margin: 0; padding: 0; }
+    li { padding: 6px 0; overflow-wrap: anywhere; }
+    a { color: var(--accent); font-weight: 600; }
+    a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .path { display: block; color: var(--muted); font-size: 0.85rem; font-family: ui-monospace, monospace; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>guild-portfolio pages</h1>
+    <p class="intro">The HTML pages published from this repository.</p>
+    <section>
+      <h2>bookmark-manager</h2>
+      <ul>
+        <li><a href="bookmark-manager/index.html">My Bookmarks</a> <span class="path">bookmark-manager/index.html</span></li>
+      </ul>
+    </section>
+    <section>
+      <h2>tracker</h2>
+      <ul>
+        <li><a href="tracker/docs/walkthrough.html">Tracker in Use</a> <span class="path">tracker/docs/walkthrough.html</span></li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>
