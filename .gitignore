@@ -1,4 +1,7 @@
 
+# Built by `npm run pages`; the Pages workflow rebuilds it
+github-pages/
+
 # Playwright
 node_modules/
 test-results/

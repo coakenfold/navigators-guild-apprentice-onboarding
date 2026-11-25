@@ -33,10 +33,17 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup Pages
         uses: actions/configure-pages@v5
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Build github-pages/
+        # Copies the pages listed in github-pages.txt and writes its index.html
+        run: npm run pages
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Upload entire repository
+          # Only the built pages, not the whole repository
           path: './github-pages'
       - name: Deploy to GitHub Pages
         id: deployment
