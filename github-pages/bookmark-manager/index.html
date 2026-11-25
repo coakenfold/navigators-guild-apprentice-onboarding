@@ -1,0 +1,1224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Bookmarks</title>
+  <style>
+    /* One dark colour scheme (dark background, light text), whatever the OS setting. */
+    :root {
+      color-scheme: dark;
+      --accent: #60a5fa;
+      --on-accent: #0b1220;
+      --text: #e5e7eb;
+      --muted: #a3acba;
+      --border: #2d3748;
+      --bg: #0f172a;
+      --surface: #1a2236;
+      --field-border: #64748b;
+      --pill: #26314a;
+      --error: #f87171;
+      --on-error: #1a0b0b;
+      --radius: 10px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.5;
+      overflow-wrap: break-word;
+    }
+
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      padding: 0;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    :focus-visible {
+      outline: 3px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .site-header,
+    main {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+
+    .site-header h1 {
+      margin: 32px 0 20px;
+      font-size: 1.9rem;
+      letter-spacing: -0.01em;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    /* Collapsible add form */
+    .form-toggle {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      min-height: 44px;
+      padding: 8px 4px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      text-align: left;
+      color: var(--text);
+      background: none;
+    }
+
+    .form-toggle-icon {
+      position: relative;
+      font-size: 0; /* plus is drawn below so font metrics can't offset it */
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
+      color: var(--on-accent);
+      background: var(--accent);
+      border-radius: 50%;
+      transition: transform 0.35s ease-in-out;
+    }
+
+    .form-toggle-icon::before,
+    .form-toggle-icon::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      background: currentColor;
+      border-radius: 1px;
+      transform: translate(-50%, -50%);
+    }
+
+    .form-toggle-icon::before {
+      width: 12px;
+      height: 2px;
+    }
+
+    .form-toggle-icon::after {
+      width: 2px;
+      height: 12px;
+    }
+
+    .form-toggle.open .form-toggle-icon {
+      transform: rotate(45deg);
+    }
+
+    /* Clips the rolling label text like a window over a drum */
+    #form-toggle-label {
+      display: inline-grid;
+      overflow: hidden;
+      line-height: 1.5;
+    }
+
+    /* Old and new text share one cell so the window fits the wider of the two */
+    .roll-text {
+      grid-area: 1 / 1;
+      white-space: nowrap;
+    }
+
+    .form-toggle:hover {
+      background: none;
+      filter: none;
+      color: var(--accent);
+    }
+
+    /* Forms: the add form, and the inline edit form inside a bookmark's card */
+    #bookmark-form,
+    .edit-form {
+      display: grid;
+      grid-template-columns: 80px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+
+    #bookmark-form {
+      margin-top: 12px;
+    }
+
+    #bookmark-form[hidden] {
+      display: none;
+    }
+
+    /* Quiet form title; long bookmark titles wrap instead of scrolling */
+    .form-heading {
+      grid-column: 1 / -1;
+      margin: 0;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+
+    #bookmark-form label,
+    .edit-form label {
+      padding-top: 8px;
+      font-weight: 600;
+    }
+
+    input,
+    textarea {
+      width: 100%;
+      padding: 8px 10px;
+      font: inherit;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--field-border);
+      border-radius: 6px;
+      transition: border-color 0.15s ease;
+    }
+
+    input:focus-visible,
+    textarea:focus-visible {
+      outline-offset: 0;
+      border-color: var(--accent);
+    }
+
+    input[aria-invalid="true"] {
+      border-color: var(--error);
+    }
+
+    textarea {
+      resize: vertical;
+    }
+
+    .form-error,
+    .form-actions {
+      grid-column: 2;
+    }
+
+    .form-error {
+      margin: 0;
+      color: var(--error);
+    }
+
+    .save-status {
+      margin: 8px 0 0;
+      color: var(--accent);
+    }
+
+    .form-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    button {
+      font: inherit;
+      padding: 8px 18px;
+      color: var(--on-accent);
+      background: var(--accent);
+      border: 1px solid transparent;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: filter 0.15s ease, background-color 0.15s ease;
+    }
+
+    button:hover {
+      filter: brightness(1.1);
+    }
+
+    button.secondary {
+      color: var(--text);
+      background: transparent;
+      border-color: var(--field-border);
+    }
+
+    /* Bookmark list */
+    .bookmark-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .bookmark {
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .bookmark.entering {
+      animation: fade-in 0.25s ease;
+    }
+
+    .bookmark:first-child {
+      padding-top: 0;
+    }
+
+    .bookmark:last-child {
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+
+    .bookmark-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .bookmark-heading {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      column-gap: 10px;
+      min-width: 0;
+    }
+
+    .bookmark-title {
+      font-weight: 600;
+      color: var(--accent);
+      text-decoration: none;
+      overflow-wrap: anywhere;
+    }
+
+    .bookmark-title:hover {
+      text-decoration: underline;
+    }
+
+    .bookmark-domain {
+      color: var(--muted);
+      font-size: 0.8rem;
+      letter-spacing: 0.02em;
+    }
+
+    .bookmark-date {
+      flex-shrink: 0;
+      color: var(--muted);
+      font-size: 0.875rem;
+    }
+
+    .bookmark-url {
+      color: var(--muted);
+      font-size: 0.85rem;
+      overflow-wrap: anywhere;
+    }
+
+    .bookmark-notes {
+      margin: 6px 0 0;
+      overflow-wrap: anywhere;
+    }
+
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .tag {
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      padding: 2px 12px;
+      font-size: 0.8rem;
+      background: var(--pill);
+      border-radius: 999px;
+    }
+
+    button.tag {
+      border: 0;
+      color: var(--text);
+      font: inherit;
+      font-size: 0.8rem;
+      padding: 2px 12px;
+    }
+
+    .tag.selected,
+    button.tag.selected {
+      background: var(--accent);
+      color: var(--on-accent);
+    }
+
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      margin: 0 0 16px;
+    }
+
+    .search {
+      flex: 1 1 200px;
+    }
+
+    .tag-filter {
+      flex: 999 1 auto;
+      margin: 0;
+    }
+
+    .bookmark-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .edit-button,
+    .delete-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 10px;
+    }
+
+    .delete-button {
+      color: var(--on-error);
+      background: var(--error);
+    }
+
+    .delete-button:focus-visible {
+      outline-color: var(--error);
+    }
+
+    .empty-message {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    @keyframes fade-in {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+    }
+
+    /* Phones: stack the form, filters and rows; keep targets tappable */
+    @media (max-width: 500px) {
+      .site-header,
+      main {
+        padding: 0 12px;
+      }
+
+      .panel {
+        padding: 16px;
+      }
+
+      #bookmark-form,
+      .edit-form {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+      }
+
+      #bookmark-form label,
+      .edit-form label {
+        padding-top: 4px;
+      }
+
+      .form-error,
+      .form-actions {
+        grid-column: 1;
+      }
+
+      .form-actions button {
+        flex: 1;
+      }
+
+      .filters {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .search {
+        flex: none;
+      }
+
+      .bookmark-header {
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      button,
+      button.tag {
+        min-height: 44px;
+      }
+
+      button.tag {
+        min-width: 44px;
+      }
+
+      .edit-button,
+      .delete-button {
+        min-width: 44px;
+      }
+
+      input,
+      textarea {
+        min-height: 44px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation: none !important;
+        transition: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <h1>My Bookmarks</h1>
+  </header>
+
+  <main>
+    <section class="panel">
+      <button type="button" id="form-toggle" class="form-toggle" aria-expanded="false" aria-controls="bookmark-form">
+        <span class="form-toggle-icon" aria-hidden="true">+</span>
+        <span id="form-toggle-label"><span class="roll-text">Add a bookmark</span></span>
+      </button>
+      <form id="bookmark-form" aria-labelledby="form-heading" novalidate hidden>
+        <h2 id="form-heading" class="form-heading">Add a bookmark</h2>
+
+        <label for="url">URL</label>
+        <input type="url" id="url" name="url" placeholder="https://..." required>
+
+        <label for="title">Title</label>
+        <input type="text" id="title" name="title" required>
+
+        <label for="notes">Notes</label>
+        <textarea id="notes" name="notes" rows="3"></textarea>
+
+        <label for="tags">Tags</label>
+        <input type="text" id="tags" name="tags" placeholder="comma, separated">
+
+        <p id="form-error" class="form-error" role="alert" hidden></p>
+
+        <div class="form-actions">
+          <button type="button" id="form-cancel" class="secondary">Cancel</button>
+          <button type="submit">Save</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="filters">
+        <label for="search" class="visually-hidden">Search bookmarks</label>
+        <input type="search" id="search" class="search" placeholder="Search bookmarks...">
+        <div id="tag-filter" class="tags tag-filter" role="group" aria-label="Filter by tag"></div>
+      </div>
+      <p id="save-status" class="save-status" role="status" hidden></p>
+      <ul id="bookmark-list" class="bookmark-list"></ul>
+      <p id="empty-message" class="empty-message" hidden>No bookmarks yet. Add your first one above.</p>
+    </section>
+  </main>
+
+  <svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="icon-edit" viewBox="0 0 24 24">
+      <path d="M12 20h9"/>
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>
+    </symbol>
+    <symbol id="icon-trash" viewBox="0 0 24 24">
+      <path d="M3 6h18"/>
+      <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/>
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+      <path d="M10 11v6"/>
+      <path d="M14 11v6"/>
+    </symbol>
+  </svg>
+
+  <template id="bookmark-template">
+    <li class="bookmark">
+      <div class="bookmark-header">
+        <div class="bookmark-heading">
+          <a class="bookmark-title" target="_blank" rel="noopener noreferrer"></a>
+          <span class="bookmark-domain"></span>
+        </div>
+        <span class="bookmark-date"></span>
+      </div>
+      <div class="bookmark-url"></div>
+      <p class="bookmark-notes"></p>
+      <div class="tags"></div>
+      <div class="bookmark-actions">
+        <button type="button" class="edit-button" title="Edit">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#icon-edit"/></svg>
+        </button>
+        <button type="button" class="delete-button" title="Delete">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#icon-trash"/></svg>
+        </button>
+      </div>
+    </li>
+  </template>
+
+  <!-- Inline edit form, shown inside a bookmark's card. Only one bookmark is
+       edited at a time, so its ids are unique on the page. -->
+  <template id="edit-template">
+    <form class="edit-form" aria-labelledby="edit-heading" novalidate>
+      <h3 id="edit-heading" class="form-heading"></h3>
+
+      <label for="edit-url">URL</label>
+      <input type="url" id="edit-url" name="url" required>
+
+      <label for="edit-title">Title</label>
+      <input type="text" id="edit-title" name="title" required>
+
+      <label for="edit-notes">Notes</label>
+      <textarea id="edit-notes" name="notes" rows="3"></textarea>
+
+      <label for="edit-tags">Tags</label>
+      <input type="text" id="edit-tags" name="tags">
+
+      <p id="edit-error" class="form-error" role="alert" hidden></p>
+
+      <div class="form-actions">
+        <button type="button" class="secondary edit-cancel">Discard changes</button>
+        <button type="submit">Save changes</button>
+      </div>
+    </form>
+  </template>
+
+  <script>
+    (() => {
+      "use strict";
+      const STORAGE_KEY = "bookmarks";
+
+      const form = document.getElementById("bookmark-form");
+      const formError = document.getElementById("form-error");
+      const list = document.getElementById("bookmark-list");
+      const emptyMessage = document.getElementById("empty-message");
+      const tagFilter = document.getElementById("tag-filter");
+      const searchInput = document.getElementById("search");
+      const saveStatus = document.getElementById("save-status");
+      let saveStatusTimer = null;
+
+      const NO_BOOKMARKS_TEXT = "No bookmarks yet. Add your first one above.";
+      const NO_MATCH_TEXT = "No bookmarks match your search.";
+
+      const formToggle = document.getElementById("form-toggle");
+      const formToggleLabel = document.getElementById("form-toggle-label");
+      const formCancel = document.getElementById("form-cancel");
+
+      let bookmarks = loadBookmarks();
+      // The bookmark being edited inline, and what has been typed so far. The draft
+      // lets the edit survive a re-render (search, tag filter, another delete).
+      let editingId = null;
+      let editTitle = "";
+      let editDraft = null;
+      let editError = null;
+      let selectedTag = null;
+      // Ids shown by the last render; null until the first one, so nothing fades in on load.
+      let renderedIds = null;
+
+      // Read bookmarks from localStorage, falling back to an empty array.
+      function loadBookmarks() {
+        try {
+          const data = JSON.parse(localStorage.getItem(STORAGE_KEY));
+          return Array.isArray(data) ? data.map(normaliseRecord).filter(Boolean) : [];
+        } catch {
+          return [];
+        }
+      }
+
+      // Returns a safe copy of a stored record, or null if it can't be used.
+      function normaliseRecord(record) {
+        if (!record || typeof record !== "object" || Array.isArray(record)) return null;
+        const { id, url, title } = record;
+        if (typeof id !== "string" || typeof url !== "string" || typeof title !== "string") {
+          return null;
+        }
+        if (validateUrl(url) !== "") return null;
+        const created = new Date(record.createdAt);
+        return {
+          id,
+          url,
+          title,
+          notes: typeof record.notes === "string" ? record.notes : "",
+          tags: Array.isArray(record.tags)
+            ? record.tags.filter((tag) => typeof tag === "string")
+            : [],
+          createdAt:
+            typeof record.createdAt === "string" && !Number.isNaN(created.getTime())
+              ? record.createdAt
+              : new Date().toISOString(),
+        };
+      }
+
+      function saveBookmarks() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(bookmarks));
+      }
+
+      // "JavaScript, reference , javascript" -> ["javascript", "reference"]
+      function parseTags(text) {
+        const tags = text
+          .split(",")
+          .map((tag) => tag.trim().toLowerCase())
+          .filter((tag) => tag !== "");
+        return [...new Set(tags)];
+      }
+
+      function formatDate(isoString) {
+        return new Date(isoString).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
+      }
+
+      // Returns an error message for an unusable URL, or '' if it is valid.
+      function validateUrl(text) {
+        if (!/^https?:\/\//i.test(text)) {
+          return "URL must start with http:// or https://";
+        }
+        try {
+          new URL(text);
+        } catch {
+          return "Enter a valid URL, for example https://example.com.";
+        }
+        if (/\s/.test(text)) {
+          return "URL can't contain spaces. Enter it like https://example.com.";
+        }
+        return "";
+      }
+
+      // Show the message in a form's role="alert" region and tie it to the field.
+      function showError(errorEl, message, field) {
+        errorEl.textContent = message;
+        errorEl.hidden = false;
+        field.setAttribute("aria-invalid", "true");
+        field.setAttribute("aria-describedby", errorEl.id);
+      }
+
+      function clearError(formEl, errorEl) {
+        errorEl.textContent = "";
+        errorEl.hidden = true;
+        for (const field of formEl.elements) {
+          field.removeAttribute("aria-invalid");
+          field.removeAttribute("aria-describedby");
+        }
+      }
+
+      // Read and check the add form or an edit form.
+      // Returns { fields } when it is valid, or { message, field } when it isn't.
+      function readFields(formEl) {
+        const { elements } = formEl;
+        const url = elements.url.value.trim();
+        const title = elements.title.value.trim();
+        if (!url || !title) {
+          return {
+            message: "Please fill in both URL and Title.",
+            field: url ? elements.title : elements.url,
+          };
+        }
+        const urlError = validateUrl(url);
+        if (urlError) return { message: urlError, field: elements.url };
+        return {
+          fields: {
+            url,
+            title,
+            notes: elements.notes.value.trim(),
+            tags: parseTags(elements.tags.value),
+          },
+        };
+      }
+
+      const filterActive = () =>
+        searchInput.value.trim() !== "" || selectedTag !== null;
+
+      function handleSubmit(event) {
+        event.preventDefault();
+        clearError(form, formError);
+        const result = readFields(form);
+        if (result.message) {
+          showError(formError, result.message, result.field);
+          result.field.focus();
+          return;
+        }
+
+        bookmarks.push({
+          id: Date.now().toString(),
+          ...result.fields,
+          createdAt: new Date().toISOString(),
+        });
+        saveBookmarks();
+        resetForm();
+        setFormOpen(false);
+        render();
+        formToggle.focus();
+        // The saved bookmark may be hidden by the search or tag filter,
+        // so confirm the save in words.
+        if (filterActive()) showSaved();
+      }
+
+      function showSaved() {
+        clearTimeout(saveStatusTimer);
+        saveStatus.textContent = "Saved";
+        saveStatus.hidden = false;
+        saveStatusTimer = setTimeout(() => {
+          saveStatus.hidden = true;
+          saveStatus.textContent = "";
+        }, 3000);
+      }
+
+      const FORM_DURATION = 450;
+      const FORM_FADE_RANGE = 28;
+      let formOpen = false;
+      let formAnimation = null;
+
+      function easeInOutCubic(t) {
+        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      }
+
+      // Group the visible form children into rows and record where each row ends.
+      function measureFormRows() {
+        const rows = [];
+        for (const child of form.children) {
+          if (child.hidden) continue;
+          const top = child.offsetTop - form.offsetTop;
+          const bottom = top + child.offsetHeight;
+          const row = rows.find((r) => r.top === top);
+          if (row) {
+            row.bottom = Math.max(row.bottom, bottom);
+            row.elements.push(child);
+          } else {
+            rows.push({ top, bottom, elements: [child] });
+          }
+        }
+        return rows;
+      }
+
+      // Slide the drawer to `open`. A row fades in once the drawer bottom passes the
+      // row's bottom edge, and has fully faded out before the drawer bottom crosses it.
+      function animateForm(open) {
+        // Resume from the current height if interrupted mid-animation.
+        const interruptedHeight = formAnimation ? formAnimation.height : null;
+        if (formAnimation) cancelAnimationFrame(formAnimation.frame);
+        formAnimation = null;
+
+        const reduceMotion = window.matchMedia(
+          "(prefers-reduced-motion: reduce)",
+        ).matches;
+        form.hidden = false;
+        // Closing fields leave the tab order at once, not when the animation ends.
+        form.inert = !open;
+        form.style.height = "";
+        form.style.overflow = "";
+        const rows = measureFormRows();
+        const fullHeight = form.offsetHeight;
+        const fadeRange = Math.min(FORM_FADE_RANGE, fullHeight);
+        const scale = (fullHeight - fadeRange) / fullHeight;
+
+        const finish = () => {
+          formAnimation = null;
+          form.style.height = "";
+          form.style.overflow = "";
+          form.style.marginTop = "";
+          for (const row of rows) {
+            for (const el of row.elements) el.style.opacity = "";
+          }
+          form.hidden = !open;
+        };
+
+        if (reduceMotion) {
+          finish();
+          return;
+        }
+
+        const startPoint = interruptedHeight ?? (open ? 0 : fullHeight);
+        const endPoint = open ? fullHeight : 0;
+        const startTime = performance.now();
+        form.style.overflow = "hidden";
+
+        const step = (now) => {
+          const progress = Math.min((now - startTime) / FORM_DURATION, 1);
+          const height =
+            startPoint + (endPoint - startPoint) * easeInOutCubic(progress);
+          form.style.height = `${height}px`;
+          form.style.marginTop = `${12 * (height / fullHeight)}px`;
+          for (const row of rows) {
+            const threshold = row.bottom * scale;
+            const opacity = Math.max(
+              0,
+              Math.min(1, (height - threshold) / fadeRange),
+            );
+            for (const el of row.elements) el.style.opacity = opacity;
+          }
+          if (progress < 1) {
+            formAnimation = { frame: requestAnimationFrame(step), height };
+          } else {
+            finish();
+          }
+        };
+        formAnimation = { frame: requestAnimationFrame(step), height: startPoint };
+      }
+
+      // Roll the toggle label like an alarm-clock drum: opening rolls the old text
+      // down and out with the new text coming in from the top; closing reverses it.
+      function rollToggleLabel(text, down) {
+        const current = formToggleLabel.lastElementChild;
+        if (current.textContent === text) return;
+
+        const next = document.createElement("span");
+        next.className = "roll-text";
+        next.textContent = text;
+        const reduceMotion = window.matchMedia(
+          "(prefers-reduced-motion: reduce)",
+        ).matches;
+        if (reduceMotion) {
+          current.replaceWith(next);
+          return;
+        }
+
+        // Drop any text still rolling out from an interrupted roll.
+        for (const stale of formToggleLabel.querySelectorAll(".roll-out"))
+          stale.remove();
+        current.classList.add("roll-out");
+        current.setAttribute("aria-hidden", "true");
+        formToggleLabel.append(next);
+
+        const options = { duration: 350, easing: "ease-in-out", fill: "both" };
+        const exit = down ? "100%" : "-100%";
+        const enter = down ? "-100%" : "100%";
+        current.animate(
+          [
+            { transform: "translateY(0)", opacity: 1 },
+            { transform: `translateY(${exit})`, opacity: 0 },
+          ],
+          options,
+        ).onfinish = () => current.remove();
+        next.animate(
+          [
+            { transform: `translateY(${enter})`, opacity: 0 },
+            { transform: "translateY(0)", opacity: 1 },
+          ],
+          options,
+        );
+      }
+
+      // Show or hide the add form; the toggle button always reflects the state.
+      function setFormOpen(open) {
+        if (open !== formOpen) animateForm(open);
+        formOpen = open;
+        formToggle.setAttribute("aria-expanded", open);
+        rollToggleLabel(open ? "Close form" : "Add a bookmark", open);
+        formToggle.classList.toggle("open", open);
+      }
+
+      function toggleForm() {
+        const open = !formOpen;
+        if (!open) resetForm();
+        setFormOpen(open);
+        if (open) form.url.focus({ preventScroll: true });
+        else formToggle.focus();
+      }
+
+      function cancelForm() {
+        resetForm();
+        setFormOpen(false);
+        formToggle.focus();
+      }
+
+      function handleFormKeydown(event) {
+        if (event.key === "Escape") cancelForm();
+      }
+
+      // Clear the add form. It is only for adding; editing happens inline.
+      function resetForm() {
+        clearError(form, formError);
+        form.reset();
+      }
+
+      // Open the inline edit form in this bookmark's card (guide Layer 3).
+      // Editing another bookmark switches to it and drops the unsaved edit.
+      function startEdit(bookmark) {
+        editingId = bookmark.id;
+        editTitle = bookmark.title;
+        editDraft = {
+          url: bookmark.url,
+          title: bookmark.title,
+          notes: bookmark.notes,
+          tags: bookmark.tags.join(", "),
+        };
+        editError = null;
+        render();
+        document.getElementById("edit-url")?.focus();
+      }
+
+      function stopEdit() {
+        editingId = null;
+        editDraft = null;
+        editError = null;
+      }
+
+      // Focus a bookmark's Edit button, or the toggle if the bookmark isn't shown.
+      function focusEditButton(id) {
+        const button = list.querySelector(
+          `.bookmark[data-id="${CSS.escape(id)}"] .edit-button`,
+        );
+        (button ?? formToggle).focus();
+      }
+
+      function cancelEdit() {
+        const id = editingId;
+        stopEdit();
+        render();
+        focusEditButton(id);
+      }
+
+      function handleEditSubmit(event) {
+        event.preventDefault();
+        const editForm = event.currentTarget;
+        const errorEl = editForm.querySelector(".form-error");
+        clearError(editForm, errorEl);
+        editError = null;
+        const result = readFields(editForm);
+        if (result.message) {
+          editError = { message: result.message, name: result.field.name };
+          showError(errorEl, result.message, result.field);
+          result.field.focus();
+          return;
+        }
+
+        const id = editingId;
+        const existing = bookmarks.find((bookmark) => bookmark.id === id);
+        if (existing) Object.assign(existing, result.fields);
+        saveBookmarks();
+        stopEdit();
+        render();
+        focusEditButton(id);
+        // The edited bookmark may no longer match the search or tag filter.
+        if (filterActive()) showSaved();
+      }
+
+      function deleteBookmark(id) {
+        if (!confirm("Are you sure?")) return;
+
+        const position = [...list.children].findIndex(
+          (item) => item.dataset.id === id,
+        );
+        bookmarks = bookmarks.filter((bookmark) => bookmark.id !== id);
+        saveBookmarks();
+        if (id === editingId) stopEdit();
+        render();
+
+        // Focus the bookmark that took its place (or the previous one), else the toggle.
+        // A card being edited has no title link, so focus its first field instead.
+        const next = list.children[Math.min(position, list.children.length - 1)];
+        (next?.querySelector(".bookmark-title, input") ?? formToggle).focus();
+      }
+
+      // "https://www.example.com/a/b" -> "example.com"
+      function getDomain(url) {
+        try {
+          return new URL(url).hostname.replace(/^www\./, "");
+        } catch {
+          return "";
+        }
+      }
+
+      function createTagPill(tag, bookmarkId) {
+        const pill = document.createElement("button");
+        pill.type = "button";
+        pill.className = "tag";
+        pill.textContent = tag;
+        // The name contains the visible text, as WCAG 2.5.3 (Label in Name) asks.
+        pill.setAttribute("aria-label", `Filter by ${tag}`);
+        pill.setAttribute("aria-pressed", selectedTag === tag);
+        pill.classList.toggle("selected", selectedTag === tag);
+        pill.dataset.id = bookmarkId;
+        pill.dataset.tag = tag;
+        pill.addEventListener("click", () => toggleTag(tag));
+        return pill;
+      }
+
+      const bookmarkTemplate = document.getElementById("bookmark-template");
+
+      function createBookmarkItem(bookmark) {
+        const item = bookmarkTemplate.content.firstElementChild.cloneNode(true);
+        item.dataset.id = bookmark.id;
+
+        const link = item.querySelector(".bookmark-title");
+        link.href = bookmark.url;
+        link.textContent = bookmark.title;
+        item.querySelector(".bookmark-domain").textContent = getDomain(
+          bookmark.url,
+        );
+        item.querySelector(".bookmark-date").textContent = formatDate(
+          bookmark.createdAt,
+        );
+        item.querySelector(".bookmark-url").textContent = bookmark.url;
+
+        const notes = item.querySelector(".bookmark-notes");
+        if (bookmark.notes) notes.textContent = bookmark.notes;
+        else notes.remove();
+
+        const tags = item.querySelector(".tags");
+        if (bookmark.tags.length > 0) {
+          tags.append(
+            ...bookmark.tags.map((tag) => createTagPill(tag, bookmark.id)),
+          );
+        } else {
+          tags.remove();
+        }
+
+        const editButton = item.querySelector(".edit-button");
+        editButton.setAttribute("aria-label", `Edit ${bookmark.title}`);
+        editButton.addEventListener("click", () => startEdit(bookmark));
+
+        const deleteButton = item.querySelector(".delete-button");
+        deleteButton.setAttribute("aria-label", `Delete ${bookmark.title}`);
+        deleteButton.addEventListener("click", () => deleteBookmark(bookmark.id));
+
+        return item;
+      }
+
+      const editTemplate = document.getElementById("edit-template");
+
+      // The card for the bookmark being edited: the inline form, filled from the draft.
+      function createEditItem(bookmark) {
+        const item = document.createElement("li");
+        item.className = "bookmark editing";
+        item.dataset.id = bookmark.id;
+
+        const editForm = editTemplate.content.firstElementChild.cloneNode(true);
+        // The heading keeps the title from when the edit started.
+        editForm.querySelector(".form-heading").textContent =
+          `Edit bookmark: ${editTitle}`;
+        for (const [name, value] of Object.entries(editDraft)) {
+          editForm.elements[name].value = value;
+        }
+        if (editError) {
+          showError(
+            editForm.querySelector(".form-error"),
+            editError.message,
+            editForm.elements[editError.name],
+          );
+        }
+
+        editForm.addEventListener("input", (event) => {
+          editDraft[event.target.name] = event.target.value;
+        });
+        editForm.addEventListener("submit", handleEditSubmit);
+        editForm.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") cancelEdit();
+        });
+        editForm
+          .querySelector(".edit-cancel")
+          .addEventListener("click", cancelEdit);
+
+        item.append(editForm);
+        return item;
+      }
+
+      // Selecting the current tag again clears it.
+      function toggleTag(tag) {
+        selectedTag = selectedTag === tag ? null : tag;
+        render();
+      }
+
+      function createChip(label, tag) {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "tag chip";
+        chip.textContent = label;
+        chip.dataset.tag = tag ?? "";
+        const active = selectedTag === tag;
+        chip.classList.toggle("selected", active);
+        chip.setAttribute("aria-pressed", active);
+        chip.addEventListener("click", () =>
+          tag === null ? clearTag() : toggleTag(tag),
+        );
+        return chip;
+      }
+
+      function clearTag() {
+        selectedTag = null;
+        render();
+      }
+
+      // Rebuild the "All" chip plus one chip per tag in use, sorted A-Z.
+      function renderTagFilter() {
+        const tags = [...new Set(bookmarks.flatMap((b) => b.tags))].sort();
+        if (selectedTag !== null && !tags.includes(selectedTag)) selectedTag = null;
+
+        tagFilter.innerHTML = "";
+        tagFilter.append(createChip("All", null));
+        for (const tag of tags) {
+          tagFilter.append(createChip(tag, tag));
+        }
+      }
+
+      // Case-insensitive match on title, URL and notes (not tags). query is lowercase.
+      function matchesSearch(bookmark, query) {
+        if (query === "") return true;
+        return [bookmark.title, bookmark.url, bookmark.notes].some((text) =>
+          text.toLowerCase().includes(query),
+        );
+      }
+
+      // A selector for the focused chip or bookmark tag, or null for anything else.
+      function focusedTagSelector() {
+        const el = document.activeElement;
+        if (!el.dataset || el.dataset.tag === undefined) return null;
+        const tag = `[data-tag="${CSS.escape(el.dataset.tag)}"]`;
+        if (tagFilter.contains(el)) return `#tag-filter ${tag}`;
+        return `#bookmark-list [data-id="${CSS.escape(el.dataset.id)}"]${tag}`;
+      }
+
+      // Rebuilding the DOM drops focus, so put it back on the matching button.
+      function render() {
+        const refocus = focusedTagSelector();
+        renderAll();
+        if (refocus) document.querySelector(refocus)?.focus();
+      }
+
+      function renderAll() {
+        list.innerHTML = "";
+        renderTagFilter();
+
+        const query = searchInput.value.trim().toLowerCase();
+        const visible = bookmarks.filter(
+          (bookmark) =>
+            (selectedTag === null || bookmark.tags.includes(selectedTag)) &&
+            matchesSearch(bookmark, query),
+        );
+        const newestFirst = [...visible].sort((a, b) =>
+          b.createdAt.localeCompare(a.createdAt),
+        );
+
+        for (const bookmark of newestFirst) {
+          const item =
+            bookmark.id === editingId
+              ? createEditItem(bookmark)
+              : createBookmarkItem(bookmark);
+          // Only bookmarks that weren't visible last time fade in.
+          if (renderedIds && !renderedIds.has(bookmark.id))
+            item.classList.add("entering");
+          list.append(item);
+        }
+        renderedIds = new Set(newestFirst.map((bookmark) => bookmark.id));
+
+        emptyMessage.textContent =
+          bookmarks.length === 0 ? NO_BOOKMARKS_TEXT : NO_MATCH_TEXT;
+        emptyMessage.hidden = newestFirst.length > 0;
+      }
+
+      form.addEventListener("submit", handleSubmit);
+      form.addEventListener("keydown", handleFormKeydown);
+      formToggle.addEventListener("click", toggleForm);
+      formCancel.addEventListener("click", cancelForm);
+      searchInput.addEventListener("input", render);
+      render();
+    })();
+  </script>
+</body>
+</html>
